@@ -22,16 +22,14 @@ def print_branch_tree(branch, prefix="", is_last=True):
     current_branch = get_current_branch()
     is_current = branch == current_branch
 
-    # Format the branch with prefix
+    # Format the branch display string with proper indentation
     if is_current:
+        # Apply branch styling for current branch only
         branch_display = f"{prefix} * {branch}"
-    else:
-        branch_display = f"{prefix}   {branch}"
-
-    # Print with appropriate style
-    if is_current:
         print_formatted_text(f"<branch>{branch_display}</branch>")
     else:
+        # Non-current branches use default terminal text color
+        branch_display = f"{prefix}   {branch}"
         print(branch_display)
 
     # Get children of this branch

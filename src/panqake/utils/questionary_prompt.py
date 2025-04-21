@@ -5,11 +5,11 @@ using the questionary library. It replaces the previous prompt_toolkit implement
 with a more user-friendly interface.
 
 Available styles for formatting text:
-- warning: amber/orange color for warnings
-- danger: bright red bold for dangerous actions/errors
-- info: bright blue for informational messages
+- warning: yellow/amber for warnings
+- danger: bright red for dangerous actions/errors
+- info: cyan for informational messages
 - success: bright green for success messages
-- branch: purple for branch names
+- branch: green for branch names
 - muted: gray for less important text
 
 Usage example:
@@ -30,32 +30,32 @@ from typing import Any, List, Optional, Union
 import questionary
 from questionary import ValidationError, Validator
 
-# Define a style with colors that work well on both dark and light backgrounds
+# Define a style with colors that match terminal's native appearance
 style = questionary.Style(
     [
-        ("qmark", "fg:#FF9D00 bold"),  # amber/orange question mark
+        ("qmark", "fg:#FFCC00 bold"),  # yellow question mark
         ("question", "bold"),  # bold question text
-        ("answer", "fg:#0088DD"),  # bright blue answers
-        ("pointer", "fg:#9933CC bold"),  # purple pointer
-        ("highlighted", "fg:#9933CC bold"),  # purple highlighted item
-        ("selected", "fg:#44AABB"),  # teal selected items
+        ("answer", "fg:#FFFFFF"),  # white answers
+        ("pointer", "fg:#00FF00 bold"),  # green pointer
+        ("highlighted", "fg:#00FF00 bold"),  # green highlighted item
+        ("selected", "fg:#00FF00"),  # green selected items
         ("danger", "fg:#FF5555 bold"),  # bright red for dangerous actions
-        ("warning", "fg:#FF9D00"),  # amber/orange for warnings
-        ("info", "fg:#0088DD"),  # bright blue for info
-        ("success", "fg:#00CC66"),  # bright green for success
-        ("branch", "fg:#9933CC"),  # purple for branch names
+        ("warning", "fg:#FFCC00"),  # yellow for warnings
+        ("info", "fg:#00CCFF"),  # cyan for info
+        ("success", "fg:#00FF00"),  # bright green for success
+        ("branch", "fg:#00FF00"),  # green for branch names
         ("muted", "fg:#888888"),  # gray for less important text
     ]
 )
 
 # Mapping for style classes to questionary print style strings
-# These colors have been selected for good visibility on both dark/light backgrounds
+# These colors match the terminal's native appearance
 STYLE_MAP = {
-    "warning": "fg:#FF9D00",  # amber/orange
+    "warning": "fg:#FFCC00",  # yellow
     "danger": "fg:#FF5555 bold",  # bright red bold
-    "info": "fg:#0088DD",  # bright blue
-    "success": "fg:#00CC66",  # bright green
-    "branch": "fg:#9933CC",  # purple
+    "info": "fg:#00CCFF",  # cyan
+    "success": "fg:#00FF00",  # bright green
+    "branch": "fg:#00FF00",  # green
     "muted": "fg:#888888",  # gray
 }
 
@@ -105,7 +105,8 @@ def format_branch(branch_name: str, current: bool = False, danger: bool = False)
     elif current:
         return f"<branch>* {branch_name}</branch>"
     else:
-        return f"<branch>{branch_name}</branch>"
+        # Return plain branch name without style tags for non-current branches
+        return branch_name
 
 
 def print_formatted_text(text: Any) -> None:

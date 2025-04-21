@@ -2,8 +2,12 @@
 
 import sys
 
+from prompt_toolkit import print_formatted_text as print_ft
+from prompt_toolkit.formatted_text import HTML
+
 from panqake.utils.config import get_child_branches
 from panqake.utils.git import branch_exists, get_current_branch, run_git_command
+from panqake.utils.prompt import format_branch, prompt_confirm
 
 
 def update_branches(branch_name=None):
@@ -14,11 +18,46 @@ def update_branches(branch_name=None):
 
     # Check if target branch exists
     if not branch_exists(branch_name):
-        print(f"Error: Branch '{branch_name}' does not exist")
+        print_ft(
+            HTML(f"<warning>Error: Branch '{branch_name}' does not exist</warning>")
+        )
         sys.exit(1)
 
     # Store current branch to return to it later
     current_branch = get_current_branch()
+
+    # Find all branches that will be updated
+    def collect_all_children(branch, result=None):
+        """Recursively collect all child branches."""
+        if result is None:
+            result = []
+
+        children = get_child_branches(branch)
+        for child in children:
+            if child not in result:
+                result.append(child)
+                collect_all_children(child, result)
+
+        return result
+
+    affected_branches = collect_all_children(branch_name)
+
+    # Show summary and ask for confirmation
+    if affected_branches:
+        print_ft(HTML("<info>The following branches will be updated:</info>"))
+        for branch in affected_branches:
+            print_ft(HTML(f"  {format_branch(branch)}"))
+
+        if not prompt_confirm("Do you want to proceed with the update?", default=True):
+            print_ft(HTML("<info>Update cancelled.</info>"))
+            return
+    else:
+        print_ft(
+            HTML(
+                f"<info>No child branches found for {format_branch(branch_name)}.</info>"
+            )
+        )
+        return
 
     def update_branch_and_children(branch):
         """Recursively update child branches."""
@@ -26,28 +65,40 @@ def update_branches(branch_name=None):
 
         if children:
             for child in children:
-                print(
-                    f"Updating branch '{child}' based on changes to '{branch}'..."
+                print_ft(
+                    HTML(
+                        f"<info>Updating branch</info> {format_branch(child)} <info>based on changes to</info> {format_branch(branch)}..."
+                    )
                 )
 
                 # Checkout the child branch
                 checkout_result = run_git_command(["checkout", child])
                 if checkout_result is None:
-                    print(f"Error: Failed to checkout branch '{child}'")
+                    print_ft(
+                        HTML(
+                            f"<warning>Error: Failed to checkout branch '{child}'</warning>"
+                        )
+                    )
                     run_git_command(["checkout", current_branch])
                     sys.exit(1)
 
                 # Rebase onto the parent branch
                 rebase_result = run_git_command(["rebase", branch])
                 if rebase_result is None:
-                    print(
-                        f"Error: Rebase conflict detected in branch '{child}'"
+                    print_ft(
+                        HTML(
+                            f"<warning>Error: Rebase conflict detected in branch '{child}'</warning>"
+                        )
                     )
-                    print(
-                        "Please resolve conflicts and run 'git rebase --continue'"
+                    print_ft(
+                        HTML(
+                            "<warning>Please resolve conflicts and run 'git rebase --continue'</warning>"
+                        )
                     )
-                    print(
-                        f"Then run 'panqake update {child}' to continue updating the stack"
+                    print_ft(
+                        HTML(
+                            f"<warning>Then run 'panqake update {child}' to continue updating the stack</warning>"
+                        )
                     )
                     sys.exit(1)
 
@@ -55,9 +106,17 @@ def update_branches(branch_name=None):
                 update_branch_and_children(child)
 
     # Start the update process
-    print(f"Starting stack update from branch '{branch_name}'...")
+    print_ft(
+        HTML(
+            f"<info>Starting stack update from branch</info> {format_branch(branch_name)}..."
+        )
+    )
     update_branch_and_children(branch_name)
 
     # Return to the original branch
     run_git_command(["checkout", current_branch])
-    print(f"Stack update complete. Returned to branch '{current_branch}'")
+    print_ft(
+        HTML(
+            f"<success>Stack update complete. Returned to branch {format_branch(current_branch)}</success>"
+        )
+    )

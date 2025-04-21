@@ -19,9 +19,7 @@ def create_new_branch(branch_name=None, base_branch=None):
     # If no branch name specified, prompt for it
     if not branch_name:
         validator = BranchNameValidator()
-        branch_name = prompt_input(
-            "Enter new branch name: ", validator=validator
-        )
+        branch_name = prompt_input("Enter new branch name: ", validator=validator)
 
     # If no base branch specified, use current branch but offer selection
     current = get_current_branch()

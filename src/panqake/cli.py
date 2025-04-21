@@ -7,13 +7,13 @@ A Python implementation of git-stacking workflow management
 import argparse
 import sys
 
-from panqake.utils.git import is_git_repo
-from panqake.utils.config import init_panqake, check_dependencies
-from panqake.commands.new import create_new_branch
-from panqake.commands.list import list_branches
-from panqake.commands.update import update_branches
 from panqake.commands.delete import delete_branch
+from panqake.commands.list import list_branches
+from panqake.commands.new import create_new_branch
 from panqake.commands.pr import create_pull_requests
+from panqake.commands.update import update_branches
+from panqake.utils.config import check_dependencies, init_panqake
+from panqake.utils.git import is_git_repo
 
 
 def main():

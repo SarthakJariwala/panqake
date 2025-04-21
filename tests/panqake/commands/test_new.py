@@ -49,9 +49,7 @@ def test_create_new_branch_with_args(mock_git_functions):
     mock_git_functions["run_git_command"].assert_called_once_with(
         ["checkout", "-b", "feature-branch", "main"]
     )
-    mock_git_functions["add_to_stack"].assert_called_once_with(
-        "feature-branch", "main"
-    )
+    mock_git_functions["add_to_stack"].assert_called_once_with("feature-branch", "main")
 
 
 def test_create_new_branch_interactive(mock_git_functions):
@@ -69,6 +67,4 @@ def test_create_new_branch_interactive(mock_git_functions):
     mock_git_functions["run_git_command"].assert_called_once_with(
         ["checkout", "-b", "feature-branch", "main"]
     )
-    mock_git_functions["add_to_stack"].assert_called_once_with(
-        "feature-branch", "main"
-    )
+    mock_git_functions["add_to_stack"].assert_called_once_with("feature-branch", "main")

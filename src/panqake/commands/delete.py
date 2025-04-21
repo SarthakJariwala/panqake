@@ -16,8 +16,8 @@ from panqake.utils.questionary_prompt import (
 )
 
 
-def delete_branch(branch_name):
-    """Delete a branch and relink the stack."""
+def validate_branch_for_deletion(branch_name):
+    """Validate that a branch can be deleted."""
     current_branch = get_current_branch()
 
     # Check if target branch exists
@@ -34,7 +34,11 @@ def delete_branch(branch_name):
         )
         sys.exit(1)
 
-    # Get parent and children of the target branch
+    return current_branch
+
+
+def get_branch_relationships(branch_name):
+    """Get parent and child branches and validate parent exists."""
     parent_branch = get_parent_branch(branch_name)
     child_branches = get_child_branches(branch_name)
 
@@ -45,7 +49,11 @@ def delete_branch(branch_name):
         )
         sys.exit(1)
 
-    # Show summary and ask for confirmation
+    return parent_branch, child_branches
+
+
+def display_deletion_info(branch_name, parent_branch, child_branches):
+    """Display deletion information and ask for confirmation."""
     print_formatted_text(
         f"<info>Branch to delete:</info> {format_branch(branch_name, danger=True)}"
     )
@@ -61,49 +69,69 @@ def delete_branch(branch_name):
     # Confirm deletion
     if not prompt_confirm("Are you sure you want to delete this branch?"):
         print_formatted_text("<info>Branch deletion cancelled.</info>")
+        return False
+
+    return True
+
+
+def relink_child_branches(child_branches, parent_branch, current_branch, branch_name):
+    """Relink child branches to the parent branch."""
+    if not child_branches:
+        return True
+
+    print_formatted_text(
+        f"<info>Relinking child branches to parent '{parent_branch}'...</info>"
+    )
+
+    for child in child_branches:
+        print_formatted_text(
+            f"<info>Processing child branch:</info> {format_branch(child)}"
+        )
+
+        # Checkout the child branch
+        checkout_result = run_git_command(["checkout", child])
+        if checkout_result is None:
+            print_formatted_text(
+                f"<warning>Error: Failed to checkout branch '{child}'</warning>"
+            )
+            run_git_command(["checkout", current_branch])
+            sys.exit(1)
+
+        # Rebase onto the grandparent branch
+        if parent_branch:
+            rebase_result = run_git_command(["rebase", parent_branch])
+            if rebase_result is None:
+                print_formatted_text(
+                    f"<warning>Error: Rebase conflict detected in branch '{child}'</warning>"
+                )
+                print_formatted_text(
+                    "<warning>Please resolve conflicts and run 'git rebase --continue'</warning>"
+                )
+                print_formatted_text(
+                    f"<warning>Then run 'panqake delete {branch_name}' again to retry</warning>"
+                )
+                sys.exit(1)
+
+            # Update stack metadata
+            add_to_stack(child, parent_branch)
+
+    return True
+
+
+def delete_branch(branch_name):
+    """Delete a branch and relink the stack."""
+    current_branch = validate_branch_for_deletion(branch_name)
+    parent_branch, child_branches = get_branch_relationships(branch_name)
+
+    if not display_deletion_info(branch_name, parent_branch, child_branches):
         return
 
     print_formatted_text(
         f"<info>Deleting branch '{branch_name}' from the stack...</info>"
     )
 
-    # Process each child branch
-    if child_branches:
-        print_formatted_text(
-            f"<info>Relinking child branches to parent '{parent_branch}'...</info>"
-        )
-
-        for child in child_branches:
-            print_formatted_text(
-                f"<info>Processing child branch:</info> {format_branch(child)}"
-            )
-
-            # Checkout the child branch
-            checkout_result = run_git_command(["checkout", child])
-            if checkout_result is None:
-                print_formatted_text(
-                    f"<warning>Error: Failed to checkout branch '{child}'</warning>"
-                )
-                run_git_command(["checkout", current_branch])
-                sys.exit(1)
-
-            # Rebase onto the grandparent branch
-            if parent_branch:
-                rebase_result = run_git_command(["rebase", parent_branch])
-                if rebase_result is None:
-                    print_formatted_text(
-                        f"<warning>Error: Rebase conflict detected in branch '{child}'</warning>"
-                    )
-                    print_formatted_text(
-                        "<warning>Please resolve conflicts and run 'git rebase --continue'</warning>"
-                    )
-                    print_formatted_text(
-                        f"<warning>Then run 'panqake delete {branch_name}' again to retry</warning>"
-                    )
-                    sys.exit(1)
-
-                # Update stack metadata
-                add_to_stack(child, parent_branch)
+    # Process child branches
+    relink_child_branches(child_branches, parent_branch, current_branch, branch_name)
 
     # Return to original branch if it's not the one being deleted
     if branch_name != current_branch:

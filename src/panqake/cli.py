@@ -25,7 +25,11 @@ def main():
 
     # new command
     new_parser = subparsers.add_parser("new", help="Create a new branch in the stack")
-    new_parser.add_argument("branch_name", help="Name of the new branch to create")
+    new_parser.add_argument(
+        "branch_name",
+        nargs="?",
+        help="Name of the new branch to create",
+    )
     new_parser.add_argument(
         "base_branch",
         nargs="?",

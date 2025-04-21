@@ -2,15 +2,39 @@
 
 import sys
 
-from panqake.utils.git import get_current_branch, branch_exists, run_git_command
+from prompt_toolkit.completion import WordCompleter
+
 from panqake.utils.config import add_to_stack
+from panqake.utils.git import (
+    branch_exists,
+    get_current_branch,
+    list_all_branches,
+    run_git_command,
+)
+from panqake.utils.prompt import BranchNameValidator, prompt_input
 
 
-def create_new_branch(branch_name, base_branch=None):
+def create_new_branch(branch_name=None, base_branch=None):
     """Create a new branch in the stack."""
-    # If no base branch specified, use current branch
+    # If no branch name specified, prompt for it
+    if not branch_name:
+        validator = BranchNameValidator()
+        branch_name = prompt_input(
+            "Enter new branch name: ", validator=validator
+        )
+
+    # If no base branch specified, use current branch but offer selection
+    current = get_current_branch()
     if not base_branch:
-        base_branch = get_current_branch()
+        base_branch = current
+        branches = list_all_branches()
+        if branches:
+            branch_completer = WordCompleter(branches)
+            base_branch = prompt_input(
+                f"Enter base branch [default: {current}]: ",
+                completer=branch_completer,
+                default=current,
+            )
 
     # Check if the new branch already exists
     if branch_exists(branch_name):

@@ -33,11 +33,9 @@ def print_branch_tree(branch, prefix="", is_last=True):
             if is_child_last:
                 # Last child gets a different connector
                 child_prefix = f"{prefix}  └── "
-                next_prefix = f"{prefix}     "
             else:
                 # Not the last child
                 child_prefix = f"{prefix}  ├── "
-                next_prefix = f"{prefix}  │   "
 
             print_branch_tree(child, child_prefix, is_child_last)
 

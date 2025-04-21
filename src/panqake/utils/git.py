@@ -48,6 +48,14 @@ def get_current_branch():
     return run_git_command(["symbolic-ref", "--short", "HEAD"])
 
 
+def list_all_branches():
+    """Get a list of all branches."""
+    result = run_git_command(["branch", "--format=%(refname:short)"])
+    if result:
+        return result.splitlines()
+    return []
+
+
 def branch_exists(branch):
     """Check if a branch exists."""
     try:

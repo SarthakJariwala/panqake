@@ -86,9 +86,7 @@ def test_print_branch_tree(mock_git_config):
     # Just check the branch names are there in the right order
     print_calls = mock_git_config["print"].call_args_list
     assert len(print_calls) >= 5
-    for i, branch in enumerate(
-        ["main", "develop", "feature", "enhancement", "bugfix"]
-    ):
+    for i, branch in enumerate(["main", "develop", "feature", "enhancement", "bugfix"]):
         assert branch in print_calls[i][0][0]
 
 
@@ -152,9 +150,11 @@ def test_list_branches_nonexistent_branch(mock_git_config):
     # Call with nonexistent branch
     list_branches("nonexistent")
 
-    # Verify error message
-    mock_git_config["print"].assert_any_call(
-        "Error: Branch 'nonexistent' does not exist"
+    # Verify error message - adjusted to handle ANSI codes
+    # The error message in the source contains ANSI color codes
+    assert any(
+        "nonexistent' does not exist" in str(call[0][0])
+        for call in mock_git_config["print"].call_args_list
     )
 
     # Verify exit

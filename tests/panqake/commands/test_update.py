@@ -17,7 +17,7 @@ def mock_dependencies():
         patch("panqake.commands.update.get_child_branches") as mock_get_children,
         patch("panqake.commands.update.run_git_command") as mock_run_git,
         patch("panqake.commands.update.prompt_confirm") as mock_confirm,
-        patch("panqake.commands.update.print_ft") as mock_print,
+        patch("panqake.commands.update.print_formatted_text") as mock_print,
         patch("panqake.commands.update.format_branch") as mock_format,
         patch("panqake.commands.update.sys.exit") as mock_exit,
     ):

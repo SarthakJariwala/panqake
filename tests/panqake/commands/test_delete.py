@@ -20,7 +20,7 @@ def mock_dependencies():
         patch("panqake.commands.delete.remove_from_stack") as mock_remove_from_stack,
         patch("panqake.commands.delete.run_git_command") as mock_run_git,
         patch("panqake.commands.delete.prompt_confirm") as mock_confirm,
-        patch("panqake.commands.delete.print_ft") as mock_print,
+        patch("panqake.commands.delete.print_formatted_text") as mock_print,
         patch("panqake.commands.delete.format_branch") as mock_format,
         patch("panqake.commands.delete.sys.exit") as mock_exit,
     ):

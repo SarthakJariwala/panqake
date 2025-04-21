@@ -15,7 +15,7 @@ def mock_dependencies():
         patch("panqake.commands.pr.shutil.which") as mock_which,
         patch("panqake.commands.pr.get_current_branch") as mock_get_current,
         patch("panqake.commands.pr.branch_exists") as mock_branch_exists,
-        patch("panqake.commands.pr.print_ft") as mock_print,
+        patch("panqake.commands.pr.print_formatted_text") as mock_print,
         patch("panqake.commands.pr.sys.exit") as mock_exit,
     ):
         # Set default return values

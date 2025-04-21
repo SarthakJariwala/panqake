@@ -34,11 +34,9 @@ def prompt_input(message, validator=None, completer=None, default=""):
 
 def prompt_confirm(message, default=False):
     """Prompt for confirmation with yes/no options."""
-    return confirm(
-        HTML(f"<prompt>{message}</prompt>"),
-        default=default,
-        style=style,
-    )
+    # confirm() doesn't accept default or style parameters in prompt_toolkit 3.0.51
+    result = confirm(HTML(f"<prompt>{message}</prompt>"))
+    return result
 
 
 def format_branch(branch_name, current=False, danger=False):

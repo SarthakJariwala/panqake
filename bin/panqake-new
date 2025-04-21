@@ -1,0 +1,47 @@
+#!/bin/bash
+# Create a new branch in the stack
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+source "$SCRIPT_DIR/../lib/common.sh"
+
+usage() {
+  echo "Usage: panqake-new <branch-name> [base-branch]"
+  echo "  Creates a new branch in the stack"
+  echo "  <branch-name>: Name of the new branch to create"
+  echo "  [base-branch]: Optional base branch (defaults to current branch)"
+  exit 1
+}
+
+if [ $# -lt 1 ]; then
+  usage
+fi
+
+NEW_BRANCH="$1"
+BASE_BRANCH="${2:-$(get_current_branch)}"
+
+# Check if the new branch already exists
+if branch_exists "$NEW_BRANCH"; then
+  echo "Error: Branch '$NEW_BRANCH' already exists"
+  exit 1
+fi
+
+# Check if the base branch exists
+if [ -n "$BASE_BRANCH" ] && ! branch_exists "$BASE_BRANCH"; then
+  echo "Error: Base branch '$BASE_BRANCH' does not exist"
+  exit 1
+fi
+
+echo "Creating new branch '$NEW_BRANCH' based on '$BASE_BRANCH'..."
+
+# Create the new branch
+git checkout -b "$NEW_BRANCH" "$BASE_BRANCH"
+if [ $? -ne 0 ]; then
+  echo "Error: Failed to create new branch"
+  exit 1
+fi
+
+# Record the dependency information
+add_to_stack "$NEW_BRANCH" "$BASE_BRANCH"
+
+echo "Success! Created new branch '$NEW_BRANCH' in the stack"
+echo "Parent branch: $BASE_BRANCH"

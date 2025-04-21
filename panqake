@@ -1,0 +1,61 @@
+#!/bin/bash
+# Main panqake script for git stacking
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+BIN_DIR="$SCRIPT_DIR/bin"
+
+usage() {
+  echo "panqake - Git branch stacking utility"
+  echo ""
+  echo "Usage: panqake <command> [options]"
+  echo ""
+  echo "Commands:"
+  echo "  new <branch-name> [base]   Create a new branch in the stack"
+  echo "  list [branch]              List the branch stack"
+  echo "  update [branch]            Update branches after changes"
+  echo "  delete <branch>            Delete a branch and relink the stack"
+  echo "  pr [branch]                Create PRs for the branch stack"
+  echo "  help                       Show this help message"
+  echo ""
+  echo "Examples:"
+  echo "  panqake new feature-login     # Create a new branch based on current branch"
+  echo "  panqake list                  # Show the current branch stack"
+  echo "  panqake update                # Update all child branches after changes"
+  echo "  panqake delete feature-login  # Delete a branch and relink the stack"
+  echo "  panqake pr                    # Create PRs for the current branch stack"
+  exit 1
+}
+
+# Check for commands
+if [ $# -lt 1 ]; then
+  usage
+fi
+
+COMMAND="$1"
+shift
+
+# Execute the appropriate command
+case "$COMMAND" in
+  new)
+    "$BIN_DIR/panqake-new" "$@"
+    ;;
+  list)
+    "$BIN_DIR/panqake-list" "$@"
+    ;;
+  update)
+    "$BIN_DIR/panqake-update" "$@"
+    ;;
+  delete)
+    "$BIN_DIR/panqake-delete" "$@"
+    ;;
+  pr)
+    "$BIN_DIR/panqake-pr" "$@"
+    ;;
+  help)
+    usage
+    ;;
+  *)
+    echo "Error: Unknown command '$COMMAND'"
+    usage
+    ;;
+esac

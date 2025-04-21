@@ -2,9 +2,10 @@
 
 import os
 import subprocess
+from typing import List, Optional
 
 
-def is_git_repo():
+def is_git_repo() -> bool:
     """Check if current directory is in a git repository."""
     try:
         subprocess.run(
@@ -18,7 +19,7 @@ def is_git_repo():
         return False
 
 
-def run_git_command(command):
+def run_git_command(command: List[str]) -> Optional[str]:
     """Run a git command and return its output."""
     try:
         result = subprocess.run(
@@ -35,7 +36,7 @@ def run_git_command(command):
         return None
 
 
-def get_repo_id():
+def get_repo_id() -> Optional[str]:
     """Get the current repository identifier."""
     repo_path = run_git_command(["rev-parse", "--show-toplevel"])
     if repo_path:
@@ -43,12 +44,12 @@ def get_repo_id():
     return None
 
 
-def get_current_branch():
+def get_current_branch() -> Optional[str]:
     """Get the current branch name."""
     return run_git_command(["symbolic-ref", "--short", "HEAD"])
 
 
-def list_all_branches():
+def list_all_branches() -> List[str]:
     """Get a list of all branches."""
     result = run_git_command(["branch", "--format=%(refname:short)"])
     if result:
@@ -56,7 +57,7 @@ def list_all_branches():
     return []
 
 
-def branch_exists(branch):
+def branch_exists(branch: str) -> bool:
     """Check if a branch exists."""
     try:
         subprocess.run(

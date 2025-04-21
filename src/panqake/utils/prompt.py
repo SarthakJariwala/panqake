@@ -1,6 +1,10 @@
 """Prompt toolkit utilities for interactive CLI."""
 
+from typing import Optional
+
 from prompt_toolkit import prompt
+from prompt_toolkit.completion import Completer
+from prompt_toolkit.document import Document
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.shortcuts import confirm
 from prompt_toolkit.styles import Style
@@ -21,7 +25,12 @@ style = Style.from_dict(
 )
 
 
-def prompt_input(message, validator=None, completer=None, default=""):
+def prompt_input(
+    message: str,
+    validator: Optional[Validator] = None,
+    completer: Optional[Completer] = None,
+    default: str = "",
+) -> str:
     """Get user input with prompt_toolkit."""
     return prompt(
         HTML(f"<prompt>{message}</prompt>"),
@@ -32,14 +41,16 @@ def prompt_input(message, validator=None, completer=None, default=""):
     )
 
 
-def prompt_confirm(message):
+def prompt_confirm(message: str) -> bool:
     """Prompt for confirmation with yes/no options."""
     # confirm() doesn't accept default or style parameters in prompt_toolkit 3.0.51
     result = confirm(HTML(f"<prompt>{message}</prompt>"))
     return result
 
 
-def format_branch(branch_name, current=False, danger=False):
+def format_branch(
+    branch_name: str, current: bool = False, danger: bool = False
+) -> HTML:
     """Format branch name with appropriate style."""
     if danger:
         return HTML(f"<danger>{branch_name}</danger>")
@@ -52,7 +63,7 @@ def format_branch(branch_name, current=False, danger=False):
 class BranchNameValidator(Validator):
     """Validator for branch names."""
 
-    def validate(self, document):
+    def validate(self, document: Document) -> None:
         """Validate branch name."""
         text = document.text
         if not text:
@@ -66,7 +77,7 @@ class BranchNameValidator(Validator):
 class PRTitleValidator(Validator):
     """Validator for PR titles."""
 
-    def validate(self, document):
+    def validate(self, document: Document) -> None:
         """Validate PR title."""
         text = document.text
         if not text:

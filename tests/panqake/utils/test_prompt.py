@@ -66,9 +66,9 @@ def test_prompt_confirm(mock_confirm):
     # Reset mock
     mock_confirm.reset_mock()
 
-    # Test with explicit default
+    # Test with different message
     mock_confirm.return_value = False
-    result = prompt_confirm("Delete branch?", default=True)
+    result = prompt_confirm("Delete branch?")
     assert result is False
     mock_confirm.assert_called_once()
 

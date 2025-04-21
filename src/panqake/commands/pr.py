@@ -113,7 +113,7 @@ def create_pull_requests(branch_name=None):
             print_ft(HTML(f"<info>Target branch:</info> {format_branch(parent)}"))
             print_ft(HTML(f"<info>Title:</info> {title}"))
 
-            if not prompt_confirm("Create this pull request?", default=True):
+            if not prompt_confirm("Create this pull request?"):
                 print_ft(HTML("<info>PR creation skipped.</info>"))
                 return
 

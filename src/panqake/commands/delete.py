@@ -62,9 +62,7 @@ def delete_branch(branch_name):
             print_ft(HTML(f"  {format_branch(child)}"))
 
     # Confirm deletion
-    if not prompt_confirm(
-        "Are you sure you want to delete this branch?", default=False
-    ):
+    if not prompt_confirm("Are you sure you want to delete this branch?"):
         print_ft(HTML("<info>Branch deletion cancelled.</info>"))
         return
 

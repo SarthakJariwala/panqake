@@ -12,7 +12,7 @@ from panqake.commands.list import list_branches
 from panqake.commands.new import create_new_branch
 from panqake.commands.pr import create_pull_requests
 from panqake.commands.update import update_branches
-from panqake.utils.config import check_dependencies, init_panqake
+from panqake.utils.config import init_panqake
 from panqake.utils.git import is_git_repo
 
 
@@ -81,9 +81,6 @@ def main():
     if not is_git_repo():
         print("Error: Not in a git repository")
         sys.exit(1)
-
-    # Check for required dependencies
-    check_dependencies()
 
     # Execute the appropriate command
     if args.command == "new":

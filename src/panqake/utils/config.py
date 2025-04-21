@@ -1,7 +1,6 @@
 """Configuration utilities for panqake git-stacking."""
 
 import json
-import shutil
 from pathlib import Path
 
 from panqake.utils.git import get_repo_id
@@ -21,17 +20,6 @@ def init_panqake():
     if not STACK_FILE.exists():
         with open(STACK_FILE, "w") as f:
             json.dump({}, f)
-
-
-def check_dependencies():
-    """Check for required dependencies."""
-    # Check for jq (used in JSON processing)
-    if not shutil.which("jq"):
-        print("Warning: jq is not installed. It's recommended for JSON processing.")
-        print("Please install jq with your package manager:")
-        print("  - macOS: brew install jq")
-        print("  - Ubuntu/Debian: sudo apt install jq")
-        print("  - CentOS/RHEL: sudo yum install jq")
 
 
 def get_parent_branch(branch):

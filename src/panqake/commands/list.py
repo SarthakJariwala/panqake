@@ -2,8 +2,8 @@
 
 import sys
 
-from panqake.utils.git import get_current_branch, branch_exists
-from panqake.utils.config import get_parent_branch, get_child_branches
+from panqake.utils.config import get_child_branches, get_parent_branch
+from panqake.utils.git import branch_exists, get_current_branch
 
 
 def find_stack_root(branch):

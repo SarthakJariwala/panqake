@@ -2,13 +2,13 @@
 
 import sys
 
-from panqake.utils.git import get_current_branch, branch_exists, run_git_command
 from panqake.utils.config import (
-    get_parent_branch,
-    get_child_branches,
     add_to_stack,
+    get_child_branches,
+    get_parent_branch,
     remove_from_stack,
 )
+from panqake.utils.git import branch_exists, get_current_branch, run_git_command
 
 
 def delete_branch(branch_name):
@@ -56,9 +56,15 @@ def delete_branch(branch_name):
             if parent_branch:
                 rebase_result = run_git_command(["rebase", parent_branch])
                 if rebase_result is None:
-                    print(f"Error: Rebase conflict detected in branch '{child}'")
-                    print("Please resolve conflicts and run 'git rebase --continue'")
-                    print(f"Then run 'panqake delete {branch_name}' again to retry")
+                    print(
+                        f"Error: Rebase conflict detected in branch '{child}'"
+                    )
+                    print(
+                        "Please resolve conflicts and run 'git rebase --continue'"
+                    )
+                    print(
+                        f"Then run 'panqake delete {branch_name}' again to retry"
+                    )
                     sys.exit(1)
 
                 # Update stack metadata

@@ -2,8 +2,8 @@
 
 import sys
 
-from panqake.utils.git import get_current_branch, branch_exists, run_git_command
 from panqake.utils.config import get_child_branches
+from panqake.utils.git import branch_exists, get_current_branch, run_git_command
 
 
 def update_branches(branch_name=None):
@@ -26,7 +26,9 @@ def update_branches(branch_name=None):
 
         if children:
             for child in children:
-                print(f"Updating branch '{child}' based on changes to '{branch}'...")
+                print(
+                    f"Updating branch '{child}' based on changes to '{branch}'..."
+                )
 
                 # Checkout the child branch
                 checkout_result = run_git_command(["checkout", child])
@@ -38,8 +40,12 @@ def update_branches(branch_name=None):
                 # Rebase onto the parent branch
                 rebase_result = run_git_command(["rebase", branch])
                 if rebase_result is None:
-                    print(f"Error: Rebase conflict detected in branch '{child}'")
-                    print("Please resolve conflicts and run 'git rebase --continue'")
+                    print(
+                        f"Error: Rebase conflict detected in branch '{child}'"
+                    )
+                    print(
+                        "Please resolve conflicts and run 'git rebase --continue'"
+                    )
                     print(
                         f"Then run 'panqake update {child}' to continue updating the stack"
                     )

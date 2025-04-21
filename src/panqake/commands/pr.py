@@ -4,8 +4,8 @@ import shutil
 import subprocess
 import sys
 
-from panqake.utils.git import get_current_branch, branch_exists
-from panqake.utils.config import get_parent_branch, get_child_branches
+from panqake.utils.config import get_child_branches, get_parent_branch
+from panqake.utils.git import branch_exists, get_current_branch
 
 
 def create_pull_requests(branch_name=None):
@@ -13,7 +13,9 @@ def create_pull_requests(branch_name=None):
     # Check for GitHub CLI
     if not shutil.which("gh"):
         print("Error: GitHub CLI (gh) is required but not installed.")
-        print("Please install GitHub CLI: https://cli.github.com/manual/installation")
+        print(
+            "Please install GitHub CLI: https://cli.github.com/manual/installation"
+        )
         sys.exit(1)
 
     # If no branch specified, use current branch

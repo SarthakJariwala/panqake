@@ -40,7 +40,7 @@ style = questionary.Style(
         ("highlighted", "fg:#00FF00 bold"),  # green highlighted item
         ("selected", "fg:#00FF00"),  # green selected items
         ("danger", "fg:#FF5555 bold"),  # bright red for dangerous actions
-        ("warning", "fg:#FFCC00"),  # yellow for warnings
+        ("warning", "fg:#FFFF00"),  # bright yellow for warnings
         ("info", "fg:#00CCFF"),  # cyan for info
         ("success", "fg:#00FF00"),  # bright green for success
         ("branch", "fg:#00FF00"),  # green for branch names
@@ -51,7 +51,7 @@ style = questionary.Style(
 # Mapping for style classes to questionary print style strings
 # These colors match the terminal's native appearance
 STYLE_MAP = {
-    "warning": "fg:#FFCC00",  # yellow
+    "warning": "fg:#FFFF00",  # bright yellow
     "danger": "fg:#FF5555 bold",  # bright red bold
     "info": "fg:#00CCFF",  # cyan
     "success": "fg:#00FF00",  # bright green

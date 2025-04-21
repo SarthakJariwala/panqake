@@ -11,6 +11,7 @@ from panqake.commands.delete import delete_branch
 from panqake.commands.list import list_branches
 from panqake.commands.new import create_new_branch
 from panqake.commands.pr import create_pull_requests
+from panqake.commands.switch import switch_branch
 from panqake.commands.update import update_branches
 from panqake.utils.config import init_panqake
 from panqake.utils.git import is_git_repo
@@ -68,6 +69,16 @@ def main():
         help="Optional branch to start from (defaults to current branch)",
     )
 
+    # switch command
+    switch_parser = subparsers.add_parser(
+        "switch", help="Interactively switch between branches"
+    )
+    switch_parser.add_argument(
+        "branch_name",
+        nargs="?",
+        help="Optional branch to switch to (defaults to interactive selection)",
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -93,6 +104,8 @@ def main():
         delete_branch(args.branch_name)
     elif args.command == "pr":
         create_pull_requests(args.branch_name)
+    elif args.command == "switch":
+        switch_branch(args.branch_name)
 
 
 if __name__ == "__main__":

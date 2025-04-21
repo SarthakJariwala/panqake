@@ -1,0 +1,172 @@
+"""Questionary utilities for interactive CLI.
+
+This module provides a set of utilities for creating interactive CLI prompts
+using the questionary library. It replaces the previous prompt_toolkit implementation
+with a more user-friendly interface.
+
+Available styles for formatting text:
+- warning: amber/orange color for warnings
+- danger: bright red bold for dangerous actions/errors
+- info: bright blue for informational messages
+- success: bright green for success messages
+- branch: purple for branch names
+- muted: gray for less important text
+
+Usage example:
+    from panqake.utils.questionary_prompt import print_formatted_text
+
+    # Print styled text
+    print_formatted_text("<info>This is an informational message</info>")
+    print_formatted_text("<warning>This is a warning</warning>")
+
+    # Format branch names
+    from panqake.utils.questionary_prompt import format_branch
+    formatted = format_branch("main", current=True)
+    print_formatted_text(formatted)
+"""
+
+from typing import Any, List, Optional, Union
+
+import questionary
+from questionary import ValidationError, Validator
+
+# Define a style with colors that work well on both dark and light backgrounds
+style = questionary.Style(
+    [
+        ("qmark", "fg:#FF9D00 bold"),  # amber/orange question mark
+        ("question", "bold"),  # bold question text
+        ("answer", "fg:#0088DD"),  # bright blue answers
+        ("pointer", "fg:#9933CC bold"),  # purple pointer
+        ("highlighted", "fg:#9933CC bold"),  # purple highlighted item
+        ("selected", "fg:#44AABB"),  # teal selected items
+        ("danger", "fg:#FF5555 bold"),  # bright red for dangerous actions
+        ("warning", "fg:#FF9D00"),  # amber/orange for warnings
+        ("info", "fg:#0088DD"),  # bright blue for info
+        ("success", "fg:#00CC66"),  # bright green for success
+        ("branch", "fg:#9933CC"),  # purple for branch names
+        ("muted", "fg:#888888"),  # gray for less important text
+    ]
+)
+
+# Mapping for style classes to questionary print style strings
+# These colors have been selected for good visibility on both dark/light backgrounds
+STYLE_MAP = {
+    "warning": "fg:#FF9D00",  # amber/orange
+    "danger": "fg:#FF5555 bold",  # bright red bold
+    "info": "fg:#0088DD",  # bright blue
+    "success": "fg:#00CC66",  # bright green
+    "branch": "fg:#9933CC",  # purple
+    "muted": "fg:#888888",  # gray
+}
+
+
+def prompt_input(
+    message: str,
+    validator: Optional[Validator] = None,
+    completer: Optional[Union[List[str], Any]] = None,
+    default: str = "",
+) -> str:
+    """Get user input using questionary."""
+    # Extract choices from different completer types
+    choices = None
+    if completer:
+        if isinstance(completer, list):
+            # Direct list of choices
+            choices = completer
+        elif hasattr(completer, "words"):
+            # WordCompleter from prompt_toolkit
+            choices = completer.words
+
+    # If we have choices, use autocomplete
+    if choices:
+        return questionary.autocomplete(
+            message, choices=choices, default=default, validate=validator, style=style
+        ).ask()
+
+    # Otherwise use regular text input
+    return questionary.text(
+        message, default=default, validate=validator, style=style
+    ).ask()
+
+
+def prompt_confirm(message: str) -> bool:
+    """Prompt for confirmation with yes/no options."""
+    return questionary.confirm(message, default=False, style=style).ask()
+
+
+def format_branch(branch_name: str, current: bool = False, danger: bool = False) -> str:
+    """Format branch name with HTML-like style tags.
+
+    This function does not print, it just returns the formatted string.
+    Use print_formatted_text to display it.
+    """
+    if danger:
+        return f"<danger>{branch_name}</danger>"
+    elif current:
+        return f"<branch>* {branch_name}</branch>"
+    else:
+        return f"<branch>{branch_name}</branch>"
+
+
+def print_formatted_text(text: Any) -> None:
+    """Print formatted text using questionary's print function."""
+    # If text is a string, check for HTML-like tags
+    if isinstance(text, str):
+        for style_class in STYLE_MAP:
+            open_tag = f"<{style_class}>"
+            close_tag = f"</{style_class}>"
+
+            if open_tag in text and close_tag in text:
+                # Extract the content between tags
+                start_idx = text.find(open_tag) + len(open_tag)
+                end_idx = text.find(close_tag)
+                content = text[start_idx:end_idx]
+
+                # Print with the corresponding style
+                questionary.print(content, style=STYLE_MAP[style_class])
+                return
+
+        # If no tags found, print as normal text
+        print(text)
+        return
+
+    # Handle prompt_toolkit HTML objects
+    if hasattr(text, "value") and isinstance(text.value, str):
+        html_text = text.value
+        # Basic parsing of HTML-like format from prompt_toolkit
+        for style_class in STYLE_MAP:
+            if f"<{style_class}>" in html_text and f"</{style_class}>" in html_text:
+                content = html_text.split(f"<{style_class}>")[1].split(
+                    f"</{style_class}>"
+                )[0]
+                questionary.print(content, style=STYLE_MAP[style_class])
+                return
+
+    # Fallback for simple text
+    print(str(text))
+
+
+class BranchNameValidator(Validator):
+    """Validator for branch names."""
+
+    def validate(self, document):
+        """Validate branch name."""
+        text = document.text
+        if not text:
+            raise ValidationError(message="Branch name cannot be empty")
+        if " " in text:
+            raise ValidationError(message="Branch name cannot contain spaces")
+        if ".." in text:
+            raise ValidationError(message="Branch name cannot contain '..'")
+
+
+class PRTitleValidator(Validator):
+    """Validator for PR titles."""
+
+    def validate(self, document):
+        """Validate PR title."""
+        text = document.text
+        if not text:
+            raise ValidationError(message="PR title cannot be empty")
+        if len(text) < 10:
+            raise ValidationError(message="PR title should be at least 10 characters")

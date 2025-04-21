@@ -4,14 +4,12 @@ import shutil
 import subprocess
 import sys
 
-from prompt_toolkit import print_formatted_text as print_ft
-from prompt_toolkit.formatted_text import HTML
-
 from panqake.utils.config import get_child_branches, get_parent_branch
 from panqake.utils.git import branch_exists, get_current_branch, run_git_command
-from panqake.utils.prompt import (
+from panqake.utils.questionary_prompt import (
     PRTitleValidator,
     format_branch,
+    print_formatted_text,
     prompt_confirm,
     prompt_input,
 )
@@ -21,15 +19,11 @@ def create_pull_requests(branch_name=None):
     """Create pull requests for branches in the stack."""
     # Check for GitHub CLI
     if not shutil.which("gh"):
-        print_ft(
-            HTML(
-                "<warning>Error: GitHub CLI (gh) is required but not installed.</warning>"
-            )
+        print_formatted_text(
+            "<warning>Error: GitHub CLI (gh) is required but not installed.</warning>"
         )
-        print_ft(
-            HTML(
-                "<info>Please install GitHub CLI: https://cli.github.com/manual/installation</info>"
-            )
+        print_formatted_text(
+            "<info>Please install GitHub CLI: https://cli.github.com/manual/installation</info>"
         )
         sys.exit(1)
 
@@ -39,8 +33,8 @@ def create_pull_requests(branch_name=None):
 
     # Check if target branch exists
     if not branch_exists(branch_name):
-        print_ft(
-            HTML(f"<warning>Error: Branch '{branch_name}' does not exist</warning>")
+        print_formatted_text(
+            f"<warning>Error: Branch '{branch_name}' does not exist</warning>"
         )
         sys.exit(1)
 
@@ -79,10 +73,12 @@ def create_pull_requests(branch_name=None):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
-            print_ft(HTML(f"Branch {format_branch(branch)} already has an open PR"))
+            print_formatted_text(
+                f"Branch {format_branch(branch)} already has an open PR"
+            )
         except subprocess.CalledProcessError:
-            print_ft(
-                HTML(f"<info>Creating PR for branch:</info> {format_branch(branch)}")
+            print_formatted_text(
+                f"<info>Creating PR for branch:</info> {format_branch(branch)}"
             )
 
             # Get parent branch for PR target
@@ -109,12 +105,12 @@ def create_pull_requests(branch_name=None):
             )
 
             # Show summary and confirm
-            print_ft(HTML(f"<info>PR for branch:</info> {format_branch(branch)}"))
-            print_ft(HTML(f"<info>Target branch:</info> {format_branch(parent)}"))
-            print_ft(HTML(f"<info>Title:</info> {title}"))
+            print_formatted_text(f"<info>PR for branch:</info> {format_branch(branch)}")
+            print_formatted_text(f"<info>Target branch:</info> {format_branch(parent)}")
+            print_formatted_text(f"<info>Title:</info> {title}")
 
             if not prompt_confirm("Create this pull request?"):
-                print_ft(HTML("<info>PR creation skipped.</info>"))
+                print_formatted_text("<info>PR creation skipped.</info>")
                 return
 
             # Create the PR
@@ -135,16 +131,12 @@ def create_pull_requests(branch_name=None):
                     ],
                     check=True,
                 )
-                print_ft(
-                    HTML(
-                        f"<success>PR created successfully for {format_branch(branch)}</success>"
-                    )
+                print_formatted_text(
+                    f"<success>PR created successfully for {format_branch(branch)}</success>"
                 )
             except subprocess.CalledProcessError:
-                print_ft(
-                    HTML(
-                        f"<warning>Error: Failed to create PR for branch '{branch}'</warning>"
-                    )
+                print_formatted_text(
+                    f"<warning>Error: Failed to create PR for branch '{branch}'</warning>"
                 )
                 sys.exit(1)
 
@@ -163,11 +155,9 @@ def create_pull_requests(branch_name=None):
             if is_in_path_to_target or child == branch_name:
                 create_prs_bottom_up(child)
 
-    print_ft(
-        HTML(
-            f"<info>Creating PRs from the bottom of the stack up to:</info> {format_branch(branch_name)}"
-        )
+    print_formatted_text(
+        f"<info>Creating PRs from the bottom of the stack up to:</info> {format_branch(branch_name)}"
     )
     create_prs_bottom_up(oldest_branch)
 
-    print_ft(HTML("<success>Pull request creation complete</success>"))
+    print_formatted_text("<success>Pull request creation complete</success>")

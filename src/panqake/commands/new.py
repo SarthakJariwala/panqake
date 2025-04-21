@@ -2,8 +2,6 @@
 
 import sys
 
-from prompt_toolkit.completion import WordCompleter
-
 from panqake.utils.config import add_to_stack
 from panqake.utils.git import (
     branch_exists,
@@ -11,7 +9,7 @@ from panqake.utils.git import (
     list_all_branches,
     run_git_command,
 )
-from panqake.utils.prompt import BranchNameValidator, prompt_input
+from panqake.utils.questionary_prompt import BranchNameValidator, prompt_input
 
 
 def create_new_branch(branch_name=None, base_branch=None):
@@ -27,10 +25,9 @@ def create_new_branch(branch_name=None, base_branch=None):
         base_branch = current
         branches = list_all_branches()
         if branches:
-            branch_completer = WordCompleter(branches)
             base_branch = prompt_input(
                 f"Enter base branch [default: {current}]: ",
-                completer=branch_completer,
+                completer=branches,
                 default=current,
             )
 

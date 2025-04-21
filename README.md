@@ -97,3 +97,20 @@ MIT
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Changelog
+
+### v0.1.1 (Unreleased)
+
+- Switched CLI interface from prompt_toolkit to questionary for improved user experience
+- Enhanced command-line prompts with better styling and autocomplete
+- Fixed styling issues in branch listing display
+- Improved output formatting for colored text
+- Added custom color scheme that works well on both light and dark terminals
+- Added documentation for the style system
+
+### v0.1.0
+
+- Initial release with core functionality
+- Branch stacking management
+- PR creation support

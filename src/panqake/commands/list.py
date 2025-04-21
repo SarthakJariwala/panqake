@@ -24,9 +24,9 @@ def print_branch_tree(branch, prefix="", is_last=True):
 
     # Format the branch display string with proper indentation
     if is_current:
-        # Apply branch styling for current branch only
-        branch_display = f"{prefix} * {branch}"
-        print_formatted_text(f"<branch>{branch_display}</branch>")
+        # Apply branch styling for current branch only - only style the branch name, not the prefix
+        formatted_branch = f"<branch>* {branch}</branch>"
+        print_formatted_text(f"{prefix} {formatted_branch}")
     else:
         # Non-current branches use default terminal text color
         branch_display = f"{prefix}   {branch}"

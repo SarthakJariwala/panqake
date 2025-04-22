@@ -1,12 +1,10 @@
-"""Questionary utilities for interactive CLI.
+"""Questionary prompt utilities for panqake git-stacking utility.
 
-This module provides a set of utilities for creating interactive CLI prompts
-using the questionary library. It replaces the previous prompt_toolkit implementation
-with a more user-friendly interface.
+This module provides styled prompt utilities for user interaction.
 
-Available styles for formatting text:
-- warning: yellow/amber for warnings
-- danger: bright red for dangerous actions/errors
+Styling options:
+- warning: bright yellow for warnings
+- danger: bright red for dangerous actions
 - info: cyan for informational messages
 - success: bright green for success messages
 - branch: green for branch names

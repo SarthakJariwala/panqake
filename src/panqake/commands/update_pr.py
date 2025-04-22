@@ -1,10 +1,15 @@
 """Command for updating remote branches and pull requests."""
 
-import shutil
-import subprocess
 import sys
 
-from panqake.utils.git import branch_exists, get_current_branch
+from panqake.utils.git import (
+    push_branch_to_remote,
+    validate_branch,
+)
+from panqake.utils.github import (
+    branch_has_pr,
+    check_github_cli_installed,
+)
 from panqake.utils.questionary_prompt import (
     format_branch,
     print_formatted_text,
@@ -12,73 +17,10 @@ from panqake.utils.questionary_prompt import (
 )
 
 
-def branch_has_pr(branch):
-    """Check if a branch already has a PR."""
-    try:
-        subprocess.run(
-            ["gh", "pr", "view", branch],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        return True
-    except subprocess.CalledProcessError:
-        return False
-
-
-def validate_branch(branch_name):
-    """Validate branch exists and get current branch."""
-    # If no branch specified, use current branch
-    if not branch_name:
-        branch_name = get_current_branch()
-
-    # Check if target branch exists
-    if not branch_exists(branch_name):
-        print_formatted_text(
-            f"<warning>Error: Branch '{branch_name}' does not exist</warning>"
-        )
-        sys.exit(1)
-
-    return branch_name
-
-
-def push_branch_to_remote(branch, force=False):
-    """Push a branch to the remote."""
-    try:
-        print_formatted_text("<info>Pushing branch to origin...</info>")
-        print_formatted_text(f"<branch>{branch}</branch>")
-        print("")
-
-        push_cmd = ["push", "-u", "origin", branch]
-        if force:
-            push_cmd.insert(1, "--force-with-lease")
-            print_formatted_text(
-                "<info>Using force-with-lease for safer force push</info>"
-            )
-
-        subprocess.run(
-            ["git"] + push_cmd,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-
-        print_formatted_text("<success>Successfully pushed to origin</success>")
-        print_formatted_text(f"<branch>{branch}</branch>")
-        print("")
-        return True
-    except subprocess.CalledProcessError as e:
-        error_message = e.stderr.decode("utf-8") if e.stderr else "Unknown error"
-        print_formatted_text(
-            f"<warning>Failed to push branch to origin: {error_message}</warning>"
-        )
-        return False
-
-
 def update_pull_request(branch_name=None):
     """Update a remote branch and its associated PR."""
     # Check for GitHub CLI
-    if not shutil.which("gh"):
+    if not check_github_cli_installed():
         print_formatted_text(
             "<warning>Error: GitHub CLI (gh) is required but not installed.</warning>"
         )

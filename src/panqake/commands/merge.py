@@ -1,47 +1,29 @@
 """Command for merging PRs and managing branches after merge."""
 
-import shutil
-import subprocess
 import sys
 
 from panqake.utils.config import get_child_branches, get_parent_branch
-from panqake.utils.git import branch_exists, get_current_branch, run_git_command
+from panqake.utils.git import (
+    branch_exists,
+    delete_remote_branch,
+    get_current_branch,
+    run_git_command,
+    validate_branch,
+)
+from panqake.utils.github import (
+    branch_has_pr,
+    check_github_cli_installed,
+    update_pr_base,
+)
+from panqake.utils.github import (
+    merge_pr as github_merge_pr,
+)
 from panqake.utils.questionary_prompt import (
     format_branch,
     print_formatted_text,
     prompt_confirm,
     prompt_select,
 )
-
-
-def branch_has_pr(branch):
-    """Check if a branch already has a PR."""
-    try:
-        subprocess.run(
-            ["gh", "pr", "view", branch],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        return True
-    except subprocess.CalledProcessError:
-        return False
-
-
-def validate_branch(branch_name):
-    """Validate branch exists and get current branch."""
-    # If no branch specified, use current branch
-    if not branch_name:
-        branch_name = get_current_branch()
-
-    # Check if target branch exists
-    if not branch_exists(branch_name):
-        print_formatted_text(
-            f"<warning>Error: Branch '{branch_name}' does not exist</warning>"
-        )
-        sys.exit(1)
-
-    return branch_name
 
 
 def fetch_latest_base_branch(branch_name):
@@ -78,25 +60,15 @@ def update_pr_base_for_children(branch_name, parent_branch):
     for child in children:
         # Check if the child has a PR
         if branch_has_pr(child):
-            try:
-                print_formatted_text(
-                    f"<info>Updating PR base for child branch</info> {format_branch(child)}..."
-                )
-                subprocess.run(
-                    ["gh", "pr", "edit", child, "--base", parent_branch],
-                    check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
+            print_formatted_text(
+                f"<info>Updating PR base for child branch</info> {format_branch(child)}..."
+            )
+            if update_pr_base(child, parent_branch):
                 print_formatted_text("<success>PR base updated successfully</success>")
-            except subprocess.CalledProcessError as e:
-                error_message = (
-                    e.stderr.decode("utf-8") if e.stderr else "Unknown error"
-                )
+            else:
                 print_formatted_text(
                     f"<warning>Warning: Failed to update PR base for '{child}'</warning>"
                 )
-                print_formatted_text(f"<warning>Details: {error_message}</warning>")
                 success = False
 
         # Recursively update grandchildren
@@ -114,52 +86,20 @@ def merge_pr(branch_name, merge_method="squash"):
         )
         return False
 
-    try:
-        print_formatted_text("<info>Merging PR for branch...</info>")
-        print_formatted_text(f"<branch>{branch_name}</branch>")
-        print("")
-        print_formatted_text(f"<info>Using merge method: {merge_method}</info>")
+    print_formatted_text("<info>Merging PR for branch...</info>")
+    print_formatted_text(f"<branch>{branch_name}</branch>")
+    print("")
+    print_formatted_text(f"<info>Using merge method: {merge_method}</info>")
 
-        # Execute GitHub CLI to merge the PR - do NOT delete the branch yet
-        # We'll need to update child PR references first
-        subprocess.run(
-            ["gh", "pr", "merge", branch_name, f"--{merge_method}"],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-
+    # Execute GitHub CLI to merge the PR - do NOT delete the branch yet
+    # We'll need to update child PR references first
+    if github_merge_pr(branch_name, merge_method):
         print_formatted_text("<success>PR merged successfully</success>")
         return True
-    except subprocess.CalledProcessError as e:
-        error_message = e.stderr.decode("utf-8") if e.stderr else "Unknown error"
+    else:
         print_formatted_text(
             f"<warning>Error: Failed to merge PR for branch '{branch_name}'</warning>"
         )
-        print_formatted_text(f"<warning>Details: {error_message}</warning>")
-        return False
-
-
-def delete_remote_branch(branch_name):
-    """Delete the remote branch after PR is merged and child PRs are updated."""
-    try:
-        print_formatted_text(
-            f"<info>Deleting remote branch {format_branch(branch_name)}...</info>"
-        )
-        subprocess.run(
-            ["git", "push", "origin", "--delete", branch_name],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        print_formatted_text("<success>Remote branch deleted successfully</success>")
-        return True
-    except subprocess.CalledProcessError as e:
-        error_message = e.stderr.decode("utf-8") if e.stderr else "Unknown error"
-        print_formatted_text(
-            f"<warning>Warning: Failed to delete remote branch '{branch_name}'</warning>"
-        )
-        print_formatted_text(f"<warning>Details: {error_message}</warning>")
         return False
 
 
@@ -344,7 +284,7 @@ def perform_merge_operations(
 def merge_branch(branch_name=None, delete_branch=True, update_children=True):
     """Merge a PR and manage the branch stack after merge."""
     # Check for GitHub CLI
-    if not shutil.which("gh"):
+    if not check_github_cli_installed():
         print_formatted_text(
             "<warning>Error: GitHub CLI (gh) is required but not installed.</warning>"
         )

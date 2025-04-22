@@ -1,11 +1,20 @@
 """Command for creating pull requests for branches in the stack."""
 
-import shutil
-import subprocess
 import sys
 
 from panqake.utils.config import get_child_branches, get_parent_branch
-from panqake.utils.git import branch_exists, get_current_branch, run_git_command
+from panqake.utils.git import (
+    branch_exists,
+    get_current_branch,
+    is_branch_pushed_to_remote,
+    push_branch_to_remote,
+    run_git_command,
+)
+from panqake.utils.github import (
+    branch_has_pr,
+    check_github_cli_installed,
+    create_pr,
+)
 from panqake.utils.questionary_prompt import (
     PRTitleValidator,
     format_branch,
@@ -32,53 +41,83 @@ def find_oldest_branch_without_pr(branch):
         return find_oldest_branch_without_pr(parent)
 
 
-def branch_has_pr(branch):
-    """Check if a branch already has a PR."""
-    try:
-        subprocess.run(
-            ["gh", "pr", "view", branch],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+def is_branch_in_path_to_target(child, branch_name, parent_branch):
+    """Check if a child branch is in the path to the target branch."""
+    current = branch_name
+    while current and current != parent_branch:
+        if current == child:
+            return True
+        current = get_parent_branch(current)
+
+    return False
+
+
+def process_branch_for_pr(branch, target_branch):
+    """Process a branch to create PR and handle its children."""
+    if branch_has_pr(branch):
+        print_formatted_text(f"<info>Branch {branch} already has an open PR</info>")
+        pr_created = True
+    else:
+        print_formatted_text("<info>Creating PR for branch:</info> ")
+        print_formatted_text(f"<branch>{branch}</branch>")
+        print("")
+        # Get parent branch for PR target
+        parent = get_parent_branch(branch)
+        if not parent:
+            parent = "main"  # Default to main if no parent
+
+        pr_created = create_pr_for_branch(branch, parent)
+
+    # Only process children if PR was created successfully or already existed
+    if pr_created:
+        # Process any children of this branch that lead to the target
+        for child in get_child_branches(branch):
+            if (
+                is_branch_in_path_to_target(child, target_branch, branch)
+                or child == target_branch
+            ):
+                process_branch_for_pr(child, target_branch)
+    else:
+        print_formatted_text(
+            f"<warning>Skipping child branches of {format_branch(branch)} due to PR creation failure</warning>"
         )
-        return True
-    except subprocess.CalledProcessError:
-        return False
 
 
-def is_branch_pushed_to_remote(branch):
-    """Check if a branch exists on the remote."""
-    result = subprocess.run(
-        ["git", "ls-remote", "--heads", "origin", branch],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+def create_pull_requests(branch_name=None):
+    """Create pull requests for branches in the stack."""
+    # Check for GitHub CLI
+    if not check_github_cli_installed():
+        print_formatted_text(
+            "<warning>Error: GitHub CLI (gh) is required but not installed.</warning>"
+        )
+        print_formatted_text(
+            "<info>Please install GitHub CLI: https://cli.github.com/</info>"
+        )
+        sys.exit(1)
+
+    # If no branch specified, use current branch
+    if not branch_name:
+        branch_name = get_current_branch()
+
+    # Check if target branch exists
+    if not branch_exists(branch_name):
+        print_formatted_text(
+            f"<warning>Error: Branch '{branch_name}' does not exist</warning>"
+        )
+        sys.exit(1)
+
+    # Find the oldest branch in the stack that needs a PR
+    oldest_branch = find_oldest_branch_without_pr(branch_name)
+
+    print_formatted_text(
+        "<info>Creating PRs from the bottom of the stack up to:</info> "
     )
-    return bool(result.stdout.strip())
+    print_formatted_text(f"<branch>{branch_name}</branch>")
+    print("")
 
+    process_branch_for_pr(oldest_branch, branch_name)
 
-def push_branch_to_remote(branch):
-    """Push a branch to the remote."""
-    try:
-        print_formatted_text(
-            f"<info>Pushing branch {format_branch(branch)} to origin...</info>"
-        )
-        subprocess.run(
-            ["git", "push", "-u", "origin", branch],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        print_formatted_text(
-            f"<success>Successfully pushed {format_branch(branch)} to origin</success>"
-        )
-        return True
-    except subprocess.CalledProcessError as e:
-        error_message = e.stderr.decode("utf-8") if e.stderr else "Unknown error"
-        print_formatted_text(
-            f"<warning>Failed to push branch to origin: {error_message}</warning>"
-        )
-        return False
+    print_formatted_text("<success>Pull request creation complete</success>")
 
 
 def ensure_branch_pushed(branch):
@@ -145,112 +184,13 @@ def create_pr_for_branch(branch, parent):
         return False
 
     # Create the PR
-    try:
-        subprocess.run(
-            [
-                "gh",
-                "pr",
-                "create",
-                "--base",
-                parent,
-                "--head",
-                branch,
-                "--title",
-                title,
-                "--body",
-                description,
-            ],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+    if create_pr(parent, branch, title, description):
         print_formatted_text(
             f"<success>PR created successfully for {format_branch(branch)}</success>"
         )
         return True
-    except subprocess.CalledProcessError as e:
-        error_message = e.stderr.decode("utf-8") if e.stderr else "Unknown error"
+    else:
         print_formatted_text(
             f"<warning>Error: Failed to create PR for branch '{branch}'</warning>"
         )
-        print_formatted_text(f"<warning>Details: {error_message}</warning>")
         return False
-
-
-def is_branch_in_path_to_target(child, branch_name, parent_branch):
-    """Check if a child branch is in the path to the target branch."""
-    current = branch_name
-    while current and current != parent_branch:
-        if current == child:
-            return True
-        current = get_parent_branch(current)
-
-    return False
-
-
-def process_branch_for_pr(branch, target_branch):
-    """Process a branch to create PR and handle its children."""
-    if branch_has_pr(branch):
-        print_formatted_text(f"<info>Branch {branch} already has an open PR</info>")
-        pr_created = True
-    else:
-        print_formatted_text("<info>Creating PR for branch:</info> ")
-        print_formatted_text(f"<branch>{branch}</branch>")
-        print("")
-        # Get parent branch for PR target
-        parent = get_parent_branch(branch)
-        if not parent:
-            parent = "main"  # Default to main if no parent
-
-        pr_created = create_pr_for_branch(branch, parent)
-
-    # Only process children if PR was created successfully or already existed
-    if pr_created:
-        # Process any children of this branch that lead to the target
-        for child in get_child_branches(branch):
-            if (
-                is_branch_in_path_to_target(child, target_branch, branch)
-                or child == target_branch
-            ):
-                process_branch_for_pr(child, target_branch)
-    else:
-        print_formatted_text(
-            f"<warning>Skipping child branches of {format_branch(branch)} due to PR creation failure</warning>"
-        )
-
-
-def create_pull_requests(branch_name=None):
-    """Create pull requests for branches in the stack."""
-    # Check for GitHub CLI
-    if not shutil.which("gh"):
-        print_formatted_text(
-            "<warning>Error: GitHub CLI (gh) is required but not installed.</warning>"
-        )
-        print_formatted_text(
-            "<info>Please install GitHub CLI: https://cli.github.com/manual/installation</info>"
-        )
-        sys.exit(1)
-
-    # If no branch specified, use current branch
-    if not branch_name:
-        branch_name = get_current_branch()
-
-    # Check if target branch exists
-    if not branch_exists(branch_name):
-        print_formatted_text(
-            f"<warning>Error: Branch '{branch_name}' does not exist</warning>"
-        )
-        sys.exit(1)
-
-    # Find the oldest branch in the stack that needs a PR
-    oldest_branch = find_oldest_branch_without_pr(branch_name)
-
-    print_formatted_text(
-        "<info>Creating PRs from the bottom of the stack up to:</info> "
-    )
-    print_formatted_text(f"<branch>{branch_name}</branch>")
-    print("")
-
-    process_branch_for_pr(oldest_branch, branch_name)
-
-    print_formatted_text("<success>Pull request creation complete</success>")

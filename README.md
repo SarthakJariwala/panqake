@@ -1,19 +1,14 @@
 # Panqake - Git Branch Stacking Utility
 
-Panqake is a set of shell utilities for implementing the git-stacking workflow. It helps manage stacked branches, making it easier to work with multiple dependent pull requests.
+Panqake is a CLI implementing the git-stacking workflow. It helps manage stacked branches, making it easier to work with multiple dependent pull requests.
 
 ## Installation
 
-1. Clone this repository:
-
-   ```bash
-   git clone https://github.com/yourusername/panqake.git
+1. ```bash
+   uv tool install panqake
    ```
 
-2. Add the panqake directory to your PATH or create symlinks to the panqake script in a directory that's already in your PATH.
-
-3. Dependencies:
-   - jq: For JSON processing
+2. Dependencies:
    - gh: GitHub CLI (optional, only needed for PR creation)
 
 ## Usage
@@ -58,6 +53,29 @@ panqake pr
 
 Creates pull requests for each branch in the stack, starting from the bottom.
 
+### Modify/amend commits
+
+```bash
+# Amend the current commit with changes
+panqake modify
+
+# Amend with a new commit message
+panqake modify -m "New commit message"
+
+# Create a new commit instead of amending
+panqake modify --commit -m "New feature commit"
+```
+
+This command lets you modify your current commit by amending it or create a new commit.
+
+### Update remote branch and PR
+
+```bash
+panqake update-pr
+```
+
+After modifying commits, this command updates the remote branch and any associated PR. It handles force pushing with safeguards when necessary.
+
 ## Workflow Example
 
 1. Start a new feature stack from main:
@@ -85,7 +103,15 @@ Creates pull requests for each branch in the stack, starting from the bottom.
    panqake update
    ```
 
-6. Create PRs for your stack:
+6. If you need to modify a commit:
+
+   ```bash
+   # Make changes to files
+   panqake modify -m "Updated implementation"
+   panqake update-pr  # To update the remote branch and PR
+   ```
+
+7. Create PRs for your stack:
    ```bash
    panqake pr
    ```
@@ -102,6 +128,9 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ### v0.1.1 (Unreleased)
 
+- Added `modify` command for amending commits or creating new ones
+- Added `update-pr` command for updating remote branches and PRs
+- Improved force pushing with --force-with-lease for safety
 - Switched CLI interface from prompt_toolkit to questionary for improved user experience
 - Enhanced command-line prompts with better styling and autocomplete
 - Fixed styling issues in branch listing display

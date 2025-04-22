@@ -9,10 +9,12 @@ import sys
 
 from panqake.commands.delete import delete_branch
 from panqake.commands.list import list_branches
+from panqake.commands.modify import modify_commit
 from panqake.commands.new import create_new_branch
 from panqake.commands.pr import create_pull_requests
 from panqake.commands.switch import switch_branch
 from panqake.commands.update import update_branches
+from panqake.commands.update_pr import update_pull_request
 from panqake.utils.config import init_panqake
 from panqake.utils.git import is_git_repo
 
@@ -79,6 +81,30 @@ def main():
         help="Optional branch to switch to (defaults to interactive selection)",
     )
 
+    # modify command
+    modify_parser = subparsers.add_parser(
+        "modify", help="Modify/amend the current commit or create a new one"
+    )
+    modify_parser.add_argument(
+        "-c",
+        "--commit",
+        action="store_true",
+        help="Create a new commit instead of amending",
+    )
+    modify_parser.add_argument(
+        "-m", "--message", help="Commit message for the new or amended commit"
+    )
+
+    # update-pr command
+    update_pr_parser = subparsers.add_parser(
+        "update-pr", help="Update remote branch and PR after changes"
+    )
+    update_pr_parser.add_argument(
+        "branch_name",
+        nargs="?",
+        help="Optional branch to update (defaults to current branch)",
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -106,6 +132,10 @@ def main():
         create_pull_requests(args.branch_name)
     elif args.command == "switch":
         switch_branch(args.branch_name)
+    elif args.command == "modify":
+        modify_commit(args.commit, args.message)
+    elif args.command == "update-pr":
+        update_pull_request(args.branch_name)
 
 
 if __name__ == "__main__":

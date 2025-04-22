@@ -46,8 +46,71 @@ def branch_has_pr(branch):
         return False
 
 
+def is_branch_pushed_to_remote(branch):
+    """Check if a branch exists on the remote."""
+    result = subprocess.run(
+        ["git", "ls-remote", "--heads", "origin", branch],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    return bool(result.stdout.strip())
+
+
+def push_branch_to_remote(branch):
+    """Push a branch to the remote."""
+    try:
+        print_formatted_text(
+            f"<info>Pushing branch {format_branch(branch)} to origin...</info>"
+        )
+        subprocess.run(
+            ["git", "push", "-u", "origin", branch],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        print_formatted_text(
+            f"<success>Successfully pushed {format_branch(branch)} to origin</success>"
+        )
+        return True
+    except subprocess.CalledProcessError as e:
+        error_message = e.stderr.decode("utf-8") if e.stderr else "Unknown error"
+        print_formatted_text(
+            f"<warning>Failed to push branch to origin: {error_message}</warning>"
+        )
+        return False
+
+
+def ensure_branch_pushed(branch):
+    """Ensure a branch is pushed to remote."""
+    if not is_branch_pushed_to_remote(branch):
+        print_formatted_text(
+            f"<warning>Branch {format_branch(branch)} has not been pushed to remote yet</warning>"
+        )
+        if prompt_confirm("Would you like to push it now?"):
+            return push_branch_to_remote(branch)
+        else:
+            print_formatted_text("<info>PR creation skipped.</info>")
+            return False
+    return True
+
+
 def create_pr_for_branch(branch, parent):
     """Create a PR for a specific branch."""
+    # Check if both branches are pushed to remote
+    if not ensure_branch_pushed(branch) or not ensure_branch_pushed(parent):
+        return False
+
+    # Check if there are commits between branches
+    diff_command = ["log", f"{parent}..{branch}", "--oneline"]
+    diff_output = run_git_command(diff_command)
+
+    if not diff_output.strip():
+        print_formatted_text(
+            f"<warning>Error: No commits found between {format_branch(parent)} and {format_branch(branch)}</warning>"
+        )
+        return False
+
     # Get commit message for default PR title
     commit_message = run_git_command(["log", "-1", "--pretty=%s", branch])
     default_title = (
@@ -90,16 +153,20 @@ def create_pr_for_branch(branch, parent):
                 description,
             ],
             check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
         print_formatted_text(
             f"<success>PR created successfully for {format_branch(branch)}</success>"
         )
         return True
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
+        error_message = e.stderr.decode("utf-8") if e.stderr else "Unknown error"
         print_formatted_text(
             f"<warning>Error: Failed to create PR for branch '{branch}'</warning>"
         )
-        sys.exit(1)
+        print_formatted_text(f"<warning>Details: {error_message}</warning>")
+        return False
 
 
 def is_branch_in_path_to_target(child, branch_name, parent_branch):
@@ -117,6 +184,7 @@ def process_branch_for_pr(branch, target_branch):
     """Process a branch to create PR and handle its children."""
     if branch_has_pr(branch):
         print_formatted_text(f"Branch {format_branch(branch)} already has an open PR")
+        pr_created = True
     else:
         print_formatted_text(
             f"<info>Creating PR for branch:</info> {format_branch(branch)}"
@@ -127,15 +195,21 @@ def process_branch_for_pr(branch, target_branch):
         if not parent:
             parent = "main"  # Default to main if no parent
 
-        create_pr_for_branch(branch, parent)
+        pr_created = create_pr_for_branch(branch, parent)
 
-    # Process any children of this branch that lead to the target
-    for child in get_child_branches(branch):
-        if (
-            is_branch_in_path_to_target(child, target_branch, branch)
-            or child == target_branch
-        ):
-            process_branch_for_pr(child, target_branch)
+    # Only process children if PR was created successfully or already existed
+    if pr_created:
+        # Process any children of this branch that lead to the target
+        for child in get_child_branches(branch):
+            if (
+                is_branch_in_path_to_target(child, target_branch, branch)
+                or child == target_branch
+            ):
+                process_branch_for_pr(child, target_branch)
+    else:
+        print_formatted_text(
+            f"<warning>Skipping child branches of {format_branch(branch)} due to PR creation failure</warning>"
+        )
 
 
 def create_pull_requests(branch_name=None):

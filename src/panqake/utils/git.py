@@ -10,16 +10,8 @@ from panqake.utils.prompt import format_branch, print_formatted_text
 
 def is_git_repo() -> bool:
     """Check if current directory is in a git repository."""
-    try:
-        subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        return True
-    except subprocess.CalledProcessError:
-        return False
+    result = run_git_command(["rev-parse", "--is-inside-work-tree"])
+    return result is not None
 
 
 def run_git_command(command: List[str]) -> Optional[str]:
@@ -62,16 +54,8 @@ def list_all_branches() -> List[str]:
 
 def branch_exists(branch: str) -> bool:
     """Check if a branch exists."""
-    try:
-        subprocess.run(
-            ["git", "show-ref", "--verify", f"refs/heads/{branch}"],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        return True
-    except subprocess.CalledProcessError:
-        return False
+    result = run_git_command(["show-ref", "--verify", f"refs/heads/{branch}"])
+    return result is not None
 
 
 def validate_branch(branch_name: Optional[str] = None) -> str:
@@ -110,66 +94,44 @@ def push_branch_to_remote(branch: str, force: bool = False) -> bool:
     Returns:
         True if the push was successful, False otherwise
     """
-    try:
-        print_formatted_text("<info>Pushing branch to origin...</info>")
-        print_formatted_text(f"<branch>{branch}</branch>")
-        print("")
+    print_formatted_text("<info>Pushing branch to origin...</info>")
+    print_formatted_text(f"<branch>{branch}</branch>")
+    print("")
 
-        push_cmd = ["push", "-u", "origin", branch]
-        if force:
-            push_cmd.insert(1, "--force-with-lease")
-            print_formatted_text(
-                "<info>Using force-with-lease for safer force push</info>"
-            )
+    push_cmd = ["push", "-u", "origin", branch]
+    if force:
+        push_cmd.insert(1, "--force-with-lease")
+        print_formatted_text("<info>Using force-with-lease for safer force push</info>")
 
-        subprocess.run(
-            ["git"] + push_cmd,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+    result = run_git_command(push_cmd)
 
+    if result is not None:
         print_formatted_text("<success>Successfully pushed to origin</success>")
         print_formatted_text(f"<branch>{branch}</branch>")
         print("")
         return True
-    except subprocess.CalledProcessError as e:
-        error_message = e.stderr.decode("utf-8") if e.stderr else "Unknown error"
-        print_formatted_text(
-            f"<warning>Failed to push branch to origin: {error_message}</warning>"
-        )
-        return False
+    return False
 
 
 def is_branch_pushed_to_remote(branch: str) -> bool:
     """Check if a branch exists on the remote."""
-    result = subprocess.run(
-        ["git", "ls-remote", "--heads", "origin", branch],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    return bool(result.stdout.strip())
+    result = run_git_command(["ls-remote", "--heads", "origin", branch])
+    return bool(result and result.strip())
 
 
 def delete_remote_branch(branch: str) -> bool:
     """Delete a branch on the remote repository."""
-    try:
-        print_formatted_text(
-            f"<info>Deleting remote branch {format_branch(branch)}...</info>"
-        )
-        subprocess.run(
-            ["git", "push", "origin", "--delete", branch],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+    print_formatted_text(
+        f"<info>Deleting remote branch {format_branch(branch)}...</info>"
+    )
+
+    result = run_git_command(["push", "origin", "--delete", branch])
+
+    if result is not None:
         print_formatted_text("<success>Remote branch deleted successfully</success>")
         return True
-    except subprocess.CalledProcessError as e:
-        error_message = e.stderr.decode("utf-8") if e.stderr else "Unknown error"
-        print_formatted_text(
-            f"<warning>Warning: Failed to delete remote branch '{branch}'</warning>"
-        )
-        print_formatted_text(f"<warning>Details: {error_message}</warning>")
-        return False
+
+    print_formatted_text(
+        f"<warning>Warning: Failed to delete remote branch '{branch}'</warning>"
+    )
+    return False

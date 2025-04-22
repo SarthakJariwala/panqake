@@ -9,6 +9,7 @@ import sys
 
 from panqake.commands.delete import delete_branch
 from panqake.commands.list import list_branches
+from panqake.commands.merge import merge_branch
 from panqake.commands.modify import modify_commit
 from panqake.commands.new import create_new_branch
 from panqake.commands.pr import create_pull_requests
@@ -19,8 +20,8 @@ from panqake.utils.config import init_panqake
 from panqake.utils.git import is_git_repo
 
 
-def main():
-    """Main entry point for the panqake CLI."""
+def setup_argument_parsers():
+    """Set up argument parsers for the CLI."""
     parser = argparse.ArgumentParser(
         description="Panqake - Git Branch Stacking Utility"
     )
@@ -105,21 +106,31 @@ def main():
         help="Optional branch to update (defaults to current branch)",
     )
 
-    args = parser.parse_args()
+    # merge command
+    merge_parser = subparsers.add_parser(
+        "merge", help="Merge a PR and manage the branch stack after merge"
+    )
+    merge_parser.add_argument(
+        "branch_name",
+        nargs="?",
+        help="Optional branch to merge (defaults to current branch)",
+    )
+    merge_parser.add_argument(
+        "--no-delete-branch",
+        action="store_true",
+        help="Don't delete the local branch after merging",
+    )
+    merge_parser.add_argument(
+        "--no-update-children",
+        action="store_true",
+        help="Don't update child branches after merging",
+    )
 
-    if not args.command:
-        parser.print_help()
-        return
+    return parser
 
-    # Initialize panqake directory and files
-    init_panqake()
 
-    # Check if we're in a git repository
-    if not is_git_repo():
-        print("Error: Not in a git repository")
-        sys.exit(1)
-
-    # Execute the appropriate command
+def execute_command(args):
+    """Execute the appropriate command based on args."""
     if args.command == "new":
         create_new_branch(args.branch_name, args.base_branch)
     elif args.command == "list":
@@ -136,6 +147,31 @@ def main():
         modify_commit(args.commit, args.message)
     elif args.command == "update-pr":
         update_pull_request(args.branch_name)
+    elif args.command == "merge":
+        merge_branch(
+            args.branch_name, not args.no_delete_branch, not args.no_update_children
+        )
+
+
+def main():
+    """Main entry point for the panqake CLI."""
+    parser = setup_argument_parsers()
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        return
+
+    # Initialize panqake directory and files
+    init_panqake()
+
+    # Check if we're in a git repository
+    if not is_git_repo():
+        print("Error: Not in a git repository")
+        sys.exit(1)
+
+    # Execute the appropriate command
+    execute_command(args)
 
 
 if __name__ == "__main__":

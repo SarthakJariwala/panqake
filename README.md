@@ -76,6 +76,29 @@ panqake update-pr
 
 After modifying commits, this command updates the remote branch and any associated PR. It handles force pushing with safeguards when necessary.
 
+### Merge PRs and manage the stack
+
+```bash
+# Merge the current branch's PR
+panqake merge
+
+# Merge a specific branch's PR
+panqake merge feature-branch
+
+# Merge without deleting the local branch
+panqake merge --no-delete-branch
+
+# Merge without updating child branches
+panqake merge --no-update-children
+```
+
+This command merges a PR using GitHub CLI and performs post-merge management:
+
+- Deletes the local branch after merge (optional)
+- Updates all child branches to use the new parent branch
+- Rebases child branches onto the new base
+- Updates PR base references for child PRs
+
 ## Workflow Example
 
 1. Start a new feature stack from main:
@@ -112,9 +135,16 @@ After modifying commits, this command updates the remote branch and any associat
    ```
 
 7. Create PRs for your stack:
+
    ```bash
    panqake pr
    ```
+
+8. When a PR is approved and ready to merge:
+   ```bash
+   panqake merge feature-base
+   ```
+   This will merge the PR, delete the local branch, and update all child branches automatically.
 
 ## License
 
@@ -128,6 +158,10 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ### v0.1.1 (Unreleased)
 
+- Added `merge` command for merging PRs and managing the branch stack after merge
+- Added branch cleanup after successful merge
+- Added automatic rebasing of child branches after parent branches merge
+- Added updating of PR base references for child PRs
 - Added `modify` command for amending commits or creating new ones
 - Added `update-pr` command for updating remote branches and PRs
 - Improved force pushing with --force-with-lease for safety

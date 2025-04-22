@@ -124,13 +124,21 @@ def create_pr_for_branch(branch, parent):
 
     description = prompt_input(
         "Enter PR description (optional): ",
-        default="This is part of a stacked PR series.",
+        default="",
     )
 
     # Show summary and confirm
-    print_formatted_text(f"<info>PR for branch:</info> {format_branch(branch)}")
-    print_formatted_text(f"<info>Target branch:</info> {format_branch(parent)}")
-    print_formatted_text(f"<info>Title:</info> {title}")
+    print_formatted_text("<info>PR for branch:</info>")
+    print_formatted_text(f"<branch>{branch}</branch>")
+    print("")
+
+    print_formatted_text("<info>Target branch:</info>")
+    print_formatted_text(f"<branch>{parent}</branch>")
+    print("")
+
+    print_formatted_text("<info>Title:</info>")
+    print_formatted_text(f"{title}")
+    print("")
 
     if not prompt_confirm("Create this pull request?"):
         print_formatted_text("<info>PR creation skipped.</info>")
@@ -183,13 +191,12 @@ def is_branch_in_path_to_target(child, branch_name, parent_branch):
 def process_branch_for_pr(branch, target_branch):
     """Process a branch to create PR and handle its children."""
     if branch_has_pr(branch):
-        print_formatted_text(f"Branch {format_branch(branch)} already has an open PR")
+        print_formatted_text(f"<info>Branch {branch} already has an open PR</info>")
         pr_created = True
     else:
-        print_formatted_text(
-            f"<info>Creating PR for branch:</info> {format_branch(branch)}"
-        )
-
+        print_formatted_text("<info>Creating PR for branch:</info> ")
+        print_formatted_text(f"<branch>{branch}</branch>")
+        print("")
         # Get parent branch for PR target
         parent = get_parent_branch(branch)
         if not parent:
@@ -239,8 +246,10 @@ def create_pull_requests(branch_name=None):
     oldest_branch = find_oldest_branch_without_pr(branch_name)
 
     print_formatted_text(
-        f"<info>Creating PRs from the bottom of the stack up to:</info> {format_branch(branch_name)}"
+        "<info>Creating PRs from the bottom of the stack up to:</info> "
     )
+    print_formatted_text(f"<branch>{branch_name}</branch>")
+    print("")
 
     process_branch_for_pr(oldest_branch, branch_name)
 

@@ -94,6 +94,15 @@ def prompt_confirm(message: str) -> bool:
     return questionary.confirm(message, default=False, style=style).ask()
 
 
+def prompt_select(
+    message: str, choices: List[str], default: Optional[str] = None
+) -> str:
+    """Prompt user to select from a list of choices."""
+    return questionary.select(
+        message, choices=choices, default=default, style=style
+    ).ask()
+
+
 def format_branch(branch_name: str, current: bool = False, danger: bool = False) -> str:
     """Format branch name with HTML-like style tags.
 

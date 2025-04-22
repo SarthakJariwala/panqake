@@ -1,0 +1,388 @@
+"""Command for merging PRs and managing branches after merge."""
+
+import shutil
+import subprocess
+import sys
+
+from panqake.utils.config import get_child_branches, get_parent_branch
+from panqake.utils.git import branch_exists, get_current_branch, run_git_command
+from panqake.utils.questionary_prompt import (
+    format_branch,
+    print_formatted_text,
+    prompt_confirm,
+    prompt_select,
+)
+
+
+def branch_has_pr(branch):
+    """Check if a branch already has a PR."""
+    try:
+        subprocess.run(
+            ["gh", "pr", "view", branch],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def validate_branch(branch_name):
+    """Validate branch exists and get current branch."""
+    # If no branch specified, use current branch
+    if not branch_name:
+        branch_name = get_current_branch()
+
+    # Check if target branch exists
+    if not branch_exists(branch_name):
+        print_formatted_text(
+            f"<warning>Error: Branch '{branch_name}' does not exist</warning>"
+        )
+        sys.exit(1)
+
+    return branch_name
+
+
+def fetch_latest_base_branch(branch_name):
+    """Fetch the latest base branch to ensure we're up to date."""
+    parent_branch = get_parent_branch(branch_name)
+    if not parent_branch:
+        parent_branch = "main"  # Default to main if no parent found
+
+    print_formatted_text("<info>Fetching latest changes from remote...</info>")
+    fetch_result = run_git_command(["fetch", "origin", parent_branch])
+    if fetch_result is None:
+        print_formatted_text(
+            f"<warning>Warning: Failed to fetch latest changes for {parent_branch}</warning>"
+        )
+        return False
+
+    return True
+
+
+def update_pr_base_for_children(branch_name, parent_branch):
+    """Update the PR base reference for all child branches.
+
+    This must be done before deleting the parent branch to avoid closing child PRs.
+    """
+    children = get_child_branches(branch_name)
+    if not children:
+        return True
+
+    print_formatted_text(
+        "<info>Updating PR base references for child branches...</info>"
+    )
+
+    success = True
+    for child in children:
+        # Check if the child has a PR
+        if branch_has_pr(child):
+            try:
+                print_formatted_text(
+                    f"<info>Updating PR base for child branch</info> {format_branch(child)}..."
+                )
+                subprocess.run(
+                    ["gh", "pr", "edit", child, "--base", parent_branch],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                print_formatted_text("<success>PR base updated successfully</success>")
+            except subprocess.CalledProcessError as e:
+                error_message = (
+                    e.stderr.decode("utf-8") if e.stderr else "Unknown error"
+                )
+                print_formatted_text(
+                    f"<warning>Warning: Failed to update PR base for '{child}'</warning>"
+                )
+                print_formatted_text(f"<warning>Details: {error_message}</warning>")
+                success = False
+
+        # Recursively update grandchildren
+        update_pr_base_for_children(child, child)
+
+    return success
+
+
+def merge_pr(branch_name, merge_method="squash"):
+    """Merge a PR using GitHub CLI."""
+    # First check if the branch has a PR
+    if not branch_has_pr(branch_name):
+        print_formatted_text(
+            f"<warning>Error: Branch '{branch_name}' does not have an open PR</warning>"
+        )
+        return False
+
+    try:
+        print_formatted_text("<info>Merging PR for branch...</info>")
+        print_formatted_text(f"<branch>{branch_name}</branch>")
+        print("")
+        print_formatted_text(f"<info>Using merge method: {merge_method}</info>")
+
+        # Execute GitHub CLI to merge the PR - do NOT delete the branch yet
+        # We'll need to update child PR references first
+        subprocess.run(
+            ["gh", "pr", "merge", branch_name, f"--{merge_method}"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        print_formatted_text("<success>PR merged successfully</success>")
+        return True
+    except subprocess.CalledProcessError as e:
+        error_message = e.stderr.decode("utf-8") if e.stderr else "Unknown error"
+        print_formatted_text(
+            f"<warning>Error: Failed to merge PR for branch '{branch_name}'</warning>"
+        )
+        print_formatted_text(f"<warning>Details: {error_message}</warning>")
+        return False
+
+
+def delete_remote_branch(branch_name):
+    """Delete the remote branch after PR is merged and child PRs are updated."""
+    try:
+        print_formatted_text(
+            f"<info>Deleting remote branch {format_branch(branch_name)}...</info>"
+        )
+        subprocess.run(
+            ["git", "push", "origin", "--delete", branch_name],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        print_formatted_text("<success>Remote branch deleted successfully</success>")
+        return True
+    except subprocess.CalledProcessError as e:
+        error_message = e.stderr.decode("utf-8") if e.stderr else "Unknown error"
+        print_formatted_text(
+            f"<warning>Warning: Failed to delete remote branch '{branch_name}'</warning>"
+        )
+        print_formatted_text(f"<warning>Details: {error_message}</warning>")
+        return False
+
+
+def update_child_branches(branch_name, parent_branch, current_branch):
+    """Update child branches after a parent branch has been merged."""
+    children = get_child_branches(branch_name)
+
+    if not children:
+        return True
+
+    print_formatted_text("<info>Updating child branches...</info>")
+
+    success = True
+    for child in children:
+        print_formatted_text(
+            f"<info>Updating child branch</info> {format_branch(child)} "
+            f"<info>to use new base</info> {format_branch(parent_branch)}..."
+        )
+
+        # Checkout the child branch
+        checkout_result = run_git_command(["checkout", child])
+        if checkout_result is None:
+            print_formatted_text(
+                f"<warning>Error: Failed to checkout branch '{child}'</warning>"
+            )
+            success = False
+            continue
+
+        # Update the parent branch reference
+        update_parent_result = run_git_command(
+            ["config", "--local", f"panqake.branch.{child}.parent", parent_branch]
+        )
+        if update_parent_result is None:
+            print_formatted_text(
+                f"<warning>Warning: Failed to update parent reference for '{child}'</warning>"
+            )
+
+        # Rebase onto the parent branch
+        rebase_result = run_git_command(["rebase", parent_branch])
+        if rebase_result is None:
+            print_formatted_text(
+                f"<warning>Error: Rebase conflict detected in branch '{child}'</warning>"
+            )
+            print_formatted_text(
+                "<warning>Please resolve conflicts and run 'git rebase --continue'</warning>"
+            )
+            print_formatted_text(
+                f"<warning>Then run 'panqake update {child}' to continue updating the stack</warning>"
+            )
+            success = False
+            break
+
+        # Recursively update this branch's children
+        update_child_branches(child, child, current_branch)
+
+    return success
+
+
+def cleanup_local_branch(branch_name):
+    """Delete the local branch after successful merge."""
+    if branch_exists(branch_name):
+        print_formatted_text(
+            f"<info>Deleting local branch</info> {format_branch(branch_name)}..."
+        )
+
+        # Make sure we're not on the branch we're trying to delete
+        current = get_current_branch()
+        if current == branch_name:
+            parent = get_parent_branch(branch_name)
+            if not parent:
+                parent = "main"  # Default to main if no parent
+
+            print_formatted_text(
+                f"<info>Switching to</info> {format_branch(parent)} <info>before deletion</info>"
+            )
+            checkout_result = run_git_command(["checkout", parent])
+            if checkout_result is None:
+                print_formatted_text(
+                    f"<warning>Error: Failed to checkout branch '{parent}'</warning>"
+                )
+                return False
+
+        # Delete the branch
+        delete_result = run_git_command(["branch", "-D", branch_name])
+        if delete_result is None:
+            print_formatted_text(
+                f"<warning>Error: Failed to delete local branch '{branch_name}'</warning>"
+            )
+            return False
+
+        print_formatted_text("<success>Local branch deleted successfully</success>")
+
+    return True
+
+
+def get_merge_method():
+    """Get the merge method from user selection."""
+    merge_methods = ["squash", "rebase", "merge"]
+    return prompt_select(
+        "Select merge method:", choices=merge_methods, default="squash"
+    )
+
+
+def restore_original_branch(current_branch, branch_name, parent_branch):
+    """Return to the original branch or a fallback branch."""
+    # Return to original branch if it still exists, otherwise go to parent
+    if branch_exists(current_branch) and current_branch != branch_name:
+        run_git_command(["checkout", current_branch])
+    elif branch_exists(parent_branch):
+        run_git_command(["checkout", parent_branch])
+
+
+def handle_pr_base_updates(branch_name, parent_branch, update_children):
+    """Update PR base references for child branches."""
+    if not update_children:
+        return True
+
+    update_pr_success = update_pr_base_for_children(branch_name, parent_branch)
+    if not update_pr_success:
+        print_formatted_text(
+            "<warning>Warning: Some PR base references could not be updated</warning>"
+        )
+
+    return update_pr_success
+
+
+def handle_branch_updates(branch_name, parent_branch, current_branch, update_children):
+    """Update child branches after merge."""
+    if not update_children:
+        return True
+
+    update_success = update_child_branches(branch_name, parent_branch, current_branch)
+    if not update_success:
+        print_formatted_text("<warning>Failed to update all child branches.</warning>")
+        print_formatted_text("<info>You may need to resolve conflicts manually.</info>")
+
+    return update_success
+
+
+def perform_merge_operations(
+    branch_name,
+    parent_branch,
+    current_branch,
+    merge_method,
+    delete_branch,
+    update_children,
+):
+    """Perform all merge related operations."""
+    # Fetch latest from remote
+    fetch_latest_base_branch(branch_name)
+
+    # IMPORTANT: First, update PR base references for all child branches
+    # This must be done before we delete the branch to avoid closing child PRs
+    handle_pr_base_updates(branch_name, parent_branch, update_children)
+
+    # Merge the PR (without deleting the branch yet)
+    merge_success = merge_pr(branch_name, merge_method)
+    if not merge_success:
+        print_formatted_text("<warning>Merge operation failed. Stopping.</warning>")
+        return False
+
+    # Now it's safe to delete the remote branch
+    if delete_branch:
+        delete_remote_branch(branch_name)
+
+    # Update child branches if requested
+    handle_branch_updates(branch_name, parent_branch, current_branch, update_children)
+
+    # Delete local branch if requested
+    if delete_branch:
+        cleanup_success = cleanup_local_branch(branch_name)
+        if not cleanup_success:
+            print_formatted_text("<warning>Failed to clean up local branch.</warning>")
+
+    # Return to original branch if it still exists, otherwise go to parent
+    restore_original_branch(current_branch, branch_name, parent_branch)
+
+    print_formatted_text("<success>Merge and branch management completed.</success>")
+    return True
+
+
+def merge_branch(branch_name=None, delete_branch=True, update_children=True):
+    """Merge a PR and manage the branch stack after merge."""
+    # Check for GitHub CLI
+    if not shutil.which("gh"):
+        print_formatted_text(
+            "<warning>Error: GitHub CLI (gh) is required but not installed.</warning>"
+        )
+        print_formatted_text(
+            "<info>Please install GitHub CLI: https://cli.github.com</info>"
+        )
+        sys.exit(1)
+
+    branch_name = validate_branch(branch_name)
+    current_branch = get_current_branch()
+
+    # Get parent branch
+    parent_branch = get_parent_branch(branch_name)
+    if not parent_branch:
+        parent_branch = "main"  # Default to main if no parent
+
+    # Show summary of what we're about to do
+    print_formatted_text("<info>Preparing to merge PR for branch:</info>")
+    print_formatted_text(f"<branch>{branch_name}</branch>")
+    print("")
+    print_formatted_text("<info>Parent branch:</info>")
+    print_formatted_text(f"<branch>{parent_branch}</branch>")
+    print("")
+
+    # Ask for merge method
+    merge_method = get_merge_method()
+
+    # Ask for confirmation
+    if not prompt_confirm("Do you want to proceed with the merge?"):
+        print_formatted_text("<info>Merge cancelled.</info>")
+        return
+
+    # Perform merge operations
+    perform_merge_operations(
+        branch_name,
+        parent_branch,
+        current_branch,
+        merge_method,
+        delete_branch,
+        update_children,
+    )

@@ -5,7 +5,8 @@ import subprocess
 import sys
 from typing import List, Optional
 
-from panqake.utils.prompt import format_branch, print_formatted_text
+from panqake.utils.prompt import format_branch
+from panqake.utils.questionary_prompt import print_formatted_text
 
 
 def is_git_repo() -> bool:

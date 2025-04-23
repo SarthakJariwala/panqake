@@ -2,6 +2,11 @@
 
 All notable changes to the Panqake project will be documented in this file.
 
+## [v0.3.0] - 2025-04-23
+
+### Added
+- Added track command to add existing Git branches to the stack
+
 ## [v0.2.0] - 2025-04-22
 
 ### Added

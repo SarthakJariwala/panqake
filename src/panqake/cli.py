@@ -50,12 +50,17 @@ def setup_argument_parsers():
 
     # update command
     update_parser = subparsers.add_parser(
-        "update", help="Update branches after changes"
+        "update", help="Update branches after changes and push to remote"
     )
     update_parser.add_argument(
         "branch_name",
         nargs="?",
         help="Optional branch to start from (defaults to current branch)",
+    )
+    update_parser.add_argument(
+        "--no-push",
+        action="store_true",
+        help="Don't push changes to remote after updating branches",
     )
 
     # delete command
@@ -136,7 +141,7 @@ def execute_command(args):
     elif args.command == "list":
         list_branches(args.branch_name)
     elif args.command == "update":
-        update_branches(args.branch_name)
+        update_branches(args.branch_name, skip_push=args.no_push)
     elif args.command == "delete":
         delete_branch(args.branch_name)
     elif args.command == "pr":

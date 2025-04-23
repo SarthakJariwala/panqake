@@ -35,7 +35,13 @@ Displays a tree view of your current branch stack.
 panqake update
 ```
 
-After making changes to a branch, this command rebases all child branches to incorporate your changes.
+After making changes to a branch, this command rebases all child branches to incorporate your changes and pushes the updates to remote branches, updating any associated PRs.
+
+To skip pushing to remote, use the `--no-push` flag:
+
+```bash
+panqake update --no-push
+```
 
 ### Delete a branch and relink the stack
 
@@ -75,6 +81,8 @@ panqake update-pr
 ```
 
 After modifying commits, this command updates the remote branch and any associated PR. It handles force pushing with safeguards when necessary.
+
+Note: The `update` command now includes this functionality by default. Use `update-pr` if you only want to push changes without rebasing child branches.
 
 ### Merge PRs and manage the stack
 

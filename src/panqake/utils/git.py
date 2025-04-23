@@ -136,3 +136,47 @@ def delete_remote_branch(branch: str) -> bool:
         f"<warning>Warning: Failed to delete remote branch '{branch}'</warning>"
     )
     return False
+
+
+def get_potential_parents(branch: str) -> List[str]:
+    """Get a list of potential parent branches from the Git history.
+
+    This function analyzes the Git history of the specified branch and
+    identifies other branches that could serve as potential parents.
+
+    Args:
+        branch: The branch name to find potential parents for
+
+    Returns:
+        A list of branch names that could be potential parents
+    """
+    # Get all branches
+    all_branches = list_all_branches()
+    if not all_branches:
+        return []
+
+    # Get the commit history of the current branch
+    history_result = run_git_command(["log", "--pretty=format:%H", branch])
+    if not history_result:
+        return []
+
+    commit_history = history_result.splitlines()
+
+    # Find branches that have commits in common with the current branch
+    potential_parents = []
+
+    for other_branch in all_branches:
+        # Skip the branch itself
+        if other_branch == branch:
+            continue
+
+        # Check if this branch is in the history of the current branch
+        merge_base = run_git_command(["merge-base", other_branch, branch])
+        if not merge_base:
+            continue
+
+        # If the merge-base is in the history of the current branch, it's a potential parent
+        if merge_base in commit_history:
+            potential_parents.append(other_branch)
+
+    return potential_parents

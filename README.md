@@ -29,6 +29,20 @@ panqake list
 
 Displays a tree view of your current branch stack.
 
+### Track existing Git branches
+
+```bash
+panqake track
+```
+
+Adds an existing Git branch (created outside of panqake) to the stack tracking. The command will analyze the branch's history and prompt you to select a parent branch from potential candidates.
+
+You can also specify a branch name:
+
+```bash
+panqake track feature-branch
+```
+
 ### Update branches after changes
 
 ```bash

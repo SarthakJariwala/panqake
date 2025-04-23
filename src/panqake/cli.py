@@ -14,6 +14,7 @@ from panqake.commands.modify import modify_commit
 from panqake.commands.new import create_new_branch
 from panqake.commands.pr import create_pull_requests
 from panqake.commands.switch import switch_branch
+from panqake.commands.track import track
 from panqake.commands.update import update_branches
 from panqake.commands.update_pr import update_pull_request
 from panqake.utils.config import init_panqake
@@ -87,6 +88,16 @@ def setup_argument_parsers():
         help="Optional branch to switch to (defaults to interactive selection)",
     )
 
+    # track command
+    track_parser = subparsers.add_parser(
+        "track", help="Track an existing Git branch in the panqake stack"
+    )
+    track_parser.add_argument(
+        "branch_name",
+        nargs="?",
+        help="Optional branch to track (defaults to current branch)",
+    )
+
     # modify command
     modify_parser = subparsers.add_parser(
         "modify", help="Modify/amend the current commit or create a new one"
@@ -148,6 +159,8 @@ def execute_command(args):
         create_pull_requests(args.branch_name)
     elif args.command == "switch":
         switch_branch(args.branch_name)
+    elif args.command == "track":
+        track(args.branch_name)
     elif args.command == "modify":
         modify_commit(args.commit, args.message)
     elif args.command == "update-pr":

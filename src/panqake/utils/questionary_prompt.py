@@ -178,3 +178,26 @@ class PRTitleValidator(Validator):
             raise ValidationError(message="PR title cannot be empty")
         if len(text) < 10:
             raise ValidationError(message="PR title should be at least 10 characters")
+
+
+def prompt_for_parent(potential_parents: List[str]) -> Optional[str]:
+    """Prompt the user to select a parent branch from a list of potential parents.
+
+    Args:
+        potential_parents: List of potential parent branch names
+
+    Returns:
+        The selected parent branch name, or None if no selection was made
+    """
+    if not potential_parents:
+        return None
+
+    print_formatted_text("<info>Select a parent branch for the current branch:</info>")
+
+    selected = questionary.select(
+        "Select a parent branch (autocomplete or arrow keys)",
+        choices=potential_parents,
+        style=style,
+    ).ask()
+
+    return selected

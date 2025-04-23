@@ -1,177 +1,103 @@
-# Panqake - Git Branch Stacking Utility
+# Panqake: Stack Git Branches Without the Headache
 
-Panqake is a CLI implementing the git-stacking workflow. It helps manage stacked branches, making it easier to work with multiple dependent pull requests.
+Panqake is a CLI tool that makes managing dependent pull requests significantly easier by automating the entire git-stacking workflow. Stop dealing with painful rebases and focus on your code instead.
 
-## Installation
+## What Problems Panqake Solves
 
-1. ```bash
-   uv tool install panqake
-   ```
+- **Reviews no longer block progress** on dependent work
+- **Simplify complex workflows** with a single command for common operations
+- **Eliminate manual rebasing** when working with dependent branches
+- **Automate PR management** for each branch in your stack
 
-2. Dependencies:
-   - gh: GitHub CLI (optional, only needed for PR creation)
-
-## Usage
-
-### Create a new branch in the stack
+## Quick Installation
 
 ```bash
-panqake new feature-login
+uv tool install panqake
 ```
 
-This creates a new branch based on your current branch and tracks the relationship.
+**Dependencies:**
+- gh: GitHub CLI (only needed for PR creation)
 
-### View the branch stack
+## Core Commands
+
+| Command | What it Does |
+|---------|-------------|
+| `panqake new feature-name` | Create a new branch in your stack |
+| `panqake update` | Update all child branches after parent changes |
+| `panqake pr` | Create PRs for your entire branch stack |
+| `panqake merge` | Merge a PR and update all dependents automatically |
+
+## Real-World Workflow Example
+
+Here's how to build a stack of dependent features:
 
 ```bash
-panqake list
+# Start from main
+git checkout main
+
+# Create your base feature branch
+pq new auth-backend
+# Make changes, commit them
+git add .
+git commit -m "Implement authentication backend"
+
+# Create a dependent branch for frontend work
+pq new auth-frontend
+# Make changes, commit them
+git add .
+git commit -m "Add login form UI"
+
+# Need to fix something in the backend?
+git checkout auth-backend
+# Make your changes, commit them
+git add .
+git commit -m "Fix auth token validation"
+
+# Update your entire stack with one command
+pq update
+
+# Create PRs for your entire stack
+pq pr
+
+# After approval, merge with a single command
+pq merge
 ```
 
-Displays a tree view of your current branch stack.
+## Advanced Features
 
-### Track existing Git branches
+### Track Existing Git Branches
+
+Add branches created outside panqake to your stack:
 
 ```bash
-panqake track
+pq track feature-branch
 ```
 
-Adds an existing Git branch (created outside of panqake) to the stack tracking. The command will analyze the branch's history and prompt you to select a parent branch from potential candidates.
+### Modify/Amend Commits
 
-You can also specify a branch name:
+Update your current branch's commit and propagate changes:
 
 ```bash
-panqake track feature-branch
+# Make file changes
+pq modify -m "Better implementation"
 ```
 
-### Update branches after changes
+### Delete a Branch While Maintaining Stack
 
 ```bash
-panqake update
+pq delete feature-old
 ```
 
-After making changes to a branch, this command rebases all child branches to incorporate your changes and pushes the updates to remote branches, updating any associated PRs.
+## Why Choose Panqake
 
-To skip pushing to remote, use the `--no-push` flag:
-
-```bash
-panqake update --no-push
-```
-
-### Delete a branch and relink the stack
-
-```bash
-panqake delete feature-old
-```
-
-Deletes a branch and relinks its children to its parent, maintaining the stack structure.
-
-### Create PRs for the branch stack
-
-```bash
-panqake pr
-```
-
-Creates pull requests for each branch in the stack, starting from the bottom.
-
-### Modify/amend commits
-
-```bash
-# Amend the current commit with changes
-panqake modify
-
-# Amend with a new commit message
-panqake modify -m "New commit message"
-
-# Create a new commit instead of amending
-panqake modify --commit -m "New feature commit"
-```
-
-This command lets you modify your current commit by amending it or create a new commit.
-
-### Update remote branch and PR
-
-```bash
-panqake update-pr
-```
-
-After modifying commits, this command updates the remote branch and any associated PR. It handles force pushing with safeguards when necessary.
-
-Note: The `update` command now includes this functionality by default. Use `update-pr` if you only want to push changes without rebasing child branches.
-
-### Merge PRs and manage the stack
-
-```bash
-# Merge the current branch's PR
-panqake merge
-
-# Merge a specific branch's PR
-panqake merge feature-branch
-
-# Merge without deleting the local branch
-panqake merge --no-delete-branch
-
-# Merge without updating child branches
-panqake merge --no-update-children
-```
-
-This command merges a PR using GitHub CLI and performs post-merge management:
-
-- Deletes the local branch after merge (optional)
-- Updates all child branches to use the new parent branch
-- Rebases child branches onto the new base
-- Updates PR base references for child PRs
-
-## Workflow Example
-
-1. Start a new feature stack from main:
-
-   ```bash
-   git checkout main
-   panqake new feature-base
-   ```
-
-2. Make your initial changes and commit.
-
-3. Create a dependent branch for additional work:
-
-   ```bash
-   panqake new feature-ui
-   ```
-
-4. Make changes and commit in the feature-ui branch.
-
-5. If you need to update the feature-base branch:
-
-   ```bash
-   git checkout feature-base
-   # Make changes and commit
-   panqake update
-   ```
-
-6. If you need to modify a commit:
-
-   ```bash
-   # Make changes to files
-   panqake modify -m "Updated implementation"
-   panqake update-pr  # To update the remote branch and PR
-   ```
-
-7. Create PRs for your stack:
-
-   ```bash
-   panqake pr
-   ```
-
-8. When a PR is approved and ready to merge:
-   ```bash
-   panqake merge feature-base
-   ```
-   This will merge the PR, delete the local branch, and update all child branches automatically.
-
-## License
-
-MIT
+- **Designed for real workflows**: Stack PRs without effort
+- **Single command operations**: Complex git operations condensed to simple commands
+- **GitHub integration**: Seamlessly works with GitHub PRs
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+MIT

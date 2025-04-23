@@ -1,6 +1,10 @@
 # Changelog
 
 All notable changes to the Panqake project will be documented in this file.
+# [v0.3.1] - 2025-04-23
+
+### Fixed
+- Fixed error messages appearing when checking if a branch exists during branch creation
 
 ## [v0.3.0] - 2025-04-23
 

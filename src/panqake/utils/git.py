@@ -15,8 +15,13 @@ def is_git_repo() -> bool:
     return result is not None
 
 
-def run_git_command(command: List[str]) -> Optional[str]:
-    """Run a git command and return its output."""
+def run_git_command(command: List[str], silent_fail: bool = False) -> Optional[str]:
+    """Run a git command and return its output.
+
+    Args:
+        command: The git command to run
+        silent_fail: If True, don't print error messages on failure
+    """
     try:
         result = subprocess.run(
             ["git"] + command,
@@ -27,8 +32,9 @@ def run_git_command(command: List[str]) -> Optional[str]:
         )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        print(f"Error running git command: {e}")
-        print(f"stderr: {e.stderr}")
+        if not silent_fail:
+            print(f"Error running git command: {e}")
+            print(f"stderr: {e.stderr}")
         return None
 
 
@@ -55,7 +61,11 @@ def list_all_branches() -> List[str]:
 
 def branch_exists(branch: str) -> bool:
     """Check if a branch exists."""
-    result = run_git_command(["show-ref", "--verify", f"refs/heads/{branch}"])
+    # Use silent_fail=True because it's normal for this command to fail when checking
+    # if a branch exists before creating it
+    result = run_git_command(
+        ["show-ref", "--verify", f"refs/heads/{branch}"], silent_fail=True
+    )
     return result is not None
 
 

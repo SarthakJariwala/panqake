@@ -2,7 +2,12 @@
 
 import sys
 
-from panqake.utils.config import get_child_branches, get_parent_branch
+from panqake.utils.config import (
+    add_to_stack,
+    get_child_branches,
+    get_parent_branch,
+    remove_from_stack,
+)
 from panqake.utils.git import (
     branch_exists,
     delete_remote_branch,
@@ -128,14 +133,11 @@ def update_child_branches(branch_name, parent_branch, current_branch):
             success = False
             continue
 
-        # Update the parent branch reference
-        update_parent_result = run_git_command(
-            ["config", "--local", f"panqake.branch.{child}.parent", parent_branch]
+        # Update the parent-child relationship in stacks.json
+        add_to_stack(child, parent_branch)
+        print_formatted_text(
+            f"<info>Updated branch relationship for {format_branch(child)}</info>"
         )
-        if update_parent_result is None:
-            print_formatted_text(
-                f"<warning>Warning: Failed to update parent reference for '{child}'</warning>"
-            )
 
         # Rebase onto the parent branch
         rebase_result = run_git_command(["rebase", parent_branch])
@@ -189,6 +191,9 @@ def cleanup_local_branch(branch_name):
                 f"<warning>Error: Failed to delete local branch '{branch_name}'</warning>"
             )
             return False
+
+        # Clean up stacks.json file by removing the branch
+        remove_from_stack(branch_name)
 
         print_formatted_text("<success>Local branch deleted successfully</success>")
 

@@ -175,27 +175,3 @@ MIT
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Changelog
-
-### v0.1.1 (Unreleased)
-
-- Added `merge` command for merging PRs and managing the branch stack after merge
-- Added branch cleanup after successful merge
-- Added automatic rebasing of child branches after parent branches merge
-- Added updating of PR base references for child PRs
-- Added `modify` command for amending commits or creating new ones
-- Added `update-pr` command for updating remote branches and PRs
-- Improved force pushing with --force-with-lease for safety
-- Switched CLI interface from prompt_toolkit to questionary for improved user experience
-- Enhanced command-line prompts with better styling and autocomplete
-- Fixed styling issues in branch listing display
-- Improved output formatting for colored text
-- Added custom color scheme that works well on both light and dark terminals
-- Added documentation for the style system
-
-### v0.1.0
-
-- Initial release with core functionality
-- Branch stacking management
-- PR creation support

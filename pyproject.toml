@@ -1,13 +1,10 @@
 [project]
 name = "panqake"
-version = "0.1.0"
+version = "0.2.0"
 description = "Git Branch Stacking Utility"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "prompt-toolkit>=3.0.51",
-    "questionary>=2.1.0",
-]
+dependencies = ["prompt-toolkit>=3.0.51", "questionary>=2.1.0"]
 
 [project.scripts]
 panqake = "panqake.cli:main"
@@ -21,13 +18,7 @@ build-backend = "hatchling.build"
 packages = ["src/panqake"]
 
 [tool.hatch.build.targets.sdist]
-include = [
-    "src/panqake",
-    "README.md",
-]
+include = ["src/panqake", "README.md"]
 
 [dependency-groups]
-dev = [
-    "pytest>=8.3.5",
-    "hatch",
-]
+dev = ["pytest>=8.3.5", "hatch"]

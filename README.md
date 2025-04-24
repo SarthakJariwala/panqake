@@ -15,17 +15,17 @@ Panqake is a CLI tool that makes managing dependent pull requests significantly 
 uv tool install panqake
 ```
 
-**Dependencies:**
-- gh: GitHub CLI (only needed for PR creation)
+**Optional dependency:**
+- gh: GitHub CLI (needed only for PR creation/management)
 
-## Core Commands
+## Most-Used Commands
 
-| Command | What it Does |
-|---------|-------------|
-| `panqake new feature-name` | Create a new branch in your stack |
-| `panqake update` | Update all child branches after parent changes |
-| `panqake pr` | Create PRs for your entire branch stack |
-| `panqake merge` | Merge a PR and update all dependents automatically |
+| Command | Purpose | What It Does |
+|---------|---------|-------------|
+| `panqake new feature-name` | Create branches | Creates a new branch based on your current branch |
+| `panqake modify` | Commit changes | Interactively select files to stage and commit/amend |
+| `panqake update` | Propagate changes | Rebases all child branches and updates their PRs |
+| `panqake merge` | Complete workflow | Merges PR and updates all dependent branches |
 
 ## Real-World Workflow Example
 
@@ -38,29 +38,27 @@ git checkout main
 # Create your base feature branch
 pq new auth-backend
 # Make changes, commit them
-git add .
-git commit -m "Implement authentication backend"
+pq modify -m "Implement JWT authentication"
 
 # Create a dependent branch for frontend work
 pq new auth-frontend
 # Make changes, commit them
 git add .
-git commit -m "Add login form UI"
+pq modify -m "Add login form UI"
 
-# Need to fix something in the backend?
-git checkout auth-backend
-# Make your changes, commit them
-git add .
-git commit -m "Fix auth token validation"
+# Oops! Need to fix something in the backend branch
+pq switch auth-backend
+# Make your backend fixes
 
-# Update your entire stack with one command
+# Commit the fixes and automatically update child branches
+pq modify -m "Fix token validation"
 pq update
 
-# Create PRs for your entire stack
+# Create PRs for your entire stack with a single command
 pq pr
 
-# After approval, merge with a single command
-pq merge
+# When the first PR is approved, merge it and update the stack
+panqake merge auth-backend
 ```
 
 ## Advanced Features
@@ -73,16 +71,20 @@ Add branches created outside panqake to your stack:
 pq track feature-branch
 ```
 
-### Modify/Amend Commits
-
-Update your current branch's commit and propagate changes:
+### Flexible Commit Creation
 
 ```bash
-# Make file changes
-pq modify -m "Better implementation"
+# Amend existing Commit
+pq modify
+
+# Force creating a new commit instead of amending
+pq modify --no-amend
+
+# Or explicitly
+pq modify --commit -m "New feature implementation"
 ```
 
-### Delete a Branch While Maintaining Stack
+### Delete a Branch While Preserving the Stack
 
 ```bash
 pq delete feature-old
@@ -91,6 +93,7 @@ pq delete feature-old
 ## Why Choose Panqake
 
 - **Designed for real workflows**: Stack PRs without effort
+- **Reduces context switching** by making branch navigation seamless
 - **Single command operations**: Complex git operations condensed to simple commands
 - **GitHub integration**: Seamlessly works with GitHub PRs
 

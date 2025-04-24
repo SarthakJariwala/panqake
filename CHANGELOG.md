@@ -1,7 +1,20 @@
 # Changelog
 
 All notable changes to the Panqake project will be documented in this file.
-# [v0.3.1] - 2025-04-23
+## [v0.4.0] - 2025-04-23
+
+### Added
+- Added file selection UI for staging files in the modify command
+- Added `--no-amend` flag to force creating new commits instead of amending
+- Added smart handling for new branches vs. branches with commits in modify command
+- Added improved rename/copy file handling during staging
+
+### Changed
+- Enhanced modify command to show unstaged changes and prompt for selection
+- Modified branch detection to better handle parent branch identification
+- Improved user experience with clear feedback during file staging
+
+## [v0.3.1] - 2025-04-23
 
 ### Fixed
 - Fixed error messages appearing when checking if a branch exists during branch creation

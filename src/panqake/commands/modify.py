@@ -137,11 +137,6 @@ def modify_commit(commit_flag=False, message=None, no_amend=False):
     staged_files = get_staged_files()
     unstaged_files = get_unstaged_files()
 
-    # Print debug info
-    print_formatted_text(
-        f"<muted>DEBUG: Found {len(staged_files)} staged and {len(unstaged_files)} unstaged files</muted>"
-    )
-
     # Exit condition: No changes at all
     if not staged_files and not unstaged_files:
         print_formatted_text(
@@ -174,29 +169,10 @@ def modify_commit(commit_flag=False, message=None, no_amend=False):
             files_to_stage_info = [
                 item for item in unstaged_files if item["path"] in files_to_stage
             ]
-
-            print_formatted_text(
-                f"<muted>DEBUG: Selected {len(files_to_stage)} files to stage</muted>"
-            )
-
             # Stage the selected files
             success = stage_selected_files(files_to_stage_info)
             if success:
                 newly_staged_paths = files_to_stage
-                print_formatted_text(
-                    "<muted>DEBUG: Successfully staged selected files</muted>"
-                )
-
-                # Verify staging worked by checking git diff --staged
-                verify = run_git_command(["diff", "--staged", "--name-only"])
-                if verify and verify.strip():
-                    print_formatted_text(
-                        f"<muted>DEBUG: Verified staging: {verify}</muted>"
-                    )
-                else:
-                    print_formatted_text(
-                        "<warning>DEBUG: No files appear staged after staging!</warning>"
-                    )
             else:
                 print_formatted_text(
                     "<warning>Warning: Some files could not be staged</warning>"

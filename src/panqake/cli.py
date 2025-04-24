@@ -111,6 +111,11 @@ def setup_argument_parsers():
     modify_parser.add_argument(
         "-m", "--message", help="Commit message for the new or amended commit"
     )
+    modify_parser.add_argument(
+        "--no-amend",
+        action="store_true",
+        help="Always create a new commit instead of amending",
+    )
 
     # update-pr command
     update_pr_parser = subparsers.add_parser(
@@ -162,7 +167,7 @@ def execute_command(args):
     elif args.command == "track":
         track(args.branch_name)
     elif args.command == "modify":
-        modify_commit(args.commit, args.message)
+        modify_commit(args.commit, args.message, args.no_amend)
     elif args.command == "update-pr":
         update_pull_request(args.branch_name)
     elif args.command == "merge":

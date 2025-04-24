@@ -239,3 +239,126 @@ def branch_has_commits(branch: str = None, parent_branch: Optional[str] = None) 
             f"<warning>Could not determine commit count for {branch} relative to {parent_branch}</warning>"
         )
         return False  # Safer to return False if count fails
+
+
+def get_staged_files() -> List[dict]:
+    """Get a list of staged files using git diff --staged.
+
+    Returns:
+        List of dictionaries with path and display for each staged file
+    """
+    # Get list of staged files with their status
+    staged_result = run_git_command(["diff", "--staged", "--name-status"])
+    if not staged_result:
+        return []
+
+    files = []
+    for line in staged_result.splitlines():
+        if not line.strip():
+            continue
+
+        # Format from diff --name-status: Status<TAB>Path
+        parts = line.split("\t", 1)
+        if len(parts) != 2:
+            continue  # Skip malformed lines
+
+        status, path = parts
+        status_type = ""
+
+        if status == "A":
+            status_type = "Added"
+        elif status == "M":
+            status_type = "Modified"
+        elif status == "D":
+            status_type = "Deleted"
+        elif status.startswith("R"):
+            status_type = "Renamed"
+            # For renames, path is "oldpath<tab>newpath"
+            old_path, new_path = path.split("\t", 1)
+            files.append(
+                {
+                    "path": new_path,
+                    "display": f"{status_type}: {old_path} → {new_path}",
+                    "original_path": old_path,
+                }
+            )
+            continue  # Skip the default append for renames
+        elif status.startswith("C"):
+            status_type = "Copied"
+            # For copies, path is "oldpath<tab>newpath"
+            old_path, new_path = path.split("\t", 1)
+            files.append(
+                {
+                    "path": new_path,
+                    "display": f"{status_type}: {old_path} → {new_path}",
+                    "original_path": old_path,
+                }
+            )
+            continue  # Skip the default append for copies
+        else:
+            status_type = f"Status ({status})"
+
+        files.append(
+            {
+                "path": path,
+                "display": f"{status_type}: {path}",
+            }
+        )
+
+    return files
+
+
+def get_unstaged_files() -> List[dict]:
+    """Get a list of unstaged files using git ls-files and git status.
+
+    Returns:
+        List of dictionaries with path and display for each unstaged file
+    """
+    # Get modified unstaged files
+    modified_result = run_git_command(["ls-files", "--modified"])
+    modified_files = modified_result.splitlines() if modified_result else []
+
+    # Get untracked files
+    untracked_result = run_git_command(["ls-files", "--others", "--exclude-standard"])
+    untracked_files = untracked_result.splitlines() if untracked_result else []
+
+    # Get deleted unstaged files (neither modified nor untracked, have to parse status)
+    status_result = run_git_command(["status", "--porcelain"])
+    deleted_files = []
+
+    if status_result:
+        for line in status_result.splitlines():
+            if line.startswith(" D"):  # Space + D means unstaged deletion
+                deleted_files.append(line[3:])
+
+    # Build the results list
+    files = []
+
+    # Add modified files
+    for path in modified_files:
+        files.append(
+            {
+                "path": path,
+                "display": f"Modified: {path}",
+            }
+        )
+
+    # Add untracked files
+    for path in untracked_files:
+        files.append(
+            {
+                "path": path,
+                "display": f"Untracked: {path}",
+            }
+        )
+
+    # Add deleted files
+    for path in deleted_files:
+        files.append(
+            {
+                "path": path,
+                "display": f"Deleted: {path}",
+            }
+        )
+
+    return files

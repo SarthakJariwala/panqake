@@ -92,6 +92,63 @@ def prompt_confirm(message: str) -> bool:
     return questionary.confirm(message, default=False, style=style).ask()
 
 
+def prompt_checkbox(
+    message: str,
+    choices: List[Union[str, dict]],
+    default: Optional[List[Union[str, dict]]] = None,
+) -> List[str]:
+    """Prompt user to select multiple items from a list.
+
+    Args:
+        message: The prompt message
+        choices: List of choices (strings or dicts with 'name' and 'value' keys)
+        default: Default selected choices
+
+    Returns:
+        List of selected values
+    """
+    from questionary import Choice
+
+    # Process default values to match the expected format
+    default_values = []
+    if default is not None:
+        for d in default:
+            if isinstance(d, dict) and "path" in d:
+                default_values.append(d["path"])
+            elif isinstance(d, dict) and "value" in d:
+                default_values.append(d["value"])
+            else:
+                default_values.append(d)
+
+    # Convert choices to Choice objects with checked state
+    processed_choices = []
+
+    for choice in choices:
+        if isinstance(choice, dict) and "display" in choice:
+            # For our unstaged files format
+            value = choice["path"]
+            name = choice["display"]
+            checked = default is None or value in default_values
+            processed_choices.append(Choice(name, value=value, checked=checked))
+        elif isinstance(choice, dict) and "name" in choice and "value" in choice:
+            # If already in questionary format
+            name = choice["name"]
+            value = choice["value"]
+            checked = default is None or value in default_values
+            processed_choices.append(Choice(name, value=value, checked=checked))
+        else:
+            # Simple string choice
+            name = str(choice)
+            value = choice
+            checked = default is None or value in default_values
+            processed_choices.append(Choice(name, value=value, checked=checked))
+
+    # Use the Choice objects with checked state (no default parameter needed)
+    result = questionary.checkbox(message, choices=processed_choices, style=style).ask()
+
+    return result
+
+
 def prompt_select(
     message: str, choices: List[str], default: Optional[str] = None
 ) -> str:

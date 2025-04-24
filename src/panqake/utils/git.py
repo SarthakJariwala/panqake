@@ -190,3 +190,52 @@ def get_potential_parents(branch: str) -> List[str]:
             potential_parents.append(other_branch)
 
     return potential_parents
+
+
+def branch_has_commits(branch: str = None, parent_branch: Optional[str] = None) -> bool:
+    """Check if the branch has any commits since the specified parent branch.
+
+    This checks if a branch has new commits relative to a given parent.
+    It relies on the caller to determine the correct parent (e.g., from stack config).
+
+    Args:
+        branch: The branch to check. If None, check current branch.
+        parent_branch: The parent branch to compare against.
+
+    Returns:
+        True if the branch has at least one commit since the parent_branch,
+        False otherwise (or if parent is not provided or branches invalid).
+    """
+    if not branch:
+        branch = get_current_branch()
+
+    if not branch:
+        return False  # Cannot determine branch
+
+    if not branch_exists(branch):
+        return False  # Branch doesn't exist locally
+
+    # If no parent is provided, we cannot determine if it has *new* commits
+    if not parent_branch:
+        return False
+
+    # Ensure the provided parent branch actually exists locally before comparing
+    if not branch_exists(parent_branch):
+        print_formatted_text(
+            f"<warning>Provided parent branch '{parent_branch}' for '{branch}' not found locally.</warning>"
+        )
+        return False  # Cannot compare if parent doesn't exist
+
+    # Count commits between the parent and the branch tip
+    count_cmd = ["rev-list", "--count", f"{parent_branch}..{branch}"]
+    count_output = run_git_command(count_cmd, silent_fail=True)
+
+    try:
+        commit_count = int(count_output)
+        return commit_count > 0
+    except (ValueError, TypeError, AttributeError):
+        # Handle cases where count_output is None or not an integer
+        print_formatted_text(
+            f"<warning>Could not determine commit count for {branch} relative to {parent_branch}</warning>"
+        )
+        return False  # Safer to return False if count fails

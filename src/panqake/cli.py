@@ -18,13 +18,16 @@ from panqake.commands.track import track
 from panqake.commands.update import update_branches
 from panqake.commands.update_pr import update_pull_request
 from panqake.utils.config import init_panqake
-from panqake.utils.git import is_git_repo
+from panqake.utils.git import is_git_repo, run_git_command
+from panqake.utils.questionary_prompt import print_formatted_text
 
 
 def setup_argument_parsers():
     """Set up argument parsers for the CLI."""
     parser = argparse.ArgumentParser(
-        description="Panqake - Git Branch Stacking Utility"
+        description="Panqake - Git Branch Stacking Utility",
+        # Add this to prevent error on unknown args
+        allow_abbrev=False,
     )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
@@ -178,12 +181,29 @@ def execute_command(args):
 
 def main():
     """Main entry point for the panqake CLI."""
-    parser = setup_argument_parsers()
-    args = parser.parse_args()
-
-    if not args.command:
+    # Check if any arguments were provided
+    if len(sys.argv) <= 1:
+        # No arguments, show help
+        parser = setup_argument_parsers()
         parser.print_help()
         return
+
+    # Get the first argument (potential command)
+    potential_command = sys.argv[1]
+
+    # Define the list of known commands
+    known_commands = [
+        "new",
+        "list",
+        "update",
+        "delete",
+        "pr",
+        "switch",
+        "track",
+        "modify",
+        "update-pr",
+        "merge",
+    ]
 
     # Initialize panqake directory and files
     init_panqake()
@@ -193,8 +213,17 @@ def main():
         print("Error: Not in a git repository")
         sys.exit(1)
 
-    # Execute the appropriate command
-    execute_command(args)
+    # If the potential command is known, use argparse normally
+    if potential_command in known_commands:
+        parser = setup_argument_parsers()
+        args = parser.parse_args()
+        execute_command(args)
+    # Otherwise, pass all arguments to git
+    else:
+        print_formatted_text("<info>Passing command to git...</info>")
+        result = run_git_command(sys.argv[1:])
+        if result is not None:
+            print(result)
 
 
 if __name__ == "__main__":

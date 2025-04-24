@@ -1,6 +1,13 @@
 # Changelog
 
 All notable changes to the Panqake project will be documented in this file.
+
+## [v0.5.0] - 2025-04-24
+
+### Added
+- Added Git command pass-through functionality - any unrecognized commands are passed to vanilla Git
+- Improved CLI experience by allowing standard Git commands to work seamlessly within Panqake
+
 ## [v0.4.0] - 2025-04-23
 
 ### Added

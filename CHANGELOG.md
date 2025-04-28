@@ -2,6 +2,17 @@
 
 All notable changes to the Panqake project will be documented in this file.
 
+## [v0.6.0] - 2025-04-28
+
+### Added
+
+- Added a new `sync` command to fetch latest changes from the remote main branch, update local child branches, and optionally delete merged branches.
+- Added utilities for common branch related git operations
+
+### Changed
+
+- Refactored `merge` and `update` to use common extracted branch utility functions
+
 ## [v0.5.0] - 2025-04-24
 
 ### Added

@@ -2,6 +2,10 @@
 
 import sys
 
+from panqake.utils.branch_operations import (
+    return_to_branch,
+    update_branch_with_conflict_detection,
+)
 from panqake.utils.config import get_child_branches
 from panqake.utils.git import (
     branch_exists,
@@ -95,24 +99,13 @@ def update_branch_and_children(branch, current_branch, updated_branches=None):
                 f"<info>based on changes to</info> {format_branch(branch)}..."
             )
 
-            # Checkout the child branch
-            checkout_result = run_git_command(["checkout", child])
-            if checkout_result is None:
-                print_formatted_text(
-                    f"<warning>Error: Failed to checkout branch '{child}'</warning>"
-                )
-                run_git_command(["checkout", current_branch])
-                sys.exit(1)
+            # Use utility function to update the branch with conflict detection
+            success, error_msg = update_branch_with_conflict_detection(
+                child, branch, abort_on_conflict=True
+            )
 
-            # Rebase onto the parent branch
-            rebase_result = run_git_command(["rebase", branch])
-            if rebase_result is None:
-                print_formatted_text(
-                    f"<warning>Error: Rebase conflict detected in branch '{child}'</warning>"
-                )
-                print_formatted_text(
-                    "<warning>Please resolve conflicts and run 'git rebase --continue'</warning>"
-                )
+            if not success:
+                print_formatted_text(f"<warning>{error_msg}</warning>")
                 print_formatted_text(
                     f"<warning>Then run 'panqake update {child}' to continue updating the stack</warning>"
                 )
@@ -181,8 +174,8 @@ def update_branches(branch_name=None, skip_push=False):
                         f"<success>Branch {format_branch(branch)} pushed to remote</success>"
                     )
 
-    # Return to the original branch
-    run_git_command(["checkout", current_branch])
+    # Return to the original branch using our utility function
+    return_to_branch(current_branch)
 
     if skip_push:
         print_formatted_text(

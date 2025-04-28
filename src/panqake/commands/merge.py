@@ -2,6 +2,11 @@
 
 import sys
 
+from panqake.utils.branch_operations import (
+    fetch_latest_from_remote,
+    return_to_branch,
+    update_branch_with_conflict_detection,
+)
 from panqake.utils.config import (
     add_to_stack,
     get_child_branches,
@@ -37,15 +42,7 @@ def fetch_latest_base_branch(branch_name):
     if not parent_branch:
         parent_branch = "main"  # Default to main if no parent found
 
-    print_formatted_text("<info>Fetching latest changes from remote...</info>")
-    fetch_result = run_git_command(["fetch", "origin", parent_branch])
-    if fetch_result is None:
-        print_formatted_text(
-            f"<warning>Warning: Failed to fetch latest changes for {parent_branch}</warning>"
-        )
-        return False
-
-    return True
+    return fetch_latest_from_remote(parent_branch)
 
 
 def update_pr_base_for_children(branch_name, parent_branch):
@@ -139,18 +136,13 @@ def update_child_branches(branch_name, parent_branch, current_branch):
             f"<info>Updated branch relationship for {format_branch(child)}</info>"
         )
 
-        # Rebase onto the parent branch
-        rebase_result = run_git_command(["rebase", parent_branch])
-        if rebase_result is None:
-            print_formatted_text(
-                f"<warning>Error: Rebase conflict detected in branch '{child}'</warning>"
-            )
-            print_formatted_text(
-                "<warning>Please resolve conflicts and run 'git rebase --continue'</warning>"
-            )
-            print_formatted_text(
-                f"<warning>Then run 'panqake update {child}' to continue updating the stack</warning>"
-            )
+        # Use the utility function for rebasing with conflict detection
+        rebase_success, error_msg = update_branch_with_conflict_detection(
+            child, parent_branch, abort_on_conflict=False
+        )
+
+        if not rebase_success:
+            print_formatted_text(f"<warning>{error_msg}</warning>")
             success = False
             break
 
@@ -206,15 +198,6 @@ def get_merge_method():
     return prompt_select(
         "Select merge method:", choices=merge_methods, default="squash"
     )
-
-
-def restore_original_branch(current_branch, branch_name, parent_branch):
-    """Return to the original branch or a fallback branch."""
-    # Return to original branch if it still exists, otherwise go to parent
-    if branch_exists(current_branch) and current_branch != branch_name:
-        run_git_command(["checkout", current_branch])
-    elif branch_exists(parent_branch):
-        run_git_command(["checkout", parent_branch])
 
 
 def handle_pr_base_updates(branch_name, parent_branch, update_children):
@@ -280,7 +263,7 @@ def perform_merge_operations(
             print_formatted_text("<warning>Failed to clean up local branch.</warning>")
 
     # Return to original branch if it still exists, otherwise go to parent
-    restore_original_branch(current_branch, branch_name, parent_branch)
+    return_to_branch(current_branch, parent_branch)
 
     print_formatted_text("<success>Merge and branch management completed.</success>")
     return True

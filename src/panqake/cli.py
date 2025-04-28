@@ -14,6 +14,7 @@ from panqake.commands.modify import modify_commit
 from panqake.commands.new import create_new_branch
 from panqake.commands.pr import create_pull_requests
 from panqake.commands.switch import switch_branch
+from panqake.commands.sync import sync_with_remote
 from panqake.commands.track import track
 from panqake.commands.update import update_branches
 from panqake.commands.update_pr import update_pull_request
@@ -150,33 +151,67 @@ def setup_argument_parsers():
         help="Don't update child branches after merging",
     )
 
+    # sync command
+    sync_parser = subparsers.add_parser(
+        "sync", help="Sync branches with remote repository changes"
+    )
+    sync_parser.add_argument(
+        "main_branch",
+        nargs="?",
+        default="main",
+        help="Trunk/main branch to sync with (defaults to 'main')",
+    )
+
     return parser
 
 
-def execute_command(args):
-    """Execute the appropriate command based on args."""
+def execute_branch_commands(args):
+    """Execute branch-related commands."""
     if args.command == "new":
         create_new_branch(args.branch_name, args.base_branch)
     elif args.command == "list":
         list_branches(args.branch_name)
-    elif args.command == "update":
-        update_branches(args.branch_name, skip_push=args.no_push)
     elif args.command == "delete":
         delete_branch(args.branch_name)
-    elif args.command == "pr":
-        create_pull_requests(args.branch_name)
     elif args.command == "switch":
         switch_branch(args.branch_name)
     elif args.command == "track":
         track(args.branch_name)
+
+
+def execute_update_commands(args):
+    """Execute update and synchronization related commands."""
+    if args.command == "update":
+        update_branches(args.branch_name, skip_push=args.no_push)
     elif args.command == "modify":
         modify_commit(args.commit, args.message, args.no_amend)
     elif args.command == "update-pr":
         update_pull_request(args.branch_name)
+    elif args.command == "sync":
+        sync_with_remote(args.main_branch)
+
+
+def execute_pr_commands(args):
+    """Execute PR related commands."""
+    if args.command == "pr":
+        create_pull_requests(args.branch_name)
     elif args.command == "merge":
         merge_branch(
             args.branch_name, not args.no_delete_branch, not args.no_update_children
         )
+
+
+def execute_command(args):
+    """Execute the appropriate command based on args."""
+    # Group 1: Branch management commands
+    if args.command in ["new", "list", "delete", "switch", "track"]:
+        execute_branch_commands(args)
+    # Group 2: Update and synchronization commands
+    elif args.command in ["update", "modify", "update-pr", "sync"]:
+        execute_update_commands(args)
+    # Group 3: PR related commands
+    elif args.command in ["pr", "merge"]:
+        execute_pr_commands(args)
 
 
 def main():
@@ -203,6 +238,7 @@ def main():
         "modify",
         "update-pr",
         "merge",
+        "sync",
     ]
 
     # Initialize panqake directory and files

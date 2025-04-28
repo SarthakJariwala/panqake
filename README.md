@@ -25,6 +25,7 @@ uv tool install panqake
 | `panqake new feature-name` | Create branches | Creates a new branch based on your current branch |
 | `panqake modify` | Commit changes | Interactively select files to stage and commit/amend |
 | `panqake update` | Propagate changes | Rebases all child branches and updates their PRs |
+| `panqake sync` | Sync branches | Fetches latest changes from the remote main branch, updates local child branches, and optionally deletes merged branches |
 | `panqake merge` | Complete workflow | Merges PR and updates all dependent branches |
 
 ## Real-World Workflow Example
@@ -52,16 +53,30 @@ pq switch auth-backend
 
 # Commit the fixes and automatically update child branches
 pq modify -m "Fix token validation"
+
+# Sync with remote main and update stack
+pq sync
+
+# Update any remaining child branches if needed
 pq update
 
 # Create PRs for your entire stack with a single command
 pq pr
 
 # When the first PR is approved, merge it and update the stack
-panqake merge auth-backend
+pq merge auth-backend
 ```
 
 ## Advanced Features
+
+### Sync with Remote Main Branch
+
+Keep your branch stack up to date with remote changes:
+
+```bash
+# Sync with remote main and update stack
+pq sync
+```
 
 ### Track Existing Git Branches
 

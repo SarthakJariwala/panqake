@@ -247,8 +247,6 @@ def prompt_for_parent(potential_parents: List[str]) -> Optional[str]:
     if not potential_parents:
         return None
 
-    print_formatted_text("<info>Select a parent branch for the current branch:</info>")
-
     # Use rich to style the prompt message
     rich_prompt("Select a parent branch (autocomplete or arrow keys)", "prompt")
 

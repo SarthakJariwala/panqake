@@ -22,10 +22,10 @@ def update_pull_request(branch_name=None):
     # Check for GitHub CLI
     if not check_github_cli_installed():
         print_formatted_text(
-            "<warning>Error: GitHub CLI (gh) is required but not installed.</warning>"
+            "[warning]Error: GitHub CLI (gh) is required but not installed.[/warning]"
         )
         print_formatted_text(
-            "<info>Please install GitHub CLI: https://cli.github.com</info>"
+            "[info]Please install GitHub CLI: https://cli.github.com[/info]"
         )
         sys.exit(1)
 
@@ -35,18 +35,18 @@ def update_pull_request(branch_name=None):
     has_pr = branch_has_pr(branch_name)
 
     # Ask for confirmation for force push
-    print_formatted_text("<info>This will update the remote branch</info>")
-    print_formatted_text(f"<branch>{branch_name}</branch>")
+    print_formatted_text("[info]This will update the remote branch[/info]")
+    print_formatted_text(f"[branch]{branch_name}[/branch]")
     print("")
     if has_pr:
         print_formatted_text(
-            "<info>The associated PR will also be updated for branch:</info>"
+            "[info]The associated PR will also be updated for branch:[/info]"
         )
-        print_formatted_text(f"<branch>{branch_name}</branch>")
+        print_formatted_text(f"[branch]{branch_name}[/branch]")
         print("")
 
     if not prompt_confirm("Do you want to proceed?"):
-        print_formatted_text("<info>Update cancelled.</info>")
+        print_formatted_text("[info]Update cancelled.[/info]")
         return
 
     # Force push is needed when amending commits
@@ -60,12 +60,12 @@ def update_pull_request(branch_name=None):
     if success:
         if has_pr:
             print_formatted_text(
-                f"<success>PR for {format_branch(branch_name)} has been updated</success>"
+                f"[success]PR for {format_branch(branch_name)} has been updated[/success]"
             )
         else:
             print_formatted_text(
-                f"<info>Branch {format_branch(branch_name)} updated on remote. No PR exists yet.</info>"
+                f"[info]Branch {format_branch(branch_name)} updated on remote. No PR exists yet.[/info]"
             )
-            print_formatted_text("<info>To create a PR, run:</info> ")
-            print_formatted_text("<command>pq pr</command>")
+            print_formatted_text("[info]To create a PR, run:[/info] ")
+            print_formatted_text("[command]pq pr[/command]")
             print("")

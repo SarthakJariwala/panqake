@@ -47,7 +47,7 @@ def validate_branch(branch_name):
     # Check if target branch exists
     if not branch_exists(branch_name):
         print_formatted_text(
-            f"<warning>Error: Branch '{branch_name}' does not exist</warning>"
+            f"[warning]Error: Branch '{branch_name}' does not exist[/warning]"
         )
         sys.exit(1)
 
@@ -60,16 +60,16 @@ def get_affected_branches(branch_name):
 
     # Show summary and ask for confirmation
     if affected_branches:
-        print_formatted_text("<info>The following branches will be updated:</info>")
+        print_formatted_text("[info]The following branches will be updated:[/info]")
         for branch in affected_branches:
             print_formatted_text(f"  {format_branch(branch)}")
 
         if not prompt_confirm("Do you want to proceed with the update?"):
-            print_formatted_text("<info>Update cancelled.</info>")
+            print_formatted_text("[info]Update cancelled.[/info]")
             return None
     else:
         print_formatted_text(
-            f"<info>No child branches found for {format_branch(branch_name)}.</info>"
+            f"[info]No child branches found for {format_branch(branch_name)}.[/info]"
         )
         return None
 
@@ -95,8 +95,8 @@ def update_branch_and_children(branch, current_branch, updated_branches=None):
     if children:
         for child in children:
             print_formatted_text(
-                f"<info>Updating branch</info> {format_branch(child)} "
-                f"<info>based on changes to</info> {format_branch(branch)}..."
+                f"[info]Updating branch[/info] {format_branch(child)} "
+                f"[info]based on changes to[/info] {format_branch(branch)}..."
             )
 
             # Use utility function to update the branch with conflict detection
@@ -105,9 +105,9 @@ def update_branch_and_children(branch, current_branch, updated_branches=None):
             )
 
             if not success:
-                print_formatted_text(f"<warning>{error_msg}</warning>")
+                print_formatted_text(f"[warning]{error_msg}[/warning]")
                 print_formatted_text(
-                    f"<warning>Then run 'panqake update {child}' to continue updating the stack</warning>"
+                    f"[warning]Then run 'panqake update {child}' to continue updating the stack[/warning]"
                 )
                 sys.exit(1)
 
@@ -135,7 +135,7 @@ def update_branches(branch_name=None, skip_push=False):
 
     # Start the update process
     print_formatted_text(
-        f"<info>Starting stack update from branch</info> {format_branch(branch_name)}..."
+        f"[info]Starting stack update from branch[/info] {format_branch(branch_name)}..."
     )
 
     # Track successfully updated branches
@@ -143,13 +143,13 @@ def update_branches(branch_name=None, skip_push=False):
 
     # Push to remote if requested (new functionality)
     if not skip_push and updated_branches:
-        print_formatted_text("<info>Pushing updated branches to remote...</info>")
+        print_formatted_text("[info]Pushing updated branches to remote...[/info]")
 
         # Check for GitHub CLI if we want to display PR info
         has_github_cli = check_github_cli_installed()
         if not has_github_cli:
             print_formatted_text(
-                "<info>GitHub CLI not installed. Will push to remote but can't update PR info.</info>"
+                "[info]GitHub CLI not installed. Will push to remote but can't update PR info.[/info]"
             )
 
         # Push each branch that was successfully updated
@@ -158,7 +158,7 @@ def update_branches(branch_name=None, skip_push=False):
             checkout_result = run_git_command(["checkout", branch])
             if checkout_result is None:
                 print_formatted_text(
-                    f"<warning>Error: Failed to checkout branch '{branch}' for pushing</warning>"
+                    f"[warning]Error: Failed to checkout branch '{branch}' for pushing[/warning]"
                 )
                 continue
 
@@ -167,11 +167,11 @@ def update_branches(branch_name=None, skip_push=False):
             if success:
                 if has_github_cli and branch_has_pr(branch):
                     print_formatted_text(
-                        f"<success>PR for {format_branch(branch)} has been updated</success>"
+                        f"[success]PR for {format_branch(branch)} has been updated[/success]"
                     )
                 else:
                     print_formatted_text(
-                        f"<success>Branch {format_branch(branch)} pushed to remote</success>"
+                        f"[success]Branch {format_branch(branch)} pushed to remote[/success]"
                     )
 
     # Return to the original branch using our utility function
@@ -179,10 +179,10 @@ def update_branches(branch_name=None, skip_push=False):
 
     if skip_push:
         print_formatted_text(
-            f"<success>Stack update complete (local only). Returned to branch {format_branch(current_branch)}</success>"
+            f"[success]Stack update complete (local only). Returned to branch {format_branch(current_branch)}[/success]"
         )
     else:
         print_formatted_text(
-            "<success>Stack update complete (local and remote).</success>"
+            "[success]Stack update complete (local and remote).[/success]"
         )
-        print_formatted_text(f"<success>Returned to branch {current_branch}</success>")
+        print_formatted_text(f"[success]Returned to branch {current_branch}[/success]")

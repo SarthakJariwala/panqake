@@ -55,7 +55,7 @@ def update_pr_base_for_children(branch_name, parent_branch):
         return True
 
     print_formatted_text(
-        "<info>Updating PR base references for child branches...</info>"
+        "[info]Updating PR base references for child branches...[/info]"
     )
 
     success = True
@@ -63,13 +63,13 @@ def update_pr_base_for_children(branch_name, parent_branch):
         # Check if the child has a PR
         if branch_has_pr(child):
             print_formatted_text(
-                f"<info>Updating PR base for child branch</info> {format_branch(child)}..."
+                f"[info]Updating PR base for child branch[/info] {format_branch(child)}..."
             )
             if update_pr_base(child, parent_branch):
-                print_formatted_text("<success>PR base updated successfully</success>")
+                print_formatted_text("[success]PR base updated successfully[/success]")
             else:
                 print_formatted_text(
-                    f"<warning>Warning: Failed to update PR base for '{child}'</warning>"
+                    f"[warning]Warning: Failed to update PR base for '{child}'[/warning]"
                 )
                 success = False
 
@@ -84,23 +84,23 @@ def merge_pr(branch_name, merge_method="squash"):
     # First check if the branch has a PR
     if not branch_has_pr(branch_name):
         print_formatted_text(
-            f"<warning>Error: Branch '{branch_name}' does not have an open PR</warning>"
+            f"[warning]Error: Branch '{branch_name}' does not have an open PR[/warning]"
         )
         return False
 
-    print_formatted_text("<info>Merging PR for branch...</info>")
-    print_formatted_text(f"<branch>{branch_name}</branch>")
+    print_formatted_text("[info]Merging PR for branch...[/info]")
+    print_formatted_text(f"[branch]{branch_name}[/branch]")
     print("")
-    print_formatted_text(f"<info>Using merge method: {merge_method}</info>")
+    print_formatted_text(f"[info]Using merge method: {merge_method}[/info]")
 
     # Execute GitHub CLI to merge the PR - do NOT delete the branch yet
     # We'll need to update child PR references first
     if github_merge_pr(branch_name, merge_method):
-        print_formatted_text("<success>PR merged successfully</success>")
+        print_formatted_text("[success]PR merged successfully[/success]")
         return True
     else:
         print_formatted_text(
-            f"<warning>Error: Failed to merge PR for branch '{branch_name}'</warning>"
+            f"[warning]Error: Failed to merge PR for branch '{branch_name}'[/warning]"
         )
         return False
 
@@ -112,20 +112,20 @@ def update_child_branches(branch_name, parent_branch, current_branch):
     if not children:
         return True
 
-    print_formatted_text("<info>Updating child branches...</info>")
+    print_formatted_text("[info]Updating child branches...[/info]")
 
     success = True
     for child in children:
         print_formatted_text(
-            f"<info>Updating child branch</info> {format_branch(child)} "
-            f"<info>to use new base</info> {format_branch(parent_branch)}..."
+            f"[info]Updating child branch[/info] {format_branch(child)} "
+            f"[info]to use new base[/info] {format_branch(parent_branch)}..."
         )
 
         # Checkout the child branch
         checkout_result = run_git_command(["checkout", child])
         if checkout_result is None:
             print_formatted_text(
-                f"<warning>Error: Failed to checkout branch '{child}'</warning>"
+                f"[warning]Error: Failed to checkout branch '{child}'[/warning]"
             )
             success = False
             continue
@@ -133,7 +133,7 @@ def update_child_branches(branch_name, parent_branch, current_branch):
         # Update the parent-child relationship in stacks.json
         add_to_stack(child, parent_branch)
         print_formatted_text(
-            f"<info>Updated branch relationship for {format_branch(child)}</info>"
+            f"[info]Updated branch relationship for {format_branch(child)}[/info]"
         )
 
         # Use the utility function for rebasing with conflict detection
@@ -142,7 +142,7 @@ def update_child_branches(branch_name, parent_branch, current_branch):
         )
 
         if not rebase_success:
-            print_formatted_text(f"<warning>{error_msg}</warning>")
+            print_formatted_text(f"[warning]{error_msg}[/warning]")
             success = False
             break
 
@@ -156,7 +156,7 @@ def cleanup_local_branch(branch_name):
     """Delete the local branch after successful merge."""
     if branch_exists(branch_name):
         print_formatted_text(
-            f"<info>Deleting local branch</info> {format_branch(branch_name)}..."
+            f"[info]Deleting local branch[/info] {format_branch(branch_name)}..."
         )
 
         # Make sure we're not on the branch we're trying to delete
@@ -167,12 +167,12 @@ def cleanup_local_branch(branch_name):
                 parent = "main"  # Default to main if no parent
 
             print_formatted_text(
-                f"<info>Switching to</info> {format_branch(parent)} <info>before deletion</info>"
+                f"[info]Switching to[/info] {format_branch(parent)} [info]before deletion[/info]"
             )
             checkout_result = run_git_command(["checkout", parent])
             if checkout_result is None:
                 print_formatted_text(
-                    f"<warning>Error: Failed to checkout branch '{parent}'</warning>"
+                    f"[warning]Error: Failed to checkout branch '{parent}'[/warning]"
                 )
                 return False
 
@@ -180,14 +180,14 @@ def cleanup_local_branch(branch_name):
         delete_result = run_git_command(["branch", "-D", branch_name])
         if delete_result is None:
             print_formatted_text(
-                f"<warning>Error: Failed to delete local branch '{branch_name}'</warning>"
+                f"[warning]Error: Failed to delete local branch '{branch_name}'[/warning]"
             )
             return False
 
         # Clean up stacks.json file by removing the branch
         remove_from_stack(branch_name)
 
-        print_formatted_text("<success>Local branch deleted successfully</success>")
+        print_formatted_text("[success]Local branch deleted successfully[/success]")
 
     return True
 
@@ -208,7 +208,7 @@ def handle_pr_base_updates(branch_name, parent_branch, update_children):
     update_pr_success = update_pr_base_for_children(branch_name, parent_branch)
     if not update_pr_success:
         print_formatted_text(
-            "<warning>Warning: Some PR base references could not be updated</warning>"
+            "[warning]Warning: Some PR base references could not be updated[/warning]"
         )
 
     return update_pr_success
@@ -221,8 +221,8 @@ def handle_branch_updates(branch_name, parent_branch, current_branch, update_chi
 
     update_success = update_child_branches(branch_name, parent_branch, current_branch)
     if not update_success:
-        print_formatted_text("<warning>Failed to update all child branches.</warning>")
-        print_formatted_text("<info>You may need to resolve conflicts manually.</info>")
+        print_formatted_text("[warning]Failed to update all child branches.[/warning]")
+        print_formatted_text("[info]You may need to resolve conflicts manually.[/info]")
 
     return update_success
 
@@ -246,7 +246,7 @@ def perform_merge_operations(
     # Merge the PR (without deleting the branch yet)
     merge_success = merge_pr(branch_name, merge_method)
     if not merge_success:
-        print_formatted_text("<warning>Merge operation failed. Stopping.</warning>")
+        print_formatted_text("[warning]Merge operation failed. Stopping.[/warning]")
         return False
 
     # Now it's safe to delete the remote branch
@@ -260,12 +260,12 @@ def perform_merge_operations(
     if delete_branch:
         cleanup_success = cleanup_local_branch(branch_name)
         if not cleanup_success:
-            print_formatted_text("<warning>Failed to clean up local branch.</warning>")
+            print_formatted_text("[warning]Failed to clean up local branch.[/warning]")
 
     # Return to original branch if it still exists, otherwise go to parent
     return_to_branch(current_branch, parent_branch)
 
-    print_formatted_text("<success>Merge and branch management completed.</success>")
+    print_formatted_text("[success]Merge and branch management completed.[/success]")
     return True
 
 
@@ -274,10 +274,10 @@ def merge_branch(branch_name=None, delete_branch=True, update_children=True):
     # Check for GitHub CLI
     if not check_github_cli_installed():
         print_formatted_text(
-            "<warning>Error: GitHub CLI (gh) is required but not installed.</warning>"
+            "[warning]Error: GitHub CLI (gh) is required but not installed.[/warning]"
         )
         print_formatted_text(
-            "<info>Please install GitHub CLI: https://cli.github.com</info>"
+            "[info]Please install GitHub CLI: https://cli.github.com[/info]"
         )
         sys.exit(1)
 
@@ -290,11 +290,11 @@ def merge_branch(branch_name=None, delete_branch=True, update_children=True):
         parent_branch = "main"  # Default to main if no parent
 
     # Show summary of what we're about to do
-    print_formatted_text("<info>Preparing to merge PR for branch:</info>")
-    print_formatted_text(f"<branch>{branch_name}</branch>")
+    print_formatted_text("[info]Preparing to merge PR for branch:[/info]")
+    print_formatted_text(f"[branch]{branch_name}[/branch]")
     print("")
-    print_formatted_text("<info>Parent branch:</info>")
-    print_formatted_text(f"<branch>{parent_branch}</branch>")
+    print_formatted_text("[info]Parent branch:[/info]")
+    print_formatted_text(f"[branch]{parent_branch}[/branch]")
     print("")
 
     # Ask for merge method
@@ -302,7 +302,7 @@ def merge_branch(branch_name=None, delete_branch=True, update_children=True):
 
     # Ask for confirmation
     if not prompt_confirm("Do you want to proceed with the merge?"):
-        print_formatted_text("<info>Merge cancelled.</info>")
+        print_formatted_text("[info]Merge cancelled.[/info]")
         return
 
     # Perform merge operations

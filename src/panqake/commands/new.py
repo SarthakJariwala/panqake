@@ -9,7 +9,12 @@ from panqake.utils.git import (
     list_all_branches,
     run_git_command,
 )
-from panqake.utils.questionary_prompt import BranchNameValidator, prompt_input
+from panqake.utils.questionary_prompt import (
+    BranchNameValidator,
+    format_branch,
+    print_formatted_text,
+    prompt_input,
+)
 
 
 def create_new_branch(branch_name=None, base_branch=None):
@@ -33,24 +38,32 @@ def create_new_branch(branch_name=None, base_branch=None):
 
     # Check if the new branch already exists
     if branch_exists(branch_name):
-        print(f"Error: Branch '{branch_name}' already exists")
+        print_formatted_text(
+            f"[warning]Error: Branch '{branch_name}' already exists[/warning]"
+        )
         sys.exit(1)
 
     # Check if the base branch exists
     if base_branch and not branch_exists(base_branch):
-        print(f"Error: Base branch '{base_branch}' does not exist")
+        print_formatted_text(
+            f"[warning]Error: Base branch '{base_branch}' does not exist[/warning]"
+        )
         sys.exit(1)
 
-    print(f"Creating new branch '{branch_name}' based on '{base_branch}'...")
+    print_formatted_text(
+        f"[info]Creating new branch '{branch_name}' based on '{base_branch}'...[/info]"
+    )
 
     # Create the new branch
     result = run_git_command(["checkout", "-b", branch_name, base_branch])
     if result is None:
-        print("Error: Failed to create new branch")
+        print_formatted_text("[warning]Error: Failed to create new branch[/warning]")
         sys.exit(1)
 
     # Record the dependency information
     add_to_stack(branch_name, base_branch)
 
-    print(f"Success! Created new branch '{branch_name}' in the stack")
-    print(f"Parent branch: {base_branch}")
+    print_formatted_text(
+        f"[success]Success! Created new branch '{branch_name}' in the stack[/success]"
+    )
+    print_formatted_text(f"[info]Parent branch: {format_branch(base_branch)}[/info]")

@@ -19,7 +19,7 @@ def switch_branch(branch_name=None):
     branches = list_all_branches()
 
     if not branches:
-        print_formatted_text("<warning>No branches found in repository</warning>")
+        print_formatted_text("[warning]No branches found in repository[/warning]")
         sys.exit(1)
 
     current = get_current_branch()
@@ -28,12 +28,12 @@ def switch_branch(branch_name=None):
     if branch_name:
         if branch_name not in branches:
             print_formatted_text(
-                f"<warning>Error: Branch '{branch_name}' does not exist</warning>"
+                f"[warning]Error: Branch '{branch_name}' does not exist[/warning]"
             )
             sys.exit(1)
 
         if branch_name == current:
-            print_formatted_text(f"<info>Already on branch '{branch_name}'</info>")
+            print_formatted_text(f"[info]Already on branch '{branch_name}'[/info]")
             return
 
         _checkout_branch(branch_name)
@@ -63,7 +63,7 @@ def switch_branch(branch_name=None):
 
     if selected:
         if selected == current:
-            print_formatted_text(f"<info>Already on branch '{selected}'</info>")
+            print_formatted_text(f"[info]Already on branch '{selected}'[/info]")
             return
 
         _checkout_branch(selected)
@@ -71,13 +71,13 @@ def switch_branch(branch_name=None):
 
 def _checkout_branch(branch_name):
     """Checkout to the specified branch."""
-    print_formatted_text(f"<info>Switching to branch '{branch_name}'...</info>")
+    print_formatted_text(f"[info]Switching to branch '{branch_name}'...[/info]")
     result = run_git_command(["checkout", branch_name])
 
     if result is not None:
         print_formatted_text(
-            f"<success>Successfully switched to branch '{branch_name}'</success>"
+            f"[success]Successfully switched to branch '{branch_name}'[/success]"
         )
     else:
-        print_formatted_text("<danger>Failed to switch branches</danger>")
+        print_formatted_text("[danger]Failed to switch branches[/danger]")
         sys.exit(1)

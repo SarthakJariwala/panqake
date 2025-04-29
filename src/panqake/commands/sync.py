@@ -59,19 +59,19 @@ def handle_merged_branches(main_branch):
     if branches_to_delete:
         for branch in branches_to_delete:
             print_formatted_text(
-                f"<info>{branch} is merged into {main_branch}. Delete it?</info>"
+                f"[info]{branch} is merged into {main_branch}. Delete it?[/info]"
             )
             if prompt_confirm(""):
                 # Delete the branch
                 delete_result = run_git_command(["branch", "-d", branch])
                 if delete_result is not None:
-                    print_formatted_text(f"<success>Deleted branch {branch}</success>")
+                    print_formatted_text(f"[success]Deleted branch {branch}[/success]")
                     # Remove from stacks config
                     remove_from_stack(branch)
                     deleted_branches.append(branch)
                 else:
                     print_formatted_text(
-                        f"<warning>Failed to delete branch {branch}</warning>"
+                        f"[warning]Failed to delete branch {branch}[/warning]"
                     )
                     success = False
 
@@ -102,7 +102,7 @@ def update_branches_with_conflict_handling(branch_name, current_branch):
         )
 
         if not child_success:
-            print_formatted_text(f"<warning>{error_msg}</warning>")
+            print_formatted_text(f"[warning]{error_msg}[/warning]")
             failed_branches.append(child)
             success = False
             # Stop at first conflict
@@ -135,12 +135,12 @@ def handle_branch_updates(main_branch, current_branch):
 
     if not update_success:
         print_formatted_text(
-            "<warning>All branches updated cleanly, except for:</warning>"
+            "[warning]All branches updated cleanly, except for:[/warning]"
         )
         for branch in failed_branches:
-            print_formatted_text(f"<warning>▸ {branch}</warning>")
+            print_formatted_text(f"[warning]▸ {branch}[/warning]")
         print_formatted_text(
-            "<info>You can fix these conflicts with panqake update.</info>"
+            "[info]You can fix these conflicts with panqake update.[/info]"
         )
 
     return update_success, failed_branches
@@ -152,19 +152,19 @@ def sync_with_remote(main_branch="main"):
     current_branch = get_current_branch()
     if not current_branch:
         print_formatted_text(
-            "<warning>Error: Unable to determine current branch</warning>"
+            "[warning]Error: Unable to determine current branch[/warning]"
         )
         sys.exit(1)
 
     # 2. Fetch & pull from remote
-    print_formatted_text("<info>Pulling main from remote...</info>")
+    print_formatted_text("[info]Pulling main from remote...[/info]")
     if not fetch_latest_from_remote(main_branch, current_branch):
         run_git_command(["checkout", current_branch])
         sys.exit(1)
 
     # 3. Handle merged branches
     print_formatted_text(
-        "<info>Checking if any branches have been merged/closed and can be deleted...</info>"
+        "[info]Checking if any branches have been merged/closed and can be deleted...[/info]"
     )
     merged_success, deleted_branches = handle_merged_branches(main_branch)
 
@@ -175,4 +175,4 @@ def sync_with_remote(main_branch="main"):
     return_to_branch(current_branch, main_branch, deleted_branches)
 
     if not failed_branches:
-        print_formatted_text("<success>Sync completed successfully</success>")
+        print_formatted_text("[success]Sync completed successfully[/success]")

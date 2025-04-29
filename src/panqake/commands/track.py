@@ -23,12 +23,12 @@ def track(branch_name=None):
         branch_name = get_current_branch()
         if not branch_name:
             print_formatted_text(
-                "<warning>Could not determine the current branch.</warning>"
+                "[warning]Could not determine the current branch.[/warning]"
             )
             sys.exit(1)
 
     print_formatted_text(
-        f"<info>Tracking branch: <branch>{branch_name}</branch></info>"
+        f"[info]Tracking branch: [branch]{branch_name}[/branch][/info]"
     )
 
     # Get potential parent branches from Git history
@@ -36,10 +36,10 @@ def track(branch_name=None):
 
     if not potential_parents:
         print_formatted_text(
-            f"<warning>No potential parent branches found in the history of '{branch_name}'.</warning>"
+            f"[warning]No potential parent branches found in the history of '{branch_name}'.[/warning]"
         )
         print_formatted_text(
-            "<warning>Please ensure the branch you want to track has a suitable parent in its history.</warning>"
+            "[warning]Please ensure the branch you want to track has a suitable parent in its history.[/warning]"
         )
         sys.exit(1)
 
@@ -47,13 +47,13 @@ def track(branch_name=None):
     selected_parent = prompt_for_parent(potential_parents)
 
     if not selected_parent:
-        print_formatted_text("<warning>No parent branch selected. Aborting.</warning>")
+        print_formatted_text("[warning]No parent branch selected. Aborting.[/warning]")
         sys.exit(1)
 
     # Add the branch to the stack with the selected parent
     add_to_stack(branch_name, selected_parent)
 
     print_formatted_text(
-        f"<success>Successfully added branch '{branch_name}' to the stack "
-        f"with parent '{selected_parent}'.</success>"
+        f"[success]Successfully added branch '{branch_name}' to the stack "
+        f"with parent '{selected_parent}'.[/success]"
     )

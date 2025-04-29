@@ -55,11 +55,13 @@ def is_branch_in_path_to_target(child, branch_name, parent_branch):
 def process_branch_for_pr(branch, target_branch):
     """Process a branch to create PR and handle its children."""
     if branch_has_pr(branch):
-        print_formatted_text(f"<info>Branch {branch} already has an open PR</info>")
+        print_formatted_text(
+            f"[info]Branch {format_branch(branch)} already has an open PR[/info]"
+        )
         pr_created = True
     else:
-        print_formatted_text("<info>Creating PR for branch:</info> ")
-        print_formatted_text(f"<branch>{branch}</branch>")
+        print_formatted_text("[info]Creating PR for branch:[/info] ")
+        print_formatted_text(f"{format_branch(branch)}")
         print("")
         # Get parent branch for PR target
         parent = get_parent_branch(branch)
@@ -79,7 +81,7 @@ def process_branch_for_pr(branch, target_branch):
                 process_branch_for_pr(child, target_branch)
     else:
         print_formatted_text(
-            f"<warning>Skipping child branches of {format_branch(branch)} due to PR creation failure</warning>"
+            f"[warning]Skipping child branches of {format_branch(branch)} due to PR creation failure[/warning]"
         )
 
 
@@ -88,10 +90,10 @@ def create_pull_requests(branch_name=None):
     # Check for GitHub CLI
     if not check_github_cli_installed():
         print_formatted_text(
-            "<warning>Error: GitHub CLI (gh) is required but not installed.</warning>"
+            "[warning]Error: GitHub CLI (gh) is required but not installed.[/warning]"
         )
         print_formatted_text(
-            "<info>Please install GitHub CLI: https://cli.github.com/</info>"
+            "[info]Please install GitHub CLI: https://cli.github.com/[/info]"
         )
         sys.exit(1)
 
@@ -102,7 +104,7 @@ def create_pull_requests(branch_name=None):
     # Check if target branch exists
     if not branch_exists(branch_name):
         print_formatted_text(
-            f"<warning>Error: Branch '{branch_name}' does not exist</warning>"
+            f"[warning]Error: Branch '{branch_name}' does not exist[/warning]"
         )
         sys.exit(1)
 
@@ -110,26 +112,26 @@ def create_pull_requests(branch_name=None):
     oldest_branch = find_oldest_branch_without_pr(branch_name)
 
     print_formatted_text(
-        "<info>Creating PRs from the bottom of the stack up to:</info> "
+        "[info]Creating PRs from the bottom of the stack up to:[/info] "
     )
-    print_formatted_text(f"<branch>{branch_name}</branch>")
+    print_formatted_text(f"{format_branch(branch_name)}")
     print("")
 
     process_branch_for_pr(oldest_branch, branch_name)
 
-    print_formatted_text("<success>Pull request creation complete</success>")
+    print_formatted_text("[success]Pull request creation complete[/success]")
 
 
 def ensure_branch_pushed(branch):
     """Ensure a branch is pushed to remote."""
     if not is_branch_pushed_to_remote(branch):
         print_formatted_text(
-            f"<warning>Branch {format_branch(branch)} has not been pushed to remote yet</warning>"
+            f"[warning]Branch {format_branch(branch)} has not been pushed to remote yet[/warning]"
         )
         if prompt_confirm("Would you like to push it now?"):
             return push_branch_to_remote(branch)
         else:
-            print_formatted_text("<info>PR creation skipped.</info>")
+            print_formatted_text("[info]PR creation skipped.[/info]")
             return False
     return True
 
@@ -146,7 +148,7 @@ def create_pr_for_branch(branch, parent):
 
     if not diff_output.strip():
         print_formatted_text(
-            f"<warning>Error: No commits found between {format_branch(parent)} and {format_branch(branch)}</warning>"
+            f"[warning]Error: No commits found between {format_branch(parent)} and {format_branch(branch)}[/warning]"
         )
         return False
 
@@ -167,30 +169,30 @@ def create_pr_for_branch(branch, parent):
     )
 
     # Show summary and confirm
-    print_formatted_text("<info>PR for branch:</info>")
-    print_formatted_text(f"<branch>{branch}</branch>")
+    print_formatted_text("[info]PR for branch:[/info]")
+    print_formatted_text(f"{format_branch(branch)}")
     print("")
 
-    print_formatted_text("<info>Target branch:</info>")
-    print_formatted_text(f"<branch>{parent}</branch>")
+    print_formatted_text("[info]Target branch:[/info]")
+    print_formatted_text(f"{format_branch(parent)}")
     print("")
 
-    print_formatted_text("<info>Title:</info>")
+    print_formatted_text("[info]Title:[/info]")
     print_formatted_text(f"{title}")
     print("")
 
     if not prompt_confirm("Create this pull request?"):
-        print_formatted_text("<info>PR creation skipped.</info>")
+        print_formatted_text("[info]PR creation skipped.[/info]")
         return False
 
     # Create the PR
     if create_pr(parent, branch, title, description):
         print_formatted_text(
-            f"<success>PR created successfully for {format_branch(branch)}</success>"
+            f"[success]PR created successfully for {format_branch(branch)}[/success]"
         )
         return True
     else:
         print_formatted_text(
-            f"<warning>Error: Failed to create PR for branch '{branch}'</warning>"
+            f"[warning]Error: Failed to create PR for branch '{branch}'[/warning]"
         )
         return False

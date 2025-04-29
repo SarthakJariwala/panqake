@@ -42,10 +42,10 @@ def stage_selected_files(files: List[dict]) -> bool:
         True if staging was successful for all files, False otherwise
     """
     if not files:
-        print_formatted_text("<warning>No files selected to stage</warning>")
+        print_formatted_text("[warning]No files selected to stage[/warning]")
         return False
 
-    print_formatted_text("<info>Staging selected files...</info>")
+    print_formatted_text("[info]Staging selected files...[/info]")
     all_success = True
 
     for file_info in files:
@@ -55,7 +55,7 @@ def stage_selected_files(files: List[dict]) -> bool:
         # Handle renamed/copied files
         if original_path:
             print_formatted_text(
-                f"<muted>  Adding renamed/copied file: {original_path} → {file_path}</muted>"
+                f"[muted]  Adding renamed/copied file: {original_path} → {file_path}[/muted]"
             )
             # For renamed/copied files, add both the old and new path
             result_old = run_git_command(["add", "--", original_path])
@@ -63,17 +63,17 @@ def stage_selected_files(files: List[dict]) -> bool:
 
             if result_old is None or result_new is None:
                 print_formatted_text(
-                    f"<warning>Error: Failed to stage rename/copy {original_path} → {file_path}</warning>"
+                    f"[warning]Error: Failed to stage rename/copy {original_path} → {file_path}[/warning]"
                 )
                 all_success = False
         else:
             # Handle regular added/modified/deleted files
-            print_formatted_text(f"<muted>  Adding {file_path}</muted>")
+            print_formatted_text(f"[muted]  Adding {file_path}[/muted]")
             result = run_git_command(["add", "--", file_path])
 
             if result is None:
                 print_formatted_text(
-                    f"<warning>Error: Failed to stage {file_path}</warning>"
+                    f"[warning]Error: Failed to stage {file_path}[/warning]"
                 )
                 all_success = False
 
@@ -86,16 +86,16 @@ def create_new_commit(message=None):
         message = prompt_input("Enter commit message: ")
         if not message:
             print_formatted_text(
-                "<warning>Error: Commit message cannot be empty</warning>"
+                "[warning]Error: Commit message cannot be empty[/warning]"
             )
             sys.exit(1)
 
-    print_formatted_text("<info>Creating new commit...</info>")
+    print_formatted_text("[info]Creating new commit...[/info]")
     commit_result = run_git_command(["commit", "-m", message])
     if commit_result is None:
-        print_formatted_text("<warning>Error: Failed to create commit</warning>")
+        print_formatted_text("[warning]Error: Failed to create commit[/warning]")
         sys.exit(1)
-    print_formatted_text("<success>New commit created successfully</success>")
+    print_formatted_text("[success]New commit created successfully[/success]")
 
 
 def amend_existing_commit(message=None):
@@ -103,17 +103,17 @@ def amend_existing_commit(message=None):
     commit_cmd = ["commit", "--amend"]
     if message:
         commit_cmd.extend(["-m", message])
-        print_formatted_text("<info>Amending commit with new message...</info>")
+        print_formatted_text("[info]Amending commit with new message...[/info]")
     else:
-        print_formatted_text("<info>Amending commit...</info>")
+        print_formatted_text("[info]Amending commit...[/info]")
         # If no message specified, use the existing commit message
         commit_cmd.append("--no-edit")
 
     commit_result = run_git_command(commit_cmd)
     if commit_result is None:
-        print_formatted_text("<warning>Error: Failed to amend commit</warning>")
+        print_formatted_text("[warning]Error: Failed to amend commit[/warning]")
         sys.exit(1)
-    print_formatted_text("<success>Commit amended successfully</success>")
+    print_formatted_text("[success]Commit amended successfully[/success]")
 
 
 def modify_commit(commit_flag=False, message=None, no_amend=False):
@@ -126,12 +126,12 @@ def modify_commit(commit_flag=False, message=None, no_amend=False):
     """
     current_branch = get_current_branch()
     if not current_branch:
-        print_formatted_text("<warning>Error: Failed to get current branch</warning>")
+        print_formatted_text("[warning]Error: Failed to get current branch[/warning]")
         sys.exit(1)
 
-    print_formatted_text("<info>Modifying branch</info>")
-    print_formatted_text(f"<branch>{current_branch}</branch>")
-    print("")
+    print_formatted_text(
+        f"[info]Modifying branch[/info]: [branch]{current_branch}[/branch]"
+    )
 
     # Get staged and unstaged files using the new direct functions
     staged_files = get_staged_files()
@@ -140,21 +140,21 @@ def modify_commit(commit_flag=False, message=None, no_amend=False):
     # Exit condition: No changes at all
     if not staged_files and not unstaged_files:
         print_formatted_text(
-            "<warning>Error: No changes (staged or unstaged) to commit</warning>"
+            "[warning]Error: No changes (staged or unstaged) to commit[/warning]"
         )
         sys.exit(1)
 
     # Inform about staged changes
     if staged_files:
-        print_formatted_text("<info>The following changes are already staged:</info>")
+        print_formatted_text("[info]The following changes are already staged:[/info]")
         for file_info in staged_files:
-            print_formatted_text(f"<muted>  {file_info['display']}</muted>")
+            print_formatted_text(f"[muted]  {file_info['display']}[/muted]")
         print("")  # Add a newline for separation
 
     newly_staged_paths = []  # Store paths that are successfully staged
     # If there are unstaged files, prompt user to select which to stage
     if unstaged_files:
-        print_formatted_text("<info>The following files have unstaged changes:</info>")
+        print_formatted_text("[info]The following files have unstaged changes:[/info]")
 
         # Prompt user to select files to stage
         selected_items = prompt_checkbox(
@@ -175,7 +175,7 @@ def modify_commit(commit_flag=False, message=None, no_amend=False):
                 newly_staged_paths = files_to_stage
             else:
                 print_formatted_text(
-                    "<warning>Warning: Some files could not be staged</warning>"
+                    "[warning]Warning: Some files could not be staged[/warning]"
                 )
         # If no files selected or staging failed, proceed based on initially staged files
 
@@ -184,7 +184,7 @@ def modify_commit(commit_flag=False, message=None, no_amend=False):
     has_anything_staged_now = bool(staged_files) or bool(newly_staged_paths)
 
     if not has_anything_staged_now:
-        print_formatted_text("<warning>No changes staged. Exiting.</warning>")
+        print_formatted_text("[warning]No changes staged. Exiting.[/warning]")
         # This covers the case where there were only unstaged changes,
         # and the user chose not to stage any, or staging failed.
         sys.exit(0)
@@ -221,12 +221,12 @@ def modify_commit(commit_flag=False, message=None, no_amend=False):
         # If we are creating a new commit, provide a reason unless it's the first commit.
         if reason_for_new_commit:
             print_formatted_text(
-                f"<info>Creating a new commit instead of amending because {reason_for_new_commit}</info>"
+                f"[info]Creating a new commit instead of amending because {reason_for_new_commit}[/info]"
             )
         create_new_commit(message)
 
     # Inform user about how to update the PR
     print_formatted_text(
-        "<info>Changes have been committed. To update the remote branch and PR, run:</info>"
+        "[info]Changes have been committed. To update the remote branch and PR, run:[/info]"
     )
-    print_formatted_text(f"<info>  pq update-pr {current_branch}</info>")
+    print_formatted_text(f"[info]  pq update-pr {current_branch}[/info]")

@@ -35,15 +35,13 @@ def update_pull_request(branch_name=None):
     has_pr = branch_has_pr(branch_name)
 
     # Ask for confirmation for force push
-    print_formatted_text("[info]This will update the remote branch[/info]")
-    print_formatted_text(f"[branch]{branch_name}[/branch]")
-    print("")
+    print_formatted_text(
+        f"[info]This will update the remote branch [branch]{branch_name}[/branch][/info]"
+    )
     if has_pr:
         print_formatted_text(
-            "[info]The associated PR will also be updated for branch:[/info]"
+            f"[info]The associated PR will also be updated for branch: [branch]{branch_name}[/branch][/info]"
         )
-        print_formatted_text(f"[branch]{branch_name}[/branch]")
-        print("")
 
     if not prompt_confirm("Do you want to proceed?"):
         print_formatted_text("[info]Update cancelled.[/info]")

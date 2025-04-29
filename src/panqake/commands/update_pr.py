@@ -66,4 +66,3 @@ def update_pull_request(branch_name=None):
             )
             print_formatted_text("[info]To create a PR, run:[/info] ")
             print_formatted_text("[command]pq pr[/command]")
-            print("")

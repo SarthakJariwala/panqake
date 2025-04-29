@@ -27,10 +27,12 @@ from panqake.utils.questionary_prompt import print_formatted_text
 KNOWN_COMMANDS = [
     "new",
     "list",
+    "ls",  # Alias for list
     "update",
     "delete",
     "pr",
     "switch",
+    "co",  # Alias for switch
     "track",
     "modify",
     "update-pr",
@@ -56,14 +58,32 @@ def cli():
 @click.argument("branch_name", required=False)
 @click.argument("base_branch", required=False)
 def new(branch_name, base_branch):
-    """Create a new branch in the stack."""
+    """Create a new branch in the stack.
+
+    BRANCH_NAME: Name of the new branch
+
+    BASE_BRANCH: Parent branch
+    """
     create_new_branch(branch_name, base_branch)
 
 
-@cli.command()
+@cli.command(name="list")
 @click.argument("branch_name", required=False)
-def list(branch_name):
-    """List the branch stack."""
+def list_command(branch_name):
+    """List the branch stack.
+
+    BRANCH_NAME: Optional branch to start from
+    """
+    list_branches(branch_name)
+
+
+@cli.command(name="ls")
+@click.argument("branch_name", required=False)
+def ls_command(branch_name):
+    """Alias for 'list' - List the branch stack.
+
+    BRANCH_NAME: Optional branch to start from
+    """
     list_branches(branch_name)
 
 
@@ -75,35 +95,60 @@ def list(branch_name):
     help="Don't push changes to remote after updating branches",
 )
 def update(branch_name, no_push):
-    """Update branches after changes and push to remote."""
+    """Update branches after changes and push to remote.
+
+    BRANCH_NAME: Optional branch to start updating from
+    """
     update_branches(branch_name, skip_push=no_push)
 
 
 @cli.command()
 @click.argument("branch_name")
 def delete(branch_name):
-    """Delete a branch and relink the stack."""
+    """Delete a branch and relink the stack.
+
+    BRANCH_NAME: Name of the branch to delete
+    """
     delete_branch(branch_name)
 
 
 @cli.command()
 @click.argument("branch_name", required=False)
 def pr(branch_name):
-    """Create PRs for the branch stack."""
+    """Create PRs for the branch stack.
+
+    BRANCH_NAME: Optional branch to start from
+    """
     create_pull_requests(branch_name)
 
 
 @cli.command()
 @click.argument("branch_name", required=False)
 def switch(branch_name):
-    """Interactively switch between branches."""
+    """Interactively switch between branches.
+
+    BRANCH_NAME: Optional branch to switch to
+    """
+    switch_branch(branch_name)
+
+
+@cli.command(name="co")
+@click.argument("branch_name", required=False)
+def co_command(branch_name):
+    """Alias for 'switch' - Interactively switch between branches.
+
+    BRANCH_NAME: Optional branch to switch to
+    """
     switch_branch(branch_name)
 
 
 @cli.command(name="track")
 @click.argument("branch_name", required=False)
 def track_branch(branch_name):
-    """Track an existing Git branch in the panqake stack."""
+    """Track an existing Git branch in the panqake stack.
+
+    BRANCH_NAME: Optional name of branch to track
+    """
     track(branch_name)
 
 
@@ -123,7 +168,10 @@ def modify(commit, message, no_amend):
 @cli.command(name="update-pr")
 @click.argument("branch_name", required=False)
 def update_pr(branch_name):
-    """Update remote branch and PR after changes."""
+    """Update remote branch and PR after changes.
+
+    BRANCH_NAME: Optional branch to update PR for
+    """
     update_pull_request(branch_name)
 
 
@@ -140,14 +188,20 @@ def update_pr(branch_name):
     help="Don't update child branches after merging",
 )
 def merge(branch_name, no_delete_branch, no_update_children):
-    """Merge a PR and manage the branch stack after merge."""
+    """Merge a PR and manage the branch stack after merge.
+
+    BRANCH_NAME: Optional branch to merge
+    """
     merge_branch(branch_name, not no_delete_branch, not no_update_children)
 
 
 @cli.command()
 @click.argument("main_branch", required=False, default="main")
 def sync(main_branch):
-    """Sync branches with remote repository changes."""
+    """Sync branches with remote repository changes.
+
+    MAIN_BRANCH: Base branch to sync with (default: main)
+    """
     sync_with_remote(main_branch)
 
 

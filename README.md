@@ -22,11 +22,14 @@ uv tool install panqake
 
 | Command | Purpose | What It Does |
 |---------|---------|-------------|
-| `panqake new feature-name` | Create branches | Creates a new branch based on your current branch |
-| `panqake modify` | Commit changes | Interactively select files to stage and commit/amend |
-| `panqake update` | Propagate changes | Rebases all child branches and updates their PRs |
-| `panqake sync` | Sync branches | Fetches latest changes from the remote main branch, updates local child branches, and optionally deletes merged branches |
-| `panqake merge` | Complete workflow | Merges PR and updates all dependent branches |
+| `pq new feature-name` | Create branches | Creates a new branch based on your current branch |
+| `pq modify` | Commit changes | Interactively select files to stage and commit/amend |
+| `pq update` | Propagate changes | Rebases all child branches and updates their PRs |
+| `pq submit` | Submit changes | Updates the PR with current branch changes |
+| `pq sync` | Sync branches | Fetches latest changes from the remote main branch, updates local child branches, and optionally deletes merged branches |
+| `pq merge` | Complete workflow | Merges PR and updates all dependent branches |
+| `pq list` or `pq ls` | View branch structure | Lists all branches in the stack with their relationships |
+| `pq switch` or `pq co` | Navigate branches | Switches to another branch in the stack |
 
 ## Real-World Workflow Example
 
@@ -84,6 +87,12 @@ Add branches created outside panqake to your stack:
 
 ```bash
 pq track feature-branch
+
+# You can use the list alias to see your branch structure
+pq ls
+
+# Use the switch alias to move between branches
+pq co auth-frontend
 ```
 
 ### Flexible Commit Creation

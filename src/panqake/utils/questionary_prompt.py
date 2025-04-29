@@ -112,7 +112,7 @@ def prompt_input(
     default: str = "",
 ) -> str:
     """Get user input using questionary with Rich styling for the prompt."""
-    rich_prompt(f"{message}: ", "prompt")  # Display prompt using Rich
+    rich_prompt(f"{message}", "prompt")  # Display prompt using Rich
 
     choices = None
     if completer:
@@ -135,7 +135,7 @@ def prompt_input(
 
 def prompt_confirm(message: str) -> bool:
     """Prompt for confirmation with yes/no options, using Rich for the prompt."""
-    rich_prompt(f"{message} (y/n)", "prompt")  # Display prompt using Rich
+    rich_prompt(f"{message}", "prompt")  # Display prompt using Rich
     # Pass empty message to questionary
     return questionary.confirm("", default=False, style=style).ask()
 

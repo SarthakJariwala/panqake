@@ -41,7 +41,7 @@ def update_branch_with_conflict_detection(branch, parent, abort_on_conflict=True
             return False, error_msg
 
     print_formatted_text(
-        f"<success>Updated {format_branch(branch)} on {format_branch(parent)}.</success>"
+        f"[success]Updated {format_branch(branch)} on {format_branch(parent)}.[/success]"
     )
     return True, None
 
@@ -56,19 +56,19 @@ def fetch_latest_from_remote(branch_name, current_branch=None):
     Returns:
         True if successful, False otherwise
     """
-    print_formatted_text("<info>Fetching latest changes from remote...</info>")
+    print_formatted_text("[info]Fetching latest changes from remote...[/info]")
 
     # Fetch from remote
     fetch_result = run_git_command(["fetch", "origin"])
     if fetch_result is None:
-        print_formatted_text("<warning>Error: Failed to fetch from remote</warning>")
+        print_formatted_text("[warning]Error: Failed to fetch from remote[/warning]")
         return False
 
     # Checkout the branch if it's not already checked out
     checkout_result = run_git_command(["checkout", branch_name])
     if checkout_result is None:
         print_formatted_text(
-            f"<warning>Error: Failed to checkout {branch_name}</warning>"
+            f"[warning]Error: Failed to checkout {branch_name}[/warning]"
         )
         return False
 
@@ -76,7 +76,7 @@ def fetch_latest_from_remote(branch_name, current_branch=None):
     pull_result = run_git_command(["pull", "origin", branch_name])
     if pull_result is None:
         print_formatted_text(
-            f"<warning>Error: Failed to pull from origin/{branch_name}</warning>"
+            f"[warning]Error: Failed to pull from origin/{branch_name}[/warning]"
         )
         if current_branch:
             run_git_command(["checkout", current_branch])
@@ -87,7 +87,7 @@ def fetch_latest_from_remote(branch_name, current_branch=None):
     if commit_hash:
         commit_hash = commit_hash.strip()
         print_formatted_text(
-            f"<success>{branch_name} fast-forwarded to {commit_hash}.</success>"
+            f"[success]{branch_name} fast-forwarded to {commit_hash}.[/success]"
         )
 
     return True
@@ -121,19 +121,19 @@ def return_to_branch(target_branch, fallback_branch=None, deleted_branches=None)
     elif fallback_branch and branch_exists(fallback_branch):
         # If target branch no longer exists, go to fallback branch
         msg = (
-            f"<info>Branch {format_branch(target_branch)} no longer exists, "
-            f"returning to {format_branch(fallback_branch)}...</info>"
+            f"[info]Branch {format_branch(target_branch)} no longer exists, "
+            f"returning to {format_branch(fallback_branch)}...[/info]"
         )
         print_formatted_text(msg)
         result = run_git_command(["checkout", fallback_branch])
         if result is None:
             print_formatted_text(
-                f"<warning>Error: Failed to checkout {fallback_branch}</warning>"
+                f"[warning]Error: Failed to checkout {fallback_branch}[/warning]"
             )
             return False
         return True
     else:
         print_formatted_text(
-            "<warning>Error: Unable to find a valid branch to return to</warning>"
+            "[warning]Error: Unable to find a valid branch to return to[/warning]"
         )
         return False

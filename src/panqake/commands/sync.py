@@ -13,6 +13,7 @@ from panqake.utils.config import (
     remove_from_stack,
 )
 from panqake.utils.git import (
+    checkout_branch,
     get_current_branch,
     run_git_command,
 )
@@ -159,7 +160,7 @@ def sync_with_remote(main_branch="main"):
     # 2. Fetch & pull from remote
     print_formatted_text("[info]Pulling main from remote...[/info]")
     if not fetch_latest_from_remote(main_branch, current_branch):
-        run_git_command(["checkout", current_branch])
+        checkout_branch(current_branch)
         sys.exit(1)
 
     # 3. Handle merged branches

@@ -15,6 +15,7 @@ from panqake.utils.config import (
 )
 from panqake.utils.git import (
     branch_exists,
+    checkout_branch,
     delete_remote_branch,
     get_current_branch,
     run_git_command,
@@ -122,13 +123,7 @@ def update_child_branches(branch_name, parent_branch, current_branch):
         )
 
         # Checkout the child branch
-        checkout_result = run_git_command(["checkout", child])
-        if checkout_result is None:
-            print_formatted_text(
-                f"[warning]Error: Failed to checkout branch '{child}'[/warning]"
-            )
-            success = False
-            continue
+        checkout_branch(child)
 
         # Update the parent-child relationship in stacks.json
         add_to_stack(child, parent_branch)
@@ -169,12 +164,7 @@ def cleanup_local_branch(branch_name):
             print_formatted_text(
                 f"[info]Switching to[/info] {format_branch(parent)} [info]before deletion[/info]"
             )
-            checkout_result = run_git_command(["checkout", parent])
-            if checkout_result is None:
-                print_formatted_text(
-                    f"[warning]Error: Failed to checkout branch '{parent}'[/warning]"
-                )
-                return False
+            checkout_branch(parent)
 
         # Delete the branch
         delete_result = run_git_command(["branch", "-D", branch_name])

@@ -8,7 +8,12 @@ from panqake.utils.config import (
     get_parent_branch,
     remove_from_stack,
 )
-from panqake.utils.git import branch_exists, get_current_branch, run_git_command
+from panqake.utils.git import (
+    branch_exists,
+    checkout_branch,
+    get_current_branch,
+    run_git_command,
+)
 from panqake.utils.questionary_prompt import (
     format_branch,
     print_formatted_text,
@@ -89,13 +94,7 @@ def relink_child_branches(child_branches, parent_branch, current_branch, branch_
         )
 
         # Checkout the child branch
-        checkout_result = run_git_command(["checkout", child])
-        if checkout_result is None:
-            print_formatted_text(
-                f"[warning]Error: Failed to checkout branch '{child}'[/warning]"
-            )
-            run_git_command(["checkout", current_branch])
-            sys.exit(1)
+        checkout_branch(child)
 
         # Rebase onto the grandparent branch
         if parent_branch:
@@ -135,7 +134,7 @@ def delete_branch(branch_name):
 
     # Return to original branch if it's not the one being deleted
     if branch_name != current_branch:
-        run_git_command(["checkout", current_branch])
+        checkout_branch(current_branch)
 
     # Delete the branch
     delete_result = run_git_command(["branch", "-D", branch_name])

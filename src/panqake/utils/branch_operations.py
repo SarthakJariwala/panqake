@@ -2,6 +2,7 @@
 
 from panqake.utils.git import (
     branch_exists,
+    checkout_branch,
     run_git_command,
 )
 from panqake.utils.questionary_prompt import (
@@ -22,8 +23,9 @@ def update_branch_with_conflict_detection(branch, parent, abort_on_conflict=True
         Tuple of (success_flag, error_message)
     """
     # Checkout the branch
-    checkout_result = run_git_command(["checkout", branch])
-    if checkout_result is None:
+    try:
+        checkout_branch(branch)
+    except SystemExit:
         return False, f"Failed to checkout branch '{branch}'"
 
     # Rebase onto parent branch
@@ -65,11 +67,9 @@ def fetch_latest_from_remote(branch_name, current_branch=None):
         return False
 
     # Checkout the branch if it's not already checked out
-    checkout_result = run_git_command(["checkout", branch_name])
-    if checkout_result is None:
-        print_formatted_text(
-            f"[warning]Error: Failed to checkout {branch_name}[/warning]"
-        )
+    try:
+        checkout_branch(branch_name)
+    except SystemExit:
         return False
 
     # Pull latest changes
@@ -79,7 +79,7 @@ def fetch_latest_from_remote(branch_name, current_branch=None):
             f"[warning]Error: Failed to pull from origin/{branch_name}[/warning]"
         )
         if current_branch:
-            run_git_command(["checkout", current_branch])
+            checkout_branch(current_branch)
         return False
 
     # Get the commit hash to show in the output
@@ -111,11 +111,10 @@ def return_to_branch(target_branch, fallback_branch=None, deleted_branches=None)
         print_formatted_text(
             f"<info>Returning to {format_branch(target_branch)}...</info>"
         )
-        result = run_git_command(["checkout", target_branch])
-        if result is None:
-            print_formatted_text(
-                f"<warning>Error: Failed to checkout {target_branch}</warning>"
-            )
+        try:
+            checkout_branch(target_branch)
+            return True
+        except SystemExit:
             return False
         return True
     elif fallback_branch and branch_exists(fallback_branch):
@@ -125,8 +124,10 @@ def return_to_branch(target_branch, fallback_branch=None, deleted_branches=None)
             f"returning to {format_branch(fallback_branch)}...[/info]"
         )
         print_formatted_text(msg)
-        result = run_git_command(["checkout", fallback_branch])
-        if result is None:
+        try:
+            checkout_branch(fallback_branch)
+            return True
+        except SystemExit:
             print_formatted_text(
                 f"[warning]Error: Failed to checkout {fallback_branch}[/warning]"
             )

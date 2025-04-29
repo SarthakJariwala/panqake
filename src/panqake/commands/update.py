@@ -9,9 +9,9 @@ from panqake.utils.branch_operations import (
 from panqake.utils.config import get_child_branches
 from panqake.utils.git import (
     branch_exists,
+    checkout_branch,
     get_current_branch,
     push_branch_to_remote,
-    run_git_command,
 )
 from panqake.utils.github import (
     branch_has_pr,
@@ -155,12 +155,7 @@ def update_branches(branch_name=None, skip_push=False):
         # Push each branch that was successfully updated
         for branch in updated_branches:
             # Always use force-with-lease for safety since we've rebased
-            checkout_result = run_git_command(["checkout", branch])
-            if checkout_result is None:
-                print_formatted_text(
-                    f"[warning]Error: Failed to checkout branch '{branch}' for pushing[/warning]"
-                )
-                continue
+            checkout_branch(branch)
 
             success = push_branch_to_remote(branch, force=True)
 

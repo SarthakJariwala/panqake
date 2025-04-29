@@ -4,7 +4,7 @@ version = "0.6.0"
 description = "Git Branch Stacking Utility"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["prompt-toolkit>=3.0.51", "questionary>=2.1.0"]
+dependencies = ["prompt-toolkit>=3.0.51", "questionary>=2.1.0", "rich>=14.0.0"]
 
 [project.scripts]
 panqake = "panqake.cli:main"

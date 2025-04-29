@@ -5,7 +5,6 @@ import subprocess
 import sys
 from typing import List, Optional
 
-from panqake.utils.prompt import format_branch
 from panqake.utils.questionary_prompt import print_formatted_text
 
 
@@ -105,21 +104,19 @@ def push_branch_to_remote(branch: str, force: bool = False) -> bool:
     Returns:
         True if the push was successful, False otherwise
     """
-    print_formatted_text("<info>Pushing branch to origin...</info>")
-    print_formatted_text(f"<branch>{branch}</branch>")
-    print("")
+    print_formatted_text(f"[info]Pushing [branch]{branch}[/branch] to origin...[/info]")
 
     push_cmd = ["push", "-u", "origin", branch]
     if force:
         push_cmd.insert(1, "--force-with-lease")
-        print_formatted_text("<info>Using force-with-lease for safer force push</info>")
+        print_formatted_text("[info]Using force-with-lease for safer force push[/info]")
 
     result = run_git_command(push_cmd)
 
     if result is not None:
-        print_formatted_text("<success>Successfully pushed to origin</success>")
-        print_formatted_text(f"<branch>{branch}</branch>")
-        print("")
+        print_formatted_text(
+            f"[success]Successfully pushed [branch]{branch}[/branch] to origin[/success]"
+        )
         return True
     return False
 
@@ -133,17 +130,19 @@ def is_branch_pushed_to_remote(branch: str) -> bool:
 def delete_remote_branch(branch: str) -> bool:
     """Delete a branch on the remote repository."""
     print_formatted_text(
-        f"<info>Deleting remote branch {format_branch(branch)}...</info>"
+        f"[info]Deleting remote branch [branch]{branch}[/branch]...[/info]"
     )
 
     result = run_git_command(["push", "origin", "--delete", branch])
 
     if result is not None:
-        print_formatted_text("<success>Remote branch deleted successfully</success>")
+        print_formatted_text(
+            f"[success]Remote branch [branch]{branch}[/branch] deleted successfully[/success]"
+        )
         return True
 
     print_formatted_text(
-        f"<warning>Warning: Failed to delete remote branch '{branch}'</warning>"
+        f"[warning]Warning: Failed to delete remote branch '{branch}'[/warning]"
     )
     return False
 
@@ -222,7 +221,7 @@ def branch_has_commits(branch: str = None, parent_branch: Optional[str] = None) 
     # Ensure the provided parent branch actually exists locally before comparing
     if not branch_exists(parent_branch):
         print_formatted_text(
-            f"<warning>Provided parent branch '{parent_branch}' for '{branch}' not found locally.</warning>"
+            f"[warning]Provided parent branch '{parent_branch}' for '{branch}' not found locally.[/warning]"
         )
         return False  # Cannot compare if parent doesn't exist
 
@@ -236,7 +235,7 @@ def branch_has_commits(branch: str = None, parent_branch: Optional[str] = None) 
     except (ValueError, TypeError, AttributeError):
         # Handle cases where count_output is None or not an integer
         print_formatted_text(
-            f"<warning>Could not determine commit count for {branch} relative to {parent_branch}</warning>"
+            f"[warning]Could not determine commit count for {branch} relative to {parent_branch}[/warning]"
         )
         return False  # Safer to return False if count fails
 

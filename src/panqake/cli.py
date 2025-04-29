@@ -14,11 +14,11 @@ from panqake.commands.merge import merge_branch
 from panqake.commands.modify import modify_commit
 from panqake.commands.new import create_new_branch
 from panqake.commands.pr import create_pull_requests
+from panqake.commands.submit import update_pull_request
 from panqake.commands.switch import switch_branch
 from panqake.commands.sync import sync_with_remote
 from panqake.commands.track import track
 from panqake.commands.update import update_branches
-from panqake.commands.update_pr import update_pull_request
 from panqake.utils.config import init_panqake
 from panqake.utils.git import is_git_repo, run_git_command
 from panqake.utils.questionary_prompt import print_formatted_text
@@ -35,7 +35,7 @@ KNOWN_COMMANDS = [
     "co",  # Alias for switch
     "track",
     "modify",
-    "update-pr",
+    "submit",
     "merge",
     "sync",
     "--help",
@@ -165,9 +165,9 @@ def modify(commit, message, no_amend):
     modify_commit(commit, message, no_amend)
 
 
-@cli.command(name="update-pr")
+@cli.command(name="submit")
 @click.argument("branch_name", required=False)
-def update_pr(branch_name):
+def submit(branch_name):
     """Update remote branch and PR after changes.
 
     BRANCH_NAME: Optional branch to update PR for

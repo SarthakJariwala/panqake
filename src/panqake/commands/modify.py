@@ -229,4 +229,4 @@ def modify_commit(commit_flag=False, message=None, no_amend=False):
     print_formatted_text(
         "[info]Changes have been committed. To update the remote branch and PR, run:[/info]"
     )
-    print_formatted_text(f"[info]  pq update-pr {current_branch}[/info]")
+    print_formatted_text(f"[info]  pq submit {current_branch}[/info]")

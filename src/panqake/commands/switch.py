@@ -4,6 +4,7 @@ import sys
 
 import questionary
 
+from panqake.commands.list import list_branches
 from panqake.utils.git import get_current_branch, list_all_branches, run_git_command
 from panqake.utils.questionary_prompt import print_formatted_text
 
@@ -38,6 +39,10 @@ def switch_branch(branch_name=None):
 
         _checkout_branch(branch_name)
         return
+
+    # First show the branch hierarchy
+    list_branches()
+    print_formatted_text("")  # Add a blank line for better readability
 
     # Format branches for display, marking the current branch
     choices = []

@@ -94,6 +94,20 @@ def validate_branch(branch_name: Optional[str] = None) -> str:
     return branch_name
 
 
+def checkout_branch(branch_name: str) -> None:
+    """Checkout to the specified branch."""
+    print_formatted_text(f"[info]Switching to branch '{branch_name}'...[/info]")
+    result = run_git_command(["checkout", branch_name])
+
+    if result is not None:
+        print_formatted_text(
+            f"[success]Successfully switched to branch '{branch_name}'[/success]"
+        )
+    else:
+        print_formatted_text("[danger]Failed to switch branches[/danger]")
+        sys.exit(1)
+
+
 def push_branch_to_remote(branch: str, force: bool = False) -> bool:
     """Push a branch to the remote.
 

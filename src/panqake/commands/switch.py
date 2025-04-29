@@ -2,11 +2,9 @@
 
 import sys
 
-import questionary
-
 from panqake.commands.list import list_branches
-from panqake.utils.git import get_current_branch, list_all_branches, run_git_command
-from panqake.utils.questionary_prompt import print_formatted_text
+from panqake.utils.git import checkout_branch, get_current_branch, list_all_branches
+from panqake.utils.questionary_prompt import print_formatted_text, prompt_select
 
 
 def switch_branch(branch_name=None):
@@ -37,52 +35,35 @@ def switch_branch(branch_name=None):
             print_formatted_text(f"[info]Already on branch '{branch_name}'[/info]")
             return
 
-        _checkout_branch(branch_name)
+        checkout_branch(branch_name)
         return
 
     # First show the branch hierarchy
     list_branches()
     print_formatted_text("")  # Add a blank line for better readability
 
-    # Format branches for display, marking the current branch
+    # Format branches for display, excluding the current branch
     choices = []
     for branch in branches:
-        is_current = branch == current
-        if is_current:
-            # Add a special marker for the current branch
-            choices.append(
-                questionary.Choice(
-                    title=f"* {branch} (current)",
-                    value=branch,
-                    disabled="current branch",
-                )
-            )
-        else:
-            choices.append(branch)
+        if branch != current:  # Skip the current branch
+            branch_item = {"display": branch, "value": branch}
+            choices.append(branch_item)
 
-    # Show interactive branch selection
-    selected = questionary.select(
+    # If no branches left after excluding current branch
+    if not choices:
+        print_formatted_text(
+            "[warning]No other branches available to switch to[/warning]"
+        )
+        return
+
+    # Show interactive branch selection using the prompt_select function
+    selected = prompt_select(
         "Select a branch to switch to:",
-        choices=choices,
-    ).ask()
+        choices,
+    )
 
     if selected:
-        if selected == current:
-            print_formatted_text(f"[info]Already on branch '{selected}'[/info]")
-            return
-
-        _checkout_branch(selected)
-
-
-def _checkout_branch(branch_name):
-    """Checkout to the specified branch."""
-    print_formatted_text(f"[info]Switching to branch '{branch_name}'...[/info]")
-    result = run_git_command(["checkout", branch_name])
-
-    if result is not None:
-        print_formatted_text(
-            f"[success]Successfully switched to branch '{branch_name}'[/success]"
-        )
-    else:
-        print_formatted_text("[danger]Failed to switch branches[/danger]")
-        sys.exit(1)
+        checkout_branch(selected)
+        print_formatted_text("")
+        # Show the branch hierarchy again
+        list_branches()

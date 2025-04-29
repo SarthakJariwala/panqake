@@ -185,14 +185,48 @@ def prompt_checkbox(
 
 
 def prompt_select(
-    message: str, choices: List[str], default: Optional[str] = None
+    message: str, choices: List[Union[str, dict]], default: Optional[str] = None
 ) -> str:
-    """Prompt user to select from a list of choices."""
-    # Use rich to style the prompt message
+    """Display a select prompt with the given choices.
+
+    Args:
+        message: The message to display
+        choices: List of choice dictionaries with 'display', 'value', and optional 'disabled' keys
+        default: Default selected item
+
+    Returns:
+        The value of the selected choice
+    """
+    # Format choices for questionary
+    questionary_choices = []
+    for choice in choices:
+        if isinstance(choice, dict):
+            if choice.get("disabled", False):
+                questionary_choices.append(
+                    questionary.Choice(
+                        title=choice["display"],
+                        value=choice["value"],
+                    )
+                )
+            else:
+                questionary_choices.append(
+                    questionary.Choice(title=choice["display"], value=choice["value"])
+                )
+        else:
+            # Handle simple string choices
+            questionary_choices.append(choice)
+
+    # Show the prompt with rich styling
     rich_prompt(f"{message}", "prompt")
 
-    # Use questionary with empty message since we've already displayed it
-    return questionary.select("", choices=choices, default=default, style=style).ask()
+    # Use questionary's select with empty message since we displayed it with rich_prompt
+    result = questionary.select(
+        "",
+        choices=questionary_choices,
+        style=style,
+    ).ask()
+
+    return result
 
 
 class BranchNameValidator(Validator):

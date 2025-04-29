@@ -2,12 +2,24 @@
 
 All notable changes to the Panqake project will be documented in this file.
 
+## [v0.8.0] - 2025-04-29
+
+### Added
+- Added create_branch utility function
+- Added branch hierarchy visualization for checkout command
+
+### Changed
+- Refactored code to use the common checkout_branch utility
+- Enhanced branch hierarchy display before showing switching options in switch command
+- Improved update command to continue instead of aborting on conflicts
+
+
 ## [v0.7.0] - 2025-04-28
 
 ### Added
 - Added a new `submit` command to replace the `update-pr` command
 - Added documentation for arguments in commands
-- Added aliases for list and switch commands
+- Added aliases for list (`ls`) and switch (`co`) commands
 - Added `rich` library for improved terminal output and formatting
 
 ### Changed

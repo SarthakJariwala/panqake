@@ -2,6 +2,10 @@
 
 import sys
 
+from rich.console import Group
+from rich.panel import Panel
+from rich.text import Text
+
 from panqake.utils.config import get_child_branches, get_parent_branch
 from panqake.utils.git import (
     branch_exists,
@@ -17,6 +21,7 @@ from panqake.utils.github import (
 )
 from panqake.utils.questionary_prompt import (
     PRTitleValidator,
+    console,
     format_branch,
     print_formatted_text,
     prompt_confirm,
@@ -60,9 +65,9 @@ def process_branch_for_pr(branch, target_branch):
         )
         pr_created = True
     else:
-        print_formatted_text("[info]Creating PR for branch:[/info] ")
-        print_formatted_text(f"{format_branch(branch)}")
-        print("")
+        print_formatted_text(
+            f"[info]Creating PR for branch: {format_branch(branch)}[/info]"
+        )
         # Get parent branch for PR target
         parent = get_parent_branch(branch)
         if not parent:
@@ -112,10 +117,8 @@ def create_pull_requests(branch_name=None):
     oldest_branch = find_oldest_branch_without_pr(branch_name)
 
     print_formatted_text(
-        "[info]Creating PRs from the bottom of the stack up to:[/info] "
+        f"[info]Creating PRs from the bottom of the stack up to: {format_branch(branch_name)}[/info]"
     )
-    print_formatted_text(f"{format_branch(branch_name)}")
-    print("")
 
     process_branch_for_pr(oldest_branch, branch_name)
 
@@ -131,7 +134,7 @@ def ensure_branch_pushed(branch):
         if prompt_confirm("Would you like to push it now?"):
             return push_branch_to_remote(branch)
         else:
-            print_formatted_text("[info]PR creation skipped.[/info]")
+            print_formatted_text("[info]PR creation skipped[/info]")
             return False
     return True
 
@@ -169,17 +172,30 @@ def create_pr_for_branch(branch, parent):
     )
 
     # Show summary and confirm
-    print_formatted_text("[info]PR for branch:[/info]")
-    print_formatted_text(f"{format_branch(branch)}")
-    print("")
+    # Create formatted content for the panel
+    arrow = Text(" ← ", style="muted")
+    title_info = Text(f"Title: {title}", style="info")
 
-    print_formatted_text("[info]Target branch:[/info]")
-    print_formatted_text(f"{format_branch(parent)}")
-    print("")
+    # Create branch relationship line
+    relationship = Group(
+        Text(""),  # Empty line for spacing
+        Text.assemble(title_info, style="info", justify="center"),
+        Text(""),
+        Text.assemble(description),
+    )
 
-    print_formatted_text("[info]Title:[/info]")
-    print_formatted_text(f"{title}")
-    print("")
+    # Create and print panel with all information
+    pr_panel = Panel(
+        relationship,
+        title=Text.assemble(
+            parent,
+            arrow,
+            branch,
+        ),
+        border_style="cyan",
+    )
+
+    console.print(pr_panel)
 
     if not prompt_confirm("Create this pull request?"):
         print_formatted_text("[info]PR creation skipped.[/info]")

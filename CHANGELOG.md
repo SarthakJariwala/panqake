@@ -2,6 +2,23 @@
 
 All notable changes to the Panqake project will be documented in this file.
 
+## [v0.7.0] - 2025-04-28
+
+### Added
+- Added a new `submit` command to replace the `update-pr` command
+- Added documentation for arguments in commands
+- Added aliases for list and switch commands
+- Added `rich` library for improved terminal output and formatting
+
+### Changed
+- Changed from argparse to `click` for CLI parsing
+- Improved UI for showing PR information using `rich` Panel
+- Enhanced console output using `rich` library
+
+### Fixed
+- Fixed formatting issues for printing information
+- Fixed `delete` command to work without confirmation when upstream branch is deleted and confirmed by user
+
 ## [v0.6.0] - 2025-04-28
 
 ### Added

@@ -101,13 +101,13 @@ def update_branch_and_children(branch, current_branch, updated_branches=None):
 
             # Use utility function to update the branch with conflict detection
             success, error_msg = update_branch_with_conflict_detection(
-                child, branch, abort_on_conflict=True
+                child, branch, abort_on_conflict=False
             )
 
             if not success:
                 print_formatted_text(f"[warning]{error_msg}[/warning]")
                 print_formatted_text(
-                    f"[warning]Then run 'panqake update {child}' to continue updating the stack[/warning]"
+                    f"[warning]Then run 'pq update {child}' to continue updating the stack[/warning]"
                 )
                 sys.exit(1)
 

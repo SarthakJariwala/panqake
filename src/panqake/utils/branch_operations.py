@@ -36,7 +36,7 @@ def update_branch_with_conflict_detection(branch, parent, abort_on_conflict=True
         else:
             error_msg = (
                 f"Rebase conflict detected in branch '{branch}'. "
-                f"Please resolve conflicts and run 'git rebase --continue'"
+                f"Please resolve conflicts and run 'pq rebase --continue'"
             )
             return False, error_msg
 

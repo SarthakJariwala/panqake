@@ -73,20 +73,6 @@ style = questionary.Style(
     ]
 )
 
-# This map is now primarily for reference, showing the available style names.
-# The print_formatted_text function no longer uses it directly for parsing.
-STYLE_MAP = {
-    "warning": "warning",
-    "danger": "danger",
-    "info": "info",
-    "success": "success",
-    "branch": "branch",
-    "muted": "muted",
-    "prompt": "prompt",
-    "highlight": "highlight",
-    "selected": "selected",
-}
-
 
 def print_formatted_text(text: str) -> None:
     """Prints text assuming it contains Rich markup (e.g., [info]text[/info]).

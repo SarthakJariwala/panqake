@@ -108,6 +108,22 @@ def checkout_branch(branch_name: str) -> None:
         sys.exit(1)
 
 
+def create_branch(branch_name: str, base_branch: str) -> None:
+    """Create a new branch based on the specified base branch and checkout to it."""
+    print_formatted_text(
+        f"[info]Creating new branch '{branch_name}' based on '{base_branch}'...[/info]"
+    )
+    result = run_git_command(["checkout", "-b", branch_name, base_branch])
+
+    if result is not None:
+        print_formatted_text(
+            f"[success]Successfully created and switched to branch '{branch_name}'[/success]"
+        )
+    else:
+        print_formatted_text("[danger]Failed to create new branch[/danger]")
+        sys.exit(1)
+
+
 def push_branch_to_remote(branch: str, force: bool = False) -> bool:
     """Push a branch to the remote.
 

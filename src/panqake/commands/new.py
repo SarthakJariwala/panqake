@@ -5,9 +5,9 @@ import sys
 from panqake.utils.config import add_to_stack
 from panqake.utils.git import (
     branch_exists,
+    create_branch,
     get_current_branch,
     list_all_branches,
-    run_git_command,
 )
 from panqake.utils.questionary_prompt import (
     BranchNameValidator,
@@ -50,15 +50,8 @@ def create_new_branch(branch_name=None, base_branch=None):
         )
         sys.exit(1)
 
-    print_formatted_text(
-        f"[info]Creating new branch '{branch_name}' based on '{base_branch}'...[/info]"
-    )
-
     # Create the new branch
-    result = run_git_command(["checkout", "-b", branch_name, base_branch])
-    if result is None:
-        print_formatted_text("[warning]Error: Failed to create new branch[/warning]")
-        sys.exit(1)
+    create_branch(branch_name, base_branch)
 
     # Record the dependency information
     add_to_stack(branch_name, base_branch)

@@ -63,7 +63,7 @@ def handle_merged_branches(main_branch):
             )
             if prompt_confirm(""):
                 # Delete the branch
-                delete_result = run_git_command(["branch", "-d", branch])
+                delete_result = run_git_command(["branch", "-D", branch])
                 if delete_result is not None:
                     print_formatted_text(f"[success]Deleted branch {branch}[/success]")
                     # Remove from stacks config

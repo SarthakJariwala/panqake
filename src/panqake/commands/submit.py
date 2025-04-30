@@ -2,6 +2,8 @@
 
 import sys
 
+from panqake.commands.pr import create_pr_for_branch
+from panqake.utils.config import get_parent_branch
 from panqake.utils.git import (
     push_branch_to_remote,
     validate_branch,
@@ -36,20 +38,16 @@ def update_pull_request(branch_name=None):
 
     # Ask for confirmation for force push
     print_formatted_text(
-        f"[info]This will update the remote branch [branch]{branch_name}[/branch][/info]"
+        f"[info]Updating remote branch [branch]{branch_name}[/branch][/info]"
     )
     if has_pr:
         print_formatted_text(
             f"[info]The associated PR will also be updated for branch: [branch]{branch_name}[/branch][/info]"
         )
 
-    if not prompt_confirm("Do you want to proceed?"):
-        print_formatted_text("[info]Update cancelled.[/info]")
-        return
-
     # Force push is needed when amending commits
     needs_force = prompt_confirm(
-        "Did you amend or rewrite commits (requiring force push with lease)?",
+        "Approve force push with lease? (Required if you amended or rewrote commits)"
     )
 
     # Push the branch to remote
@@ -64,5 +62,9 @@ def update_pull_request(branch_name=None):
             print_formatted_text(
                 f"[info]Branch {format_branch(branch_name)} updated on remote. No PR exists yet.[/info]"
             )
-            print_formatted_text("[info]To create a PR, run:[/info] ")
-            print_formatted_text("[command]pq pr[/command]")
+            if prompt_confirm("Do you want to create a PR?"):
+                # Create a PR if the user confirms
+                parent = get_parent_branch(branch_name)
+                create_pr_for_branch(branch_name, parent)
+            else:
+                print_formatted_text("[info]To create a PR, run: pq pr[/info]")

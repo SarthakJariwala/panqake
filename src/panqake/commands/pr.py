@@ -179,7 +179,7 @@ def create_pr_for_branch(branch, parent):
     # Create branch relationship line
     relationship = Group(
         Text(""),  # Empty line for spacing
-        Text.assemble(title_info, style="info", justify="center"),
+        Text.assemble(title_info),
         Text(""),
         Text.assemble(description),
     )

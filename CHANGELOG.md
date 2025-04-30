@@ -2,6 +2,15 @@
 
 All notable changes to the Panqake project will be documented in this file.
 
+## [v0.9.0] - 2025-04-30
+
+### Added
+- `pq submit` will now prompt the user if they also want to create a PR. This simplifies the workflow by not requiring the user to explicitly call `pq pr` after submitting changes.
+
+### Removed
+- Removed old prompt utils that were no longer being used
+
+
 ## [v0.8.0] - 2025-04-29
 
 ### Added

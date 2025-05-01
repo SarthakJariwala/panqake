@@ -109,7 +109,7 @@ def return_to_branch(target_branch, fallback_branch=None, deleted_branches=None)
     # Check if the target branch still exists and wasn't deleted
     if branch_exists(target_branch) and target_branch not in deleted_branches:
         print_formatted_text(
-            f"<info>Returning to {format_branch(target_branch)}...</info>"
+            f"[info]Returning to {format_branch(target_branch)}...[/info]"
         )
         try:
             checkout_branch(target_branch)

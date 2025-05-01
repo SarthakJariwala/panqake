@@ -151,7 +151,7 @@ def cleanup_local_branch(branch_name):
     """Delete the local branch after successful merge."""
     if branch_exists(branch_name):
         print_formatted_text(
-            f"[info]Deleting local branch[/info] {format_branch(branch_name)}..."
+            f"[info]Deleting local branch {format_branch(branch_name)}...[/info]"
         )
 
         # Make sure we're not on the branch we're trying to delete
@@ -162,7 +162,7 @@ def cleanup_local_branch(branch_name):
                 parent = "main"  # Default to main if no parent
 
             print_formatted_text(
-                f"[info]Switching to[/info] {format_branch(parent)} [info]before deletion[/info]"
+                f"[info]Switching to {format_branch(parent)} before deletion[/info]"
             )
             checkout_branch(parent)
 

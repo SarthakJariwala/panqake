@@ -29,7 +29,7 @@ def update_branch_with_conflict_detection(branch, parent, abort_on_conflict=True
         return False, f"Failed to checkout branch '{branch}'"
 
     # Rebase onto parent branch
-    rebase_result = run_git_command(["rebase", parent])
+    rebase_result = run_git_command(["rebase", "--autostash", parent])
     if rebase_result is None:
         # Conflict detected
         if abort_on_conflict:

@@ -49,7 +49,7 @@ def test_update_branch_success(mock_git_utils, mock_prompt):
     assert success is True
     assert error is None
     mock_git_utils["checkout"].assert_called_once_with("feature")
-    mock_git_utils["run"].assert_called_with(["rebase", "main"])
+    mock_git_utils["run"].assert_called_with(["rebase", "--autostash", "main"])
     mock_prompt["print"].assert_called_once()
 
 
@@ -77,7 +77,7 @@ def test_update_branch_conflict_abort(mock_git_utils, mock_prompt):
     mock_git_utils["checkout"].assert_called_once_with("feature")
     calls = mock_git_utils["run"].call_args_list
     assert len(calls) == 2
-    assert calls[0].args[0] == ["rebase", "main"]
+    assert calls[0].args[0] == ["rebase", "--autostash", "main"]
     assert calls[1].args[0] == ["rebase", "--abort"]
 
 

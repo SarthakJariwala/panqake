@@ -98,7 +98,7 @@ def relink_child_branches(child_branches, parent_branch, current_branch, branch_
 
         # Rebase onto the grandparent branch
         if parent_branch:
-            rebase_result = run_git_command(["rebase", parent_branch])
+            rebase_result = run_git_command(["rebase", "--autostash", parent_branch])
             if rebase_result is None:
                 print_formatted_text(
                     f"[warning]Error: Rebase conflict detected in branch '{child}'[/warning]"

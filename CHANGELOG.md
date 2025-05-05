@@ -1,6 +1,10 @@
 # Changelog
 
-All notable changes to the Panqake project will be documented in this file.
+## [v0.10.0] - 2025-05-05
+
+### Changed
+
+- Run rebase using `--autostash` option to allow running on dirty worktree.
 
 ## [v0.9.1] - 2025-05-02
 

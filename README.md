@@ -81,7 +81,7 @@ Keep your branch stack up to date with remote changes:
 pq sync
 ```
 
-### Track Existing Git Branches
+### Track and Untrack Git Branches
 
 Add branches created outside panqake to your stack:
 
@@ -93,6 +93,12 @@ pq ls
 
 # Use the switch alias to move between branches
 pq co auth-frontend
+```
+
+Remove a branch from the panqake stack without deleting the git branch:
+
+```bash
+pq untrack feature-branch
 ```
 
 ### Flexible Commit Creation

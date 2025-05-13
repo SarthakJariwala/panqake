@@ -162,6 +162,7 @@ def test_command_registration():
         "switch",
         "co",
         "track",
+        "untrack",
         "modify",
         "submit",
         "merge",

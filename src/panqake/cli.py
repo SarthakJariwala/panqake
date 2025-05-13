@@ -18,6 +18,7 @@ from panqake.commands.submit import update_pull_request
 from panqake.commands.switch import switch_branch
 from panqake.commands.sync import sync_with_remote
 from panqake.commands.track import track
+from panqake.commands.untrack import untrack
 from panqake.commands.update import update_branches
 from panqake.utils.config import init_panqake
 from panqake.utils.git import is_git_repo, run_git_command
@@ -34,6 +35,7 @@ KNOWN_COMMANDS = [
     "switch",
     "co",  # Alias for switch
     "track",
+    "untrack",
     "modify",
     "submit",
     "merge",
@@ -150,6 +152,16 @@ def track_branch(branch_name):
     BRANCH_NAME: Optional name of branch to track
     """
     track(branch_name)
+
+
+@cli.command(name="untrack")
+@click.argument("branch_name", required=False)
+def untrack_branch(branch_name):
+    """Remove a branch from the panqake stack (does not delete the git branch).
+
+    BRANCH_NAME: Optional name of branch to untrack
+    """
+    untrack(branch_name)
 
 
 @cli.command()

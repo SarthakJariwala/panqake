@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added `untrack` command to remove branches from the panqake stack without deleting the git branch
+
 ## [v0.10.0] - 2025-05-05
 
 ### Changed

@@ -12,12 +12,13 @@ from panqake.utils.config import (
     init_panqake,
     remove_from_stack,
 )
+from panqake.utils.stack import STACK_FILE, PANQAKE_DIR
 
 
 @pytest.fixture
 def mock_repo_id():
     """Mock git.get_repo_id."""
-    with patch("panqake.utils.config.get_repo_id") as mock:
+    with patch("panqake.utils.stack.get_repo_id") as mock:
         mock.return_value = "test-repo"
         yield mock
 
@@ -32,6 +33,8 @@ def test_init_panqake_creates_directory_and_file(tmp_path):
     with (
         patch("panqake.utils.config.PANQAKE_DIR", panqake_dir),
         patch("panqake.utils.config.STACK_FILE", stack_file),
+        patch("panqake.utils.stack.PANQAKE_DIR", panqake_dir),
+        patch("panqake.utils.stack.STACK_FILE", stack_file),
     ):
         # Ensure directory doesn't exist initially
         assert not panqake_dir.exists()
@@ -63,7 +66,7 @@ def test_get_parent_branch_existing(tmp_path, mock_repo_id):
         json.dump(test_data, f)
 
     # Patch the global STACK_FILE used by the function
-    with patch("panqake.utils.config.STACK_FILE", stack_file):
+    with patch("panqake.utils.stack.STACK_FILE", stack_file):
         assert get_parent_branch("feature") == "main"
 
 
@@ -76,7 +79,7 @@ def test_get_parent_branch_nonexistent(tmp_path, mock_repo_id):
     with open(stack_file, "w") as f:
         json.dump({}, f)
 
-    with patch("panqake.utils.config.STACK_FILE", stack_file):
+    with patch("panqake.utils.stack.STACK_FILE", stack_file):
         assert get_parent_branch("nonexistent") == ""
 
 
@@ -89,7 +92,7 @@ def test_get_parent_branch_invalid_json(tmp_path, mock_repo_id):
     with open(stack_file, "w") as f:
         f.write("invalid json")
 
-    with patch("panqake.utils.config.STACK_FILE", stack_file):
+    with patch("panqake.utils.stack.STACK_FILE", stack_file):
         # Should return default and not raise error
         assert get_parent_branch("feature") == ""
 
@@ -110,7 +113,7 @@ def test_get_child_branches_multiple(tmp_path, mock_repo_id):
     with open(stack_file, "w") as f:
         json.dump(test_data, f)
 
-    with patch("panqake.utils.config.STACK_FILE", stack_file):
+    with patch("panqake.utils.stack.STACK_FILE", stack_file):
         children = get_child_branches("main")
         assert len(children) == 2
         assert set(children) == {"feature1", "feature2"}
@@ -126,7 +129,7 @@ def test_get_child_branches_no_children(tmp_path, mock_repo_id):
     with open(stack_file, "w") as f:
         json.dump(test_data, f)
 
-    with patch("panqake.utils.config.STACK_FILE", stack_file):
+    with patch("panqake.utils.stack.STACK_FILE", stack_file):
         assert get_child_branches("feature") == []
 
 
@@ -139,7 +142,7 @@ def test_add_to_stack_new_branch(tmp_path, mock_repo_id):
     with open(stack_file, "w") as f:
         json.dump({}, f)
 
-    with patch("panqake.utils.config.STACK_FILE", stack_file):
+    with patch("panqake.utils.stack.STACK_FILE", stack_file):
         add_to_stack("feature", "main")
 
     # Verify branch was added by reading the temp file directly
@@ -160,7 +163,7 @@ def test_add_to_stack_existing_repo(tmp_path, mock_repo_id):
     with open(stack_file, "w") as f:
         json.dump(test_data, f)
 
-    with patch("panqake.utils.config.STACK_FILE", stack_file):
+    with patch("panqake.utils.stack.STACK_FILE", stack_file):
         add_to_stack("feature", "main")
 
     # Verify branch was added while keeping existing data
@@ -183,7 +186,7 @@ def test_remove_from_stack_existing(tmp_path, mock_repo_id):
     with open(stack_file, "w") as f:
         json.dump(test_data, f)
 
-    with patch("panqake.utils.config.STACK_FILE", stack_file):
+    with patch("panqake.utils.stack.STACK_FILE", stack_file):
         result = remove_from_stack("feature")
         assert result is True  # Should return True for successful removal
 
@@ -214,7 +217,7 @@ def test_remove_from_stack_with_children(tmp_path, mock_repo_id):
         json.dump(test_data, f)
 
     # Remove the middle branch (feature)
-    with patch("panqake.utils.config.STACK_FILE", stack_file):
+    with patch("panqake.utils.stack.STACK_FILE", stack_file):
         result = remove_from_stack("feature")
         assert result is True
 
@@ -239,7 +242,7 @@ def test_remove_from_stack_nonexistent(tmp_path, mock_repo_id):
     with open(stack_file, "w") as f:
         json.dump(test_data, f)
 
-    with patch("panqake.utils.config.STACK_FILE", stack_file):
+    with patch("panqake.utils.stack.STACK_FILE", stack_file):
         result = remove_from_stack("nonexistent")
         assert result is False  # Should return False for nonexistent branch
 
@@ -259,7 +262,7 @@ def test_remove_from_stack_invalid_json(tmp_path, mock_repo_id):
         f.write("invalid json")
 
     # Should not raise exception and return False
-    with patch("panqake.utils.config.STACK_FILE", stack_file):
+    with patch("panqake.utils.stack.STACK_FILE", stack_file):
         result = remove_from_stack("feature")
         assert result is False  # Should return False for invalid JSON
 
@@ -270,7 +273,7 @@ def test_remove_from_stack_file_io_error(tmp_path, mock_repo_id):
     stack_file = panqake_dir / "stacks.json"
     
     # Mock stack file with IO error
-    with patch("panqake.utils.config.STACK_FILE", stack_file), \
+    with patch("panqake.utils.stack.STACK_FILE", stack_file), \
          patch("builtins.open", side_effect=IOError("Permission denied")):
         
         result = remove_from_stack("feature")

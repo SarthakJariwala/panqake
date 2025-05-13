@@ -5,12 +5,21 @@
 ### Added
 
 - Added `untrack` command to remove branches from the panqake stack without deleting the git branch
+- Added a new `Stacks` data structure class for more robust branch relationship management
+- Added new branch relationship utilities:
+  - Branch lineage tracking (all ancestors of a branch)
+  - Descendant tracking (all children, grandchildren, etc.)
+  - Common ancestor finding between branches
+  - Branch tree visualization
+  - Branch parent changing with circular reference protection
 
 ### Changed
 
 - Improved `remove_from_stack` utility function to return status and properly handle child branches
 - Enhanced stack metadata handling when branches are removed, preserving branch hierarchy
 - Improved error reporting when branches cannot be found in stack metadata
+- Refactored config.py to extract common file operations into helper functions
+- Reduced code duplication and improved error handling consistency in configuration utilities
 
 ## [v0.10.0] - 2025-05-05
 

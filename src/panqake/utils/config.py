@@ -83,20 +83,47 @@ def add_to_stack(branch: str, parent: str) -> None:
         json.dump(stacks, f, indent=2)
 
 
-def remove_from_stack(branch: str) -> None:
-    """Remove a branch from the stack."""
+def remove_from_stack(branch: str) -> bool:
+    """Remove a branch from the stack.
+    
+    This function removes the specified branch from the stack and updates
+    any child branches to reference the parent of the removed branch.
+    
+    Args:
+        branch: The name of the branch to remove
+        
+    Returns:
+        bool: True if the branch was removed, False otherwise
+    """
     repo_id = get_repo_id()
-    if not repo_id:
-        return
+    if not repo_id or not STACK_FILE.exists():
+        return False
 
-    with open(STACK_FILE, "r") as f:
-        try:
-            stacks = json.load(f)
-        except json.JSONDecodeError:
-            return
-
-    if repo_id in stacks and branch in stacks[repo_id]:
+    try:
+        with open(STACK_FILE, "r") as f:
+            try:
+                stacks = json.load(f)
+            except json.JSONDecodeError:
+                return False
+                
+        if repo_id not in stacks or branch not in stacks[repo_id]:
+            return False
+            
+        # Get the parent of the branch being removed
+        parent = stacks[repo_id][branch].get("parent", "")
+        
+        # Update all children of this branch to point to its parent
+        for child_branch, data in stacks[repo_id].items():
+            if data.get("parent", "") == branch:
+                stacks[repo_id][child_branch]["parent"] = parent
+                
+        # Remove the branch
         del stacks[repo_id][branch]
-
+        
         with open(STACK_FILE, "w") as f:
             json.dump(stacks, f, indent=2)
+            
+        return True
+    except (IOError, OSError):
+        # Handle file I/O errors
+        return False

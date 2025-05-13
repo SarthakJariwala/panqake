@@ -68,7 +68,9 @@ def handle_merged_branches(main_branch):
                 if delete_result is not None:
                     print_formatted_text(f"[success]Deleted branch {branch}[/success]")
                     # Remove from stacks config
-                    remove_from_stack(branch)
+                    stack_removal = remove_from_stack(branch)
+                    if not stack_removal:
+                        print_formatted_text(f"[warning]Branch {branch} not found in stack metadata[/warning]")
                     deleted_branches.append(branch)
                 else:
                     print_formatted_text(

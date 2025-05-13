@@ -184,13 +184,49 @@ def test_remove_from_stack_existing(tmp_path, mock_repo_id):
         json.dump(test_data, f)
 
     with patch("panqake.utils.config.STACK_FILE", stack_file):
-        remove_from_stack("feature")
+        result = remove_from_stack("feature")
+        assert result is True  # Should return True for successful removal
 
     # Verify branch was removed
     with open(stack_file) as f:
         stacks = json.load(f)
         assert "feature" not in stacks["test-repo"]
         assert "other" in stacks["test-repo"]  # Other branch should remain
+
+
+def test_remove_from_stack_with_children(tmp_path, mock_repo_id):
+    """Test removing a branch that has children."""
+    panqake_dir = tmp_path / ".panqake"
+    stack_file = panqake_dir / "stacks.json"
+    panqake_dir.mkdir()
+    
+    # Setup test data with a branch hierarchy:
+    # main <- feature <- child1, child2
+    test_data = {
+        "test-repo": {
+            "feature": {"parent": "main"},
+            "child1": {"parent": "feature"},
+            "child2": {"parent": "feature"},
+            "other": {"parent": "main"}
+        }
+    }
+    with open(stack_file, "w") as f:
+        json.dump(test_data, f)
+
+    # Remove the middle branch (feature)
+    with patch("panqake.utils.config.STACK_FILE", stack_file):
+        result = remove_from_stack("feature")
+        assert result is True
+
+    # Verify: 
+    # 1. The branch was removed
+    # 2. Children of removed branch now point to its parent
+    with open(stack_file) as f:
+        stacks = json.load(f)
+        assert "feature" not in stacks["test-repo"]
+        assert stacks["test-repo"]["child1"]["parent"] == "main"
+        assert stacks["test-repo"]["child2"]["parent"] == "main"
+        assert stacks["test-repo"]["other"]["parent"] == "main"  # Unchanged
 
 
 def test_remove_from_stack_nonexistent(tmp_path, mock_repo_id):
@@ -204,7 +240,8 @@ def test_remove_from_stack_nonexistent(tmp_path, mock_repo_id):
         json.dump(test_data, f)
 
     with patch("panqake.utils.config.STACK_FILE", stack_file):
-        remove_from_stack("nonexistent")
+        result = remove_from_stack("nonexistent")
+        assert result is False  # Should return False for nonexistent branch
 
     # Verify original data unchanged
     with open(stack_file) as f:
@@ -221,6 +258,20 @@ def test_remove_from_stack_invalid_json(tmp_path, mock_repo_id):
     with open(stack_file, "w") as f:
         f.write("invalid json")
 
-    # Should not raise exception
+    # Should not raise exception and return False
     with patch("panqake.utils.config.STACK_FILE", stack_file):
-        remove_from_stack("feature")
+        result = remove_from_stack("feature")
+        assert result is False  # Should return False for invalid JSON
+
+
+def test_remove_from_stack_file_io_error(tmp_path, mock_repo_id):
+    """Test removing branch with file I/O error."""
+    panqake_dir = tmp_path / ".panqake"
+    stack_file = panqake_dir / "stacks.json"
+    
+    # Mock stack file with IO error
+    with patch("panqake.utils.config.STACK_FILE", stack_file), \
+         patch("builtins.open", side_effect=IOError("Permission denied")):
+        
+        result = remove_from_stack("feature")
+        assert result is False  # Should return False for I/O errors

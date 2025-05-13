@@ -20,5 +20,7 @@ def untrack(branch_name=None):
     print_formatted_text(
         f"[info]Untracking branch: [branch]{branch_name}[/branch][/info]"
     )
-    remove_from_stack(branch_name)
-    print_formatted_text(f"Successfully removed branch '{branch_name}' from the stack.")
+    if remove_from_stack(branch_name):
+        print_formatted_text(f"Successfully removed branch '{branch_name}' from the stack.")
+    else:
+        print_formatted_text(f"[warning]Branch '{branch_name}' was not found in the stack.[/warning]")

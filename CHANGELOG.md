@@ -6,6 +6,12 @@
 
 - Added `untrack` command to remove branches from the panqake stack without deleting the git branch
 
+### Changed
+
+- Improved `remove_from_stack` utility function to return status and properly handle child branches
+- Enhanced stack metadata handling when branches are removed, preserving branch hierarchy
+- Improved error reporting when branches cannot be found in stack metadata
+
 ## [v0.10.0] - 2025-05-05
 
 ### Changed

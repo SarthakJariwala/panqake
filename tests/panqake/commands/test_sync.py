@@ -122,6 +122,7 @@ def test_handle_merged_branches_delete_confirmed(
         "Deleted branch branch2",
     ]
     mock_prompt["confirm"].return_value = True
+    mock_config_utils["remove"].return_value = True  # Successful stack removal
 
     success, deleted = handle_merged_branches("main")
 

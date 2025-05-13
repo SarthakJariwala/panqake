@@ -191,6 +191,7 @@ def test_cleanup_local_branch_success(mock_git_utils, mock_config_utils, mock_pr
     # Setup
     mock_git_utils["exists"].return_value = True
     mock_git_utils["run"].return_value = "success"
+    mock_config_utils["remove"].return_value = True  # Successful stack removal
 
     # Execute
     result = cleanup_local_branch("feature-branch")

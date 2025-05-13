@@ -175,9 +175,12 @@ def cleanup_local_branch(branch_name):
             return False
 
         # Clean up stacks.json file by removing the branch
-        remove_from_stack(branch_name)
+        stack_removal = remove_from_stack(branch_name)
 
-        print_formatted_text("[success]Local branch deleted successfully[/success]")
+        if stack_removal:
+            print_formatted_text("[success]Local branch deleted successfully[/success]")
+        else:
+            print_formatted_text("[warning]Local branch deleted but not found in stack metadata[/warning]")
 
     return True
 

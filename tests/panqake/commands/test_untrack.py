@@ -41,6 +41,9 @@ def test_untrack_current_branch(mock_git_utils, mock_config_utils, mock_prompt):
 
 def test_untrack_specified_branch(mock_git_utils, mock_config_utils, mock_prompt):
     """Test untracking a specified branch name."""
+    # Setup
+    mock_config_utils.return_value = True  # Successful removal
+    
     # Execute
     untrack("test-branch")
 

@@ -145,8 +145,13 @@ def delete_branch(branch_name):
         sys.exit(1)
 
     # Remove from stack metadata
-    remove_from_stack(branch_name)
+    stack_removal = remove_from_stack(branch_name)
 
-    print_formatted_text(
-        f"[success]Success! Deleted branch '{branch_name}' and relinked the stack[/success]"
-    )
+    if stack_removal:
+        print_formatted_text(
+            f"[success]Success! Deleted branch '{branch_name}' and relinked the stack[/success]"
+        )
+    else:
+        print_formatted_text(
+            f"[warning]Branch '{branch_name}' was deleted but not found in stack metadata.[/warning]"
+        )

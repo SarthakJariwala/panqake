@@ -20,6 +20,7 @@ from panqake.commands.switch import switch_branch
 from panqake.commands.sync import sync_with_remote
 from panqake.commands.track import track
 from panqake.commands.untrack import untrack
+from panqake.commands.up import up as up_command
 from panqake.commands.update import update_branches
 from panqake.utils.config import init_panqake
 from panqake.utils.git import is_git_repo, run_git_command
@@ -37,11 +38,12 @@ KNOWN_COMMANDS = [
     "co",  # Alias for switch
     "track",
     "untrack",
-    "rename", 
+    "rename",
     "modify",
     "submit",
     "merge",
     "sync",
+    "up",
     "--help",
     "-h",
 ]
@@ -224,12 +226,22 @@ def sync(main_branch):
 @click.argument("new_name", required=False)
 def rename(old_name, new_name):
     """Rename a branch while maintaining stack relationships.
-    
+
     OLD_NAME: Current name of the branch to rename (default: current branch)
-    
+
     NEW_NAME: New name for the branch (if not provided, will prompt)
     """
     rename_branch(old_name, new_name)
+
+
+@cli.command()
+def up():
+    """Navigate to the parent branch in the stack.
+
+    Move up from the current branch to its closest ancestor.
+    If there is no parent branch, informs the user.
+    """
+    up_command()
 
 
 def main():

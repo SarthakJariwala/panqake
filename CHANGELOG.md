@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added `up` command to navigate to parent branch in the stack
 ## [v0.11.0] - 2025-05-13
 
 ### Added

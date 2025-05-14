@@ -30,6 +30,7 @@ uv tool install panqake
 | `pq merge` | Complete workflow | Merges PR and updates all dependent branches |
 | `pq list` or `pq ls` | View branch structure | Lists all branches in the stack with their relationships |
 | `pq switch` or `pq co` | Navigate branches | Switches to another branch in the stack |
+| `pq up` | Navigate to parent | Moves up from current branch to its parent |
 
 ## Real-World Workflow Example
 

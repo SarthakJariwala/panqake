@@ -167,7 +167,8 @@ def test_command_registration():
         "submit",
         "merge",
         "sync",
-        "rename",  # Added the new rename command
+        "rename",
+        "up",
     }
 
     assert set(commands) == expected_commands

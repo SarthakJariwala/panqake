@@ -169,6 +169,7 @@ def test_command_registration():
         "sync",
         "rename",
         "up",
+        "down",
     }
 
     assert set(commands) == expected_commands

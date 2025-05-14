@@ -9,6 +9,7 @@ import sys
 import rich_click as click
 
 from panqake.commands.delete import delete_branch
+from panqake.commands.down import down as down_command
 from panqake.commands.list import list_branches
 from panqake.commands.merge import merge_branch
 from panqake.commands.modify import modify_commit
@@ -44,6 +45,7 @@ KNOWN_COMMANDS = [
     "merge",
     "sync",
     "up",
+    "down",
     "--help",
     "-h",
 ]
@@ -242,6 +244,17 @@ def up():
     If there is no parent branch, informs the user.
     """
     up_command()
+
+
+@cli.command()
+def down():
+    """Navigate to a child branch in the stack.
+
+    Move down from the current branch to a child branch.
+    If there are multiple children, prompts for selection.
+    If there are no children, informs the user.
+    """
+    down_command()
 
 
 def main():

@@ -31,6 +31,7 @@ uv tool install panqake
 | `pq list` or `pq ls` | View branch structure | Lists all branches in the stack with their relationships |
 | `pq switch` or `pq co` | Navigate branches | Switches to another branch in the stack |
 | `pq up` | Navigate to parent | Moves up from current branch to its parent |
+| `pq down` | Navigate to child | Moves down from current branch to a child branch |
 
 ## Real-World Workflow Example
 
@@ -129,6 +130,19 @@ pq modify --commit -m "New feature implementation"
 
 ```bash
 pq delete feature-old
+```
+
+### Quick Branch Navigation
+
+Navigate up and down the branch stack directly:
+
+```bash
+# Move up to the parent branch
+pq up
+
+# Move down to a child branch
+# If there are multiple children, you'll be prompted to select one
+pq down
 ```
 
 ## Why Choose Panqake

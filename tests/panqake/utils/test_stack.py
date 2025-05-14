@@ -191,12 +191,17 @@ def test_stacks_visualize_tree(temp_stack_file, mock_repo_id):
     stacks = Stacks()
     tree = stacks.visualize_tree()
     
-    # Basic checks on tree structure
+    # Basic checks on tree structure with new formatting
     assert "main" in tree
-    assert "  feature" in tree  # Two spaces for indentation
-    assert "    child1" in tree  # Four spaces for indentation
-    assert "    child2" in tree
-    assert "  sibling" in tree
+    assert "feature" in tree
+    assert "child1" in tree
+    assert "child2" in tree
+    assert "sibling" in tree
+    
+    # Check for connector symbols
+    assert "├──" in tree  # Middle branch connector
+    assert "└──" in tree  # Last branch connector
+    assert "│" in tree    # Vertical line
 
 
 def test_stacks_get_all_branches(temp_stack_file, mock_repo_id):

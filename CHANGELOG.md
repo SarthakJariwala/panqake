@@ -20,6 +20,8 @@
 - Improved error reporting when branches cannot be found in stack metadata
 - Refactored config.py to extract common file operations into helper functions
 - Reduced code duplication and improved error handling consistency in configuration utilities
+- Unified branch tree visualization in a single implementation in the `Stacks` class
+- Enhanced tree visualization with proper tree connectors (└──, ├──, │) and current branch indicator
 
 ## [v0.10.0] - 2025-05-05
 

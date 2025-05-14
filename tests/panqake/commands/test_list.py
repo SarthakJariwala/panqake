@@ -1,10 +1,10 @@
 """Tests for list.py command module."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from panqake.commands.list import find_stack_root, list_branches, print_branch_tree
+from panqake.commands.list import find_stack_root, list_branches
 
 
 @pytest.fixture
@@ -26,11 +26,9 @@ def mock_config_utils():
     """Mock config utility functions."""
     with (
         patch("panqake.commands.list.get_parent_branch") as mock_parent,
-        patch("panqake.commands.list.get_child_branches") as mock_children,
     ):
         yield {
             "parent": mock_parent,
-            "children": mock_children,
         }
 
 
@@ -38,16 +36,21 @@ def mock_config_utils():
 def mock_prompt():
     """Mock questionary prompt functions."""
     with (
-        patch("panqake.commands.list.format_branch") as mock_format,
         patch("panqake.commands.list.print_formatted_text") as mock_print,
     ):
-        mock_format.side_effect = (
-            lambda branch, current=False: f"[formatted]{branch}[/formatted]"
-        )
         yield {
-            "format": mock_format,
             "print": mock_print,
         }
+
+
+@pytest.fixture
+def mock_stacks():
+    """Mock the Stacks class."""
+    with patch("panqake.commands.list.Stacks") as mock_stacks_class:
+        mock_stacks_instance = MagicMock()
+        mock_stacks_class.return_value = mock_stacks_instance
+        mock_stacks_instance.visualize_tree.return_value = "mock tree output"
+        yield mock_stacks_instance
 
 
 def test_find_stack_root_no_parent(mock_config_utils):
@@ -63,59 +66,8 @@ def test_find_stack_root_with_parent(mock_config_utils):
     assert find_stack_root("feature") == "main"
 
 
-def test_print_branch_tree_single_branch(
-    mock_git_utils, mock_config_utils, mock_prompt
-):
-    """Test printing tree with a single branch."""
-    mock_config_utils["children"].return_value = []
-
-    print_branch_tree("main")
-
-    mock_prompt["print"].assert_called_once_with("[formatted]main[/formatted]")
-
-
-def test_print_branch_tree_with_children(
-    mock_git_utils, mock_config_utils, mock_prompt
-):
-    """Test printing tree with children branches."""
-    # Setup a tree: main -> [feature1, feature2]
-    mock_config_utils["children"].side_effect = [
-        ["feature1", "feature2"],  # main's children
-        [],  # feature1's children
-        [],  # feature2's children
-    ]
-
-    print_branch_tree("main")
-
-    # Verify the output structure
-    calls = mock_prompt["print"].call_args_list
-    assert len(calls) == 3
-    assert calls[0].args[0] == "[formatted]main[/formatted]"
-    assert calls[1].args[0] == "    ├── [formatted]feature1[/formatted]"
-    assert calls[2].args[0] == "    └── [formatted]feature2[/formatted]"
-
-
-def test_print_branch_tree_nested(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test printing tree with nested branches."""
-    # Setup a tree: main -> feature1 -> subfeature
-    mock_config_utils["children"].side_effect = [
-        ["feature1"],  # main's children
-        ["subfeature"],  # feature1's children
-        [],  # subfeature's children
-    ]
-
-    print_branch_tree("main")
-
-    # Verify the output structure
-    calls = mock_prompt["print"].call_args_list
-    assert len(calls) == 3
-    assert calls[0].args[0] == "[formatted]main[/formatted]"
-    assert calls[1].args[0] == "    └── [formatted]feature1[/formatted]"
-    assert calls[2].args[0] == "        └── [formatted]subfeature[/formatted]"
-
-
 def test_list_branches_nonexistent_branch(
-    mock_git_utils, mock_config_utils, mock_prompt
+    mock_git_utils, mock_config_utils, mock_prompt, mock_stacks
 ):
     """Test listing branches with nonexistent branch."""
     mock_git_utils["exists"].return_value = False
@@ -125,37 +77,48 @@ def test_list_branches_nonexistent_branch(
 
     mock_prompt["print"].assert_called_once()
     assert "Error" in mock_prompt["print"].call_args.args[0]
+    # Stacks instance should not be created
+    mock_stacks.visualize_tree.assert_not_called()
 
 
-def test_list_branches_current_branch(mock_git_utils, mock_config_utils, mock_prompt):
+def test_list_branches_current_branch(
+    mock_git_utils, mock_config_utils, mock_prompt, mock_stacks
+):
     """Test listing branches from current branch."""
     mock_git_utils["exists"].return_value = True
     mock_config_utils["parent"].return_value = ""
-    mock_config_utils["children"].return_value = []
 
     list_branches()
 
-    # Should use current branch (called multiple times: for header and in print_branch_tree)
+    # Should use current branch (called for header and passed to visualize_tree)
     assert mock_git_utils["current"].call_count >= 1
+    # Should call visualize_tree once
+    mock_stacks.visualize_tree.assert_called_once()
     # Should print header and tree
     assert mock_prompt["print"].call_count == 2
 
 
-def test_list_branches_specific_branch(mock_git_utils, mock_config_utils, mock_prompt):
+def test_list_branches_specific_branch(
+    mock_git_utils, mock_config_utils, mock_prompt, mock_stacks
+):
     """Test listing branches from specified branch."""
     mock_git_utils["exists"].return_value = True
     mock_config_utils["parent"].return_value = ""
-    mock_config_utils["children"].return_value = []
 
     list_branches("feature")
 
-    # Current branch is still called for header and in print_branch_tree
+    # Current branch is still called for header
     assert mock_git_utils["current"].call_count >= 1
+    # Should call visualize_tree with specified branch as root
+    mock_stacks.visualize_tree.assert_called_once()
+    assert mock_stacks.visualize_tree.call_args.kwargs["root"] == "feature"
     # Should print header and tree
     assert mock_prompt["print"].call_count == 2
 
 
-def test_list_branches_with_stack(mock_git_utils, mock_config_utils, mock_prompt):
+def test_list_branches_with_stack(
+    mock_git_utils, mock_config_utils, mock_prompt, mock_stacks
+):
     """Test listing a complete branch stack."""
     mock_git_utils["exists"].return_value = True
     # Setup stack: main -> feature -> subfeature
@@ -164,13 +127,11 @@ def test_list_branches_with_stack(mock_git_utils, mock_config_utils, mock_prompt
         "",
         None,
     ]  # feature -> main -> None
-    mock_config_utils["children"].side_effect = [
-        ["feature"],  # main's children
-        ["subfeature"],  # feature's children
-        [],  # subfeature's children
-    ]
 
     list_branches("subfeature")
 
-    # Should find root and print complete tree
-    assert mock_prompt["print"].call_count == 4  # Header + 3 branches
+    # Should find root (main) and use it as root for visualize_tree
+    mock_stacks.visualize_tree.assert_called_once()
+    assert mock_stacks.visualize_tree.call_args.kwargs["root"] == "main"
+    # Should print header and tree
+    assert mock_prompt["print"].call_count == 2

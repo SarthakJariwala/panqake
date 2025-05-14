@@ -1,13 +1,11 @@
 """Tests for the stack module."""
 
 import json
-import os
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
-from panqake.utils.stack import Branch, Stacks, STACK_FILE
+from panqake.utils.stack import Branch, Stacks
 
 
 def test_branch_init():

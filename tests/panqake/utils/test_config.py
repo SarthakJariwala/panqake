@@ -12,7 +12,6 @@ from panqake.utils.config import (
     init_panqake,
     remove_from_stack,
 )
-from panqake.utils.stack import STACK_FILE, PANQAKE_DIR
 
 
 @pytest.fixture

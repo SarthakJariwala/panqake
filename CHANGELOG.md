@@ -2,10 +2,14 @@
 
 ## [Unreleased]
 
+## [v0.12.0] - 2025-05-13
+
 ### Added
 
 - Added `up` command to navigate to parent branch in the stack
 - Added `down` command to navigate to child branches with smart selection for multiple children
+- Added `pre-commit` integration for automatic code formatting and linting
+- Added `tests.yml` workflow integration for automated testing
 
 ### Changed
 

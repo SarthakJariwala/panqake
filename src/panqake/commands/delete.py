@@ -12,12 +12,14 @@ from panqake.utils.git import (
     branch_exists,
     checkout_branch,
     get_current_branch,
+    list_all_branches,
     run_git_command,
 )
 from panqake.utils.questionary_prompt import (
     format_branch,
     print_formatted_text,
     prompt_confirm,
+    prompt_input,
 )
 
 
@@ -117,8 +119,26 @@ def relink_child_branches(child_branches, parent_branch, current_branch, branch_
     return True
 
 
-def delete_branch(branch_name):
+def delete_branch(branch_name=None):
     """Delete a branch and relink the stack."""
+    # If no branch name specified, prompt for it
+    if not branch_name:
+        current_branch = get_current_branch()
+        branches = [
+            branch for branch in list_all_branches() if branch != current_branch
+        ]
+
+        # Further filter out main/master branches which should be protected
+        root_branches = ["main", "master"]
+        branches = [branch for branch in branches if branch not in root_branches]
+
+        if not branches:
+            print_formatted_text(
+                "[warning]No branches available for deletion.[/warning]"
+            )
+            return
+        branch_name = prompt_input("Enter branch name to delete: ", completer=branches)
+
     current_branch = validate_branch_for_deletion(branch_name)
     parent_branch, child_branches = get_branch_relationships(branch_name)
 

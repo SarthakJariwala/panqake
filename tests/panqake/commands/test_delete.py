@@ -6,6 +6,9 @@ import pytest
 
 from panqake.commands.delete import delete_branch
 
+# Constants for testing
+MOCK_BRANCHES = ["main", "feature-branch", "another-feature", "develop"]
+
 
 @pytest.fixture
 def mock_git_utils():
@@ -15,13 +18,16 @@ def mock_git_utils():
         patch("panqake.commands.delete.checkout_branch") as mock_checkout,
         patch("panqake.commands.delete.get_current_branch") as mock_current,
         patch("panqake.commands.delete.run_git_command") as mock_run,
+        patch("panqake.commands.delete.list_all_branches") as mock_list,
     ):
         mock_current.return_value = "main"
+        mock_list.return_value = MOCK_BRANCHES
         yield {
             "exists": mock_exists,
             "checkout": mock_checkout,
             "current": mock_current,
             "run": mock_run,
+            "list": mock_list,
         }
 
 
@@ -49,12 +55,15 @@ def mock_prompt():
         patch("panqake.commands.delete.format_branch") as mock_format,
         patch("panqake.commands.delete.print_formatted_text") as mock_print,
         patch("panqake.commands.delete.prompt_confirm") as mock_confirm,
+        patch("panqake.commands.delete.prompt_input") as mock_prompt_input,
     ):
         mock_format.return_value = "formatted_branch"
+        mock_prompt_input.return_value = "feature-branch"
         yield {
             "format": mock_format,
             "print": mock_print,
             "confirm": mock_confirm,
+            "prompt_input": mock_prompt_input,
         }
 
 
@@ -166,6 +175,51 @@ def test_delete_branch_user_cancellation(
     delete_branch("feature-branch")
 
     # Verify branch was not deleted
+    mock_git_utils["run"].assert_not_called()
+    mock_config_utils["remove"].assert_not_called()
+
+
+def test_delete_branch_no_branch_name_provided(
+    mock_git_utils, mock_config_utils, mock_prompt
+):
+    """Test branch deletion when no branch name is provided."""
+    # Setup
+    mock_git_utils["exists"].return_value = True
+    mock_config_utils["get_parent"].return_value = "main"
+    mock_config_utils["get_children"].return_value = []
+    mock_prompt["confirm"].return_value = True
+    mock_git_utils["run"].return_value = "success"
+    mock_config_utils["remove"].return_value = True
+
+    # Execute
+    delete_branch()  # No branch name provided
+
+    # Verify prompt_input was called
+    mock_prompt["prompt_input"].assert_called_once()
+
+    # Verify deletion was performed with the prompted branch name
+    mock_git_utils["run"].assert_called_with(["branch", "-D", "feature-branch"])
+    mock_config_utils["remove"].assert_called_once_with("feature-branch")
+
+
+def test_delete_branch_no_available_branches(
+    mock_git_utils, mock_config_utils, mock_prompt
+):
+    """Test when no branches are available for deletion."""
+    # Setup - only main/protected branches exist
+    mock_git_utils["current"].return_value = "main"
+    mock_git_utils["list"].return_value = ["main", "master"]
+
+    # Execute
+    delete_branch()  # No branch name provided
+
+    # Verify warning message was shown
+    assert any(
+        "No branches available for deletion" in str(args)
+        for args in mock_prompt["print"].call_args_list
+    )
+
+    # Verify no deletion was attempted
     mock_git_utils["run"].assert_not_called()
     mock_config_utils["remove"].assert_not_called()
 

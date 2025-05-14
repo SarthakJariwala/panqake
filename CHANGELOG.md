@@ -24,6 +24,11 @@
 - Unified branch tree visualization in a single implementation in the `Stacks` class
 - Enhanced tree visualization with proper tree connectors (└──, ├──, │) and current branch indicator
 
+### Fixed
+
+- Fixed `delete` command to prompt for branch name when none is provided
+- Added protection to prevent deletion of main and master branches
+
 ## [v0.10.0] - 2025-05-05
 
 ### Changed

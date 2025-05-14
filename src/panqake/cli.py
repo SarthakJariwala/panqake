@@ -27,6 +27,46 @@ from panqake.utils.config import init_panqake
 from panqake.utils.git import is_git_repo, run_git_command
 from panqake.utils.questionary_prompt import print_formatted_text
 
+# Configure rich-click styling and command groups
+click.rich_click.USE_RICH_MARKUP = True
+click.rich_click.SHOW_ARGUMENTS = True
+click.rich_click.GROUP_ARGUMENTS_OPTIONS = True
+
+# Style customization
+click.rich_click.STYLE_COMMANDS_HEADING = "bold cyan"
+click.rich_click.STYLE_COMMANDS = "cyan"
+click.rich_click.STYLE_OPTIONS_HEADING = "bold green"
+click.rich_click.STYLE_OPTIONS = "green"
+click.rich_click.STYLE_ARGUMENTS = "yellow"
+click.rich_click.STYLE_METAVAR = "bold yellow"
+click.rich_click.STYLE_EPILOG = "italic"
+
+# Define our command groups with descriptive names
+PANQAKE_COMMAND_GROUPS = [
+    {
+        "name": "Navigation Commands (move between branches)",
+        "commands": ["up", "down", "switch", "co", "list", "ls"],
+    },
+    {
+        "name": "Branch Management (create, delete, modify branches)",
+        "commands": ["new", "delete", "rename", "track", "untrack"],
+    },
+    {
+        "name": "Update & Sync (update branches and remote)",
+        "commands": ["update", "modify", "sync"],
+    },
+    {
+        "name": "Pull Request Operations (PR creation and merging)",
+        "commands": ["pr", "submit", "merge"],
+    },
+]
+
+# Apply to both pq and panqake commands
+click.rich_click.COMMAND_GROUPS = {
+    "pq": PANQAKE_COMMAND_GROUPS,
+    "panqake": PANQAKE_COMMAND_GROUPS,
+}
+
 # Define known commands for passthrough handling
 KNOWN_COMMANDS = [
     "new",

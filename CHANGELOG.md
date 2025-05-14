@@ -7,6 +7,15 @@
 - Added `up` command to navigate to parent branch in the stack
 - Added `down` command to navigate to child branches with smart selection for multiple children
 
+### Changed
+
+- Improved CLI interface with logical command grouping:
+  - Navigation Commands (up, down, switch, list, etc.)
+  - Branch Management (new, delete, rename, etc.)
+  - Update & Sync (update, modify, sync)
+  - Pull Request Operations (pr, submit, merge)
+- Enhanced help menu formatting and readability with rich-click styling
+
 ## [v0.11.0] - 2025-05-13
 
 ### Added

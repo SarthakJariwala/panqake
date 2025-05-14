@@ -493,6 +493,48 @@ class Stacks:
 
         repo_id = self._current_repo_id
         return repo_id in self._branches and branch in self._branches[repo_id]
+        
+    def rename_branch(self, old_name: str, new_name: str) -> bool:
+        """Rename a branch in the stack and update all references.
+        
+        This method performs the following:
+        1. Renames the branch entry in the stack
+        2. Updates any references to this branch as a parent in other branches
+        
+        Args:
+            old_name: The current name of the branch
+            new_name: The new name for the branch
+            
+        Returns:
+            bool: True if the branch was renamed successfully, False otherwise
+        """
+        if not self._ensure_loaded() or not self._ensure_repo_id():
+            return False
+            
+        repo_id = self._current_repo_id
+        if repo_id not in self._branches or old_name not in self._branches[repo_id]:
+            return False
+            
+        # Check if new name already exists in stack
+        if new_name in self._branches[repo_id]:
+            return False
+            
+        # Get the branch data
+        branch_data = self._branches[repo_id][old_name]
+        
+        # Create new branch entry with the same parent
+        self._branches[repo_id][new_name] = Branch(new_name, branch_data.parent)
+        
+        # Remove the old branch entry
+        del self._branches[repo_id][old_name]
+        
+        # Update parent references in child branches
+        for child_name, child_branch in self._branches[repo_id].items():
+            if child_branch.parent == old_name:
+                child_branch.parent = new_name
+                
+        # Save changes
+        return self.save()
 
     def __enter__(self) -> "Stacks":
         """Context manager entry."""

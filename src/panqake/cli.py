@@ -14,6 +14,7 @@ from panqake.commands.merge import merge_branch
 from panqake.commands.modify import modify_commit
 from panqake.commands.new import create_new_branch
 from panqake.commands.pr import create_pull_requests
+from panqake.commands.rename import rename as rename_branch
 from panqake.commands.submit import update_pull_request
 from panqake.commands.switch import switch_branch
 from panqake.commands.sync import sync_with_remote
@@ -36,6 +37,7 @@ KNOWN_COMMANDS = [
     "co",  # Alias for switch
     "track",
     "untrack",
+    "rename", 
     "modify",
     "submit",
     "merge",
@@ -215,6 +217,19 @@ def sync(main_branch):
     MAIN_BRANCH: Base branch to sync with (default: main)
     """
     sync_with_remote(main_branch)
+
+
+@cli.command()
+@click.argument("old_name", required=False)
+@click.argument("new_name", required=False)
+def rename(old_name, new_name):
+    """Rename a branch while maintaining stack relationships.
+    
+    OLD_NAME: Current name of the branch to rename (default: current branch)
+    
+    NEW_NAME: New name for the branch (if not provided, will prompt)
+    """
+    rename_branch(old_name, new_name)
 
 
 def main():

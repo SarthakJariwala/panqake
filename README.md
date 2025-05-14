@@ -81,7 +81,7 @@ Keep your branch stack up to date with remote changes:
 pq sync
 ```
 
-### Track and Untrack Git Branches
+### Track, Untrack, and Rename Git Branches
 
 Add branches created outside panqake to your stack:
 
@@ -99,6 +99,16 @@ Remove a branch from the panqake stack without deleting the git branch:
 
 ```bash
 pq untrack feature-branch
+```
+
+Rename a branch while preserving its stack relationships:
+
+```bash
+# Rename the current branch
+pq rename new-branch-name
+
+# Rename a specific branch
+pq rename old-branch-name new-branch-name
 ```
 
 ### Flexible Commit Creation

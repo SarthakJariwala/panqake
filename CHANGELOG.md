@@ -5,6 +5,7 @@
 ### Added
 
 - Added `untrack` command to remove branches from the panqake stack without deleting the git branch
+- Added `rename` command to rename branches while preserving their stack relationships
 - Added a new `Stacks` data structure class for more robust branch relationship management
 - Added new branch relationship utilities:
   - Branch lineage tracking (all ancestors of a branch)

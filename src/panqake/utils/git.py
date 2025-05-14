@@ -270,6 +270,77 @@ def branch_has_commits(branch: str = None, parent_branch: Optional[str] = None) 
         return False  # Safer to return False if count fails
 
 
+def rename_branch(old_name: str, new_name: str) -> bool:
+    """Rename a git branch.
+
+    Args:
+        old_name: The current name of the branch
+        new_name: The new name for the branch
+
+    Returns:
+        bool: True if the branch was renamed successfully, False otherwise
+    """
+    # Check if the new branch name already exists
+    if branch_exists(new_name):
+        print_formatted_text(
+            f"[warning]Error: Branch '{new_name}' already exists[/warning]"
+        )
+        return False
+
+    # Check if old branch exists
+    if not branch_exists(old_name):
+        print_formatted_text(
+            f"[warning]Error: Branch '{old_name}' does not exist[/warning]"
+        )
+        return False
+
+    # Get current branch to determine if we need to switch branches
+    current_branch = get_current_branch()
+    on_target_branch = current_branch == old_name
+
+    # If we're not on the branch to rename, checkout the branch first
+    if not on_target_branch:
+        try:
+            checkout_branch(old_name)
+        except SystemExit:
+            return False
+
+    # Rename the branch
+    print_formatted_text(
+        f"[info]Renaming branch '{old_name}' to '{new_name}'...[/info]"
+    )
+    
+    # Git command to rename a branch: git branch -m <old-name> <new-name>
+    rename_cmd = ["branch", "-m", new_name]
+    result = run_git_command(rename_cmd)
+    
+    if result is None:
+        print_formatted_text(
+            f"[danger]Failed to rename branch '{old_name}' to '{new_name}'[/danger]"
+        )
+        return False
+    
+    print_formatted_text(
+        f"[success]Successfully renamed branch '{old_name}' to '{new_name}'[/success]"
+    )
+    
+    # If the renamed branch was pushed to the remote, we'll need to:
+    # 1. Delete the old remote branch
+    # 2. Push the new branch
+    if is_branch_pushed_to_remote(old_name):
+        print_formatted_text(
+            f"[info]Branch '{old_name}' exists on remote. Updating remote references...[/info]"
+        )
+        
+        # Delete the old remote branch
+        delete_remote_branch(old_name)
+        
+        # Push the new branch to remote
+        push_branch_to_remote(new_name)
+    
+    return True
+
+
 def get_staged_files() -> List[dict]:
     """Get a list of staged files using git diff --staged.
 

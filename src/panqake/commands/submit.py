@@ -11,6 +11,7 @@ from panqake.utils.git import (
 from panqake.utils.github import (
     branch_has_pr,
     check_github_cli_installed,
+    get_pr_url,
 )
 from panqake.utils.questionary_prompt import (
     format_branch,
@@ -58,6 +59,10 @@ def update_pull_request(branch_name=None):
             print_formatted_text(
                 f"[success]PR for {format_branch(branch_name)} has been updated[/success]"
             )
+            # Display PR URL if available
+            pr_url = get_pr_url(branch_name)
+            if pr_url:
+                print_formatted_text(f"[info]Pull request URL: {pr_url}[/info]")
         else:
             print_formatted_text(
                 f"[info]Branch {format_branch(branch_name)} updated on remote. No PR exists yet.[/info]"

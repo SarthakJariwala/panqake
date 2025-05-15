@@ -202,10 +202,13 @@ def create_pr_for_branch(branch, parent):
         return False
 
     # Create the PR
-    if create_pr(parent, branch, title, description):
+    success, pr_url = create_pr(parent, branch, title, description)
+    if success:
         print_formatted_text(
             f"[success]PR created successfully for {format_branch(branch)}[/success]"
         )
+        if pr_url:
+            print_formatted_text(f"[info]Pull request URL: {pr_url}[/info]")
         return True
     else:
         print_formatted_text(

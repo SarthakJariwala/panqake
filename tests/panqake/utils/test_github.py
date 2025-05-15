@@ -9,6 +9,7 @@ from panqake.utils.github import (
     branch_has_pr,
     check_github_cli_installed,
     create_pr,
+    get_pr_url,
     merge_pr,
     run_gh_command,
     update_pr_base,
@@ -93,11 +94,14 @@ def test_branch_has_pr_false(mock_subprocess_run):
 
 def test_create_pr_success(mock_subprocess_run):
     """Test successful PR creation."""
-    mock_subprocess_run.return_value.stdout = "PR created"
-    assert (
-        create_pr(base="main", head="feature", title="Test PR", body="PR description")
-        is True
+    mock_subprocess_run.return_value.stdout = (
+        "PR created\nhttps://github.com/user/repo/pull/123"
     )
+    success, url = create_pr(
+        base="main", head="feature", title="Test PR", body="PR description"
+    )
+    assert success is True
+    assert url == "https://github.com/user/repo/pull/123"
     mock_subprocess_run.assert_called_once_with(
         [
             "gh",
@@ -124,7 +128,24 @@ def test_create_pr_failure(mock_subprocess_run):
     mock_subprocess_run.side_effect = subprocess.CalledProcessError(
         1, "gh", stderr="error"
     )
-    assert create_pr(base="main", head="feature", title="Test PR") is False
+    success, url = create_pr(base="main", head="feature", title="Test PR")
+    assert success is False
+    assert url is None
+
+
+def test_get_pr_url(mock_subprocess_run):
+    """Test getting PR URL."""
+    mock_subprocess_run.return_value.stdout = (
+        '{"url":"https://github.com/user/repo/pull/123"}'
+    )
+    assert get_pr_url("feature") == "https://github.com/user/repo/pull/123"
+    mock_subprocess_run.assert_called_once_with(
+        ["gh", "pr", "view", "feature", "--json", "url"],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
 
 
 def test_update_pr_base_success(mock_subprocess_run):

@@ -60,7 +60,7 @@ def mock_github_utils():
     ):
         mock_check_cli.return_value = True
         mock_has_pr.return_value = False
-        mock_create_pr.return_value = True
+        mock_create_pr.return_value = (True, "https://github.com/user/repo/pull/123")
         yield {
             "check_cli": mock_check_cli,
             "has_pr": mock_has_pr,

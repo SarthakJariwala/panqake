@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Display clickable PR URLs after creating or updating pull requests in `pq submit` and `pq pr` commands
+
 ## [v0.12.0] - 2025-05-13
 
 ### Added

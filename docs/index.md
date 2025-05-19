@@ -8,11 +8,11 @@ hero:
   tagline: Unblock yourself with stacked, small PRs and faster reviews.
   actions:
     - theme: brand
-      text: Markdown Examples
-      link: /markdown-examples
+      text: Get Started
+      link: /introduction
     - theme: alt
-      text: API Examples
-      link: /api-examples
+      text: View on GitHub
+      link: https://github.com/SarthakJariwala/panqake
   image:
     src: /panqake.svg
     alt: Panqake Logo
@@ -27,4 +27,3 @@ features:
   - title: GitHub Integration
     details: Create, merge, and rebase PRs seamlessly
 ---
-

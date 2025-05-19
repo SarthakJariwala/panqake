@@ -9,6 +9,7 @@ from panqake.utils.github import (
     branch_has_pr,
     check_github_cli_installed,
     create_pr,
+    get_pr_checks_status,
     get_pr_url,
     merge_pr,
     run_gh_command,
@@ -201,3 +202,40 @@ def test_merge_pr_different_method(mock_subprocess_run):
         stderr=subprocess.PIPE,
         text=True,
     )
+
+
+@pytest.mark.parametrize(
+    "gh_output,expected_result",
+    [
+        # All checks passed
+        (
+            '{"statusCheckRollup": [{"state": "SUCCESS"}, {"state": "SUCCESS"}]}',
+            True,
+        ),
+        # Some checks failed
+        (
+            '{"statusCheckRollup": [{"state": "SUCCESS"}, {"state": "FAILURE"}]}',
+            False,
+        ),
+        # No checks
+        (
+            '{"statusCheckRollup": []}',
+            True,
+        ),
+        # Invalid JSON
+        (
+            "Invalid JSON",
+            False,
+        ),
+        # Empty result
+        (
+            None,
+            False,
+        ),
+    ],
+)
+def test_get_pr_checks_status(gh_output, expected_result):
+    """Test the get_pr_checks_status function."""
+    with patch("panqake.utils.github.run_gh_command", return_value=gh_output):
+        result = get_pr_checks_status("test-branch")
+        assert result == expected_result

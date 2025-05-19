@@ -43,20 +43,20 @@ def temp_stack_file(tmp_path):
     panqake_dir = tmp_path / ".panqake"
     stack_file = panqake_dir / "stacks.json"
     panqake_dir.mkdir()
-    
+
     test_data = {
         "test-repo": {
             "main": {"parent": ""},
             "feature": {"parent": "main"},
             "child1": {"parent": "feature"},
             "child2": {"parent": "feature"},
-            "sibling": {"parent": "main"}
+            "sibling": {"parent": "main"},
         }
     }
-    
+
     with open(stack_file, "w") as f:
         json.dump(test_data, f)
-    
+
     with patch("panqake.utils.stack.STACK_FILE", stack_file):
         with patch("panqake.utils.stack.PANQAKE_DIR", panqake_dir):
             yield stack_file
@@ -66,7 +66,7 @@ def test_stacks_load(temp_stack_file, mock_repo_id):
     """Test loading stacks from file."""
     stacks = Stacks()
     assert stacks.load() is True
-    
+
     # Verify data was loaded correctly
     assert stacks.get_parent("feature") == "main"
     assert stacks.get_parent("child1") == "feature"
@@ -77,10 +77,10 @@ def test_stacks_save(temp_stack_file, mock_repo_id):
     """Test saving stacks to file."""
     stacks = Stacks()
     stacks.load()
-    
+
     # Add a new branch
     stacks.add_branch("new-branch", "main")
-    
+
     # Load stacks again to verify data was saved
     new_stacks = Stacks()
     new_stacks.load()
@@ -109,7 +109,7 @@ def test_stacks_get_children(temp_stack_file, mock_repo_id):
 def test_stacks_add_branch(temp_stack_file, mock_repo_id):
     """Test adding a branch to the stack."""
     stacks = Stacks()
-    
+
     # Add a new branch
     assert stacks.add_branch("new-feature", "main") is True
     assert stacks.get_parent("new-feature") == "main"
@@ -119,10 +119,10 @@ def test_stacks_add_branch(temp_stack_file, mock_repo_id):
 def test_stacks_remove_branch(temp_stack_file, mock_repo_id):
     """Test removing a branch from the stack."""
     stacks = Stacks()
-    
+
     # Remove a branch with children
     assert stacks.remove_branch("feature") is True
-    
+
     # Verify children were updated to point to the parent
     assert stacks.get_parent("child1") == "main"
     assert stacks.get_parent("child2") == "main"
@@ -146,7 +146,12 @@ def test_stacks_get_branch_lineage(temp_stack_file, mock_repo_id):
 def test_stacks_get_all_descendants(temp_stack_file, mock_repo_id):
     """Test getting all descendants of a branch."""
     stacks = Stacks()
-    assert sorted(stacks.get_all_descendants("main")) == ["child1", "child2", "feature", "sibling"]
+    assert sorted(stacks.get_all_descendants("main")) == [
+        "child1",
+        "child2",
+        "feature",
+        "sibling",
+    ]
     assert sorted(stacks.get_all_descendants("feature")) == ["child1", "child2"]
     assert stacks.get_all_descendants("child1") == []
     assert stacks.get_all_descendants("nonexistent") == []
@@ -155,11 +160,11 @@ def test_stacks_get_all_descendants(temp_stack_file, mock_repo_id):
 def test_stacks_change_parent(temp_stack_file, mock_repo_id):
     """Test changing the parent of a branch."""
     stacks = Stacks()
-    
+
     # Change parent
     assert stacks.change_parent("child1", "sibling") is True
     assert stacks.get_parent("child1") == "sibling"
-    
+
     # Verify lineage updated
     assert stacks.get_branch_lineage("child1") == ["child1", "sibling", "main"]
 
@@ -167,10 +172,10 @@ def test_stacks_change_parent(temp_stack_file, mock_repo_id):
 def test_stacks_change_parent_circular(temp_stack_file, mock_repo_id):
     """Test changing parent would create a circular reference."""
     stacks = Stacks()
-    
+
     # First make sure we have the correct test data
     assert stacks.get_branch_lineage("child1") == ["child1", "feature", "main"]
-    
+
     # Attempt to create a circular reference
     assert stacks.change_parent("main", "child1") is False
     assert stacks.get_parent("main") == ""  # Unchanged
@@ -188,18 +193,18 @@ def test_stacks_visualize_tree(temp_stack_file, mock_repo_id):
     """Test generating a tree visualization."""
     stacks = Stacks()
     tree = stacks.visualize_tree()
-    
+
     # Basic checks on tree structure with new formatting
     assert "main" in tree
     assert "feature" in tree
     assert "child1" in tree
     assert "child2" in tree
     assert "sibling" in tree
-    
+
     # Check for connector symbols
     assert "├──" in tree  # Middle branch connector
     assert "└──" in tree  # Last branch connector
-    assert "│" in tree    # Vertical line
+    assert "│" in tree  # Vertical line
 
 
 def test_stacks_get_all_branches(temp_stack_file, mock_repo_id):
@@ -220,7 +225,7 @@ def test_stacks_context_manager(temp_stack_file, mock_repo_id):
     """Test using Stacks as a context manager."""
     with Stacks() as stacks:
         stacks.add_branch("new-branch", "main")
-    
+
     # Verify data was saved
     new_stacks = Stacks()
     assert "new-branch" in new_stacks.get_all_branches()
@@ -231,7 +236,7 @@ def test_stacks_nonexistent_file(tmp_path, mock_repo_id):
     """Test initialization with nonexistent file."""
     panqake_dir = tmp_path / ".panqake"
     stack_file = panqake_dir / "stacks.json"
-    
+
     with patch("panqake.utils.stack.STACK_FILE", stack_file):
         with patch("panqake.utils.stack.PANQAKE_DIR", panqake_dir):
             stacks = Stacks()

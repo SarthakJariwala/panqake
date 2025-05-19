@@ -5,6 +5,7 @@
 ### Added
 
 - Display clickable PR URLs after creating or updating pull requests in `pq submit` and `pq pr` commands
+- Check if PR required status checks have passed before merging, with option to proceed anyway
 
 ## [v0.12.0] - 2025-05-13
 

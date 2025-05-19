@@ -24,6 +24,7 @@ from panqake.utils.git import (
 from panqake.utils.github import (
     branch_has_pr,
     check_github_cli_installed,
+    get_pr_checks_status,
     update_pr_base,
 )
 from panqake.utils.github import (
@@ -180,7 +181,9 @@ def cleanup_local_branch(branch_name):
         if stack_removal:
             print_formatted_text("[success]Local branch deleted successfully[/success]")
         else:
-            print_formatted_text("[warning]Local branch deleted but not found in stack metadata[/warning]")
+            print_formatted_text(
+                "[warning]Local branch deleted but not found in stack metadata[/warning]"
+            )
 
     return True
 
@@ -235,6 +238,15 @@ def perform_merge_operations(
     # IMPORTANT: First, update PR base references for all child branches
     # This must be done before we delete the branch to avoid closing child PRs
     handle_pr_base_updates(branch_name, parent_branch, update_children)
+
+    # Check if all required checks have passed
+    if not get_pr_checks_status(branch_name):
+        print_formatted_text(
+            "[warning]Warning: Not all required checks have passed for this PR.[/warning]"
+        )
+        if not prompt_confirm("Do you want to proceed with the merge anyway?"):
+            print_formatted_text("[info]Merge cancelled.[/info]")
+            return False
 
     # Merge the PR (without deleting the branch yet)
     merge_success = merge_pr(branch_name, merge_method)

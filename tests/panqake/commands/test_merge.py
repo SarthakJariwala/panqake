@@ -333,3 +333,44 @@ def test_merge_branch_with_children(
     mock_branch_ops["update"].assert_any_call("child2", "main", abort_on_conflict=False)
     mock_git_utils["delete_remote"].assert_called_once_with("feature-branch")
     mock_config_utils["remove"].assert_called_once_with("feature-branch")
+
+
+@pytest.mark.parametrize(
+    "checks_passed,user_confirm,expected_result",
+    [
+        # All checks passed - should proceed with merge
+        (True, True, True),
+        # Checks failed but user confirms - should proceed with merge
+        (False, True, True),
+        # Checks failed and user cancels - should abort
+        (False, False, False),
+    ],
+)
+def test_merge_with_checks_status(
+    checks_passed,
+    user_confirm,
+    expected_result,
+    mock_github_utils,
+    mock_prompt,
+    mock_branch_ops,
+):
+    """Test that merge warns about failed checks and respects user confirmation."""
+    with (
+        patch("panqake.utils.github.get_pr_checks_status", return_value=checks_passed),
+        patch("panqake.commands.merge.fetch_latest_base_branch"),
+        patch("panqake.commands.merge.handle_pr_base_updates"),
+        patch("panqake.commands.merge.prompt_confirm", return_value=user_confirm),
+        patch("panqake.commands.merge.merge_pr", return_value=True),
+        patch("panqake.commands.merge.delete_remote_branch"),
+        patch("panqake.commands.merge.handle_branch_updates"),
+        patch("panqake.commands.merge.cleanup_local_branch"),
+        patch("panqake.commands.merge.return_to_branch"),
+        patch("panqake.commands.merge.print_formatted_text"),
+    ):
+        from panqake.commands.merge import perform_merge_operations
+
+        result = perform_merge_operations(
+            "test-branch", "main", "current-branch", "squash", True, True
+        )
+
+        assert result == expected_result

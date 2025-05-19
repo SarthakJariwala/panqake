@@ -69,7 +69,7 @@ def test_down_with_multiple_children(mock_git_utils, mock_stacks, mock_prompt):
     """Test navigating down with selection when multiple children exist."""
     # Set up mock to return multiple child branches
     mock_stacks.get_children.return_value = ["feature-a", "feature-b", "feature-c"]
-    
+
     # Set up mock to return a selected branch
     mock_prompt["select"].return_value = "feature-b"
 
@@ -82,14 +82,14 @@ def test_down_with_multiple_children(mock_git_utils, mock_stacks, mock_prompt):
     # Check that we prompted for selection
     mock_prompt["print"].assert_called()
     assert "has multiple children" in mock_prompt["print"].call_args_list[0].args[0]
-    
+
     # Verify prompt select arguments
     mock_prompt["select"].assert_called_once()
     assert "Select a child branch" in mock_prompt["select"].call_args.args[0]
     choices = mock_prompt["select"].call_args.args[1]
     assert len(choices) == 3
     assert [c["value"] for c in choices] == ["feature-a", "feature-b", "feature-c"]
-    
+
     # Check that we checked out the selected branch
     mock_git_utils["checkout"].assert_called_once_with("feature-b")
 
@@ -98,7 +98,7 @@ def test_down_with_multiple_children_cancel(mock_git_utils, mock_stacks, mock_pr
     """Test cancelling selection when navigating down with multiple children."""
     # Set up mock to return multiple child branches
     mock_stacks.get_children.return_value = ["feature-a", "feature-b"]
-    
+
     # Set up mock to simulate cancellation (return None)
     mock_prompt["select"].return_value = None
 
@@ -110,7 +110,7 @@ def test_down_with_multiple_children_cancel(mock_git_utils, mock_stacks, mock_pr
 
     # Check that we prompted for selection
     mock_prompt["select"].assert_called_once()
-    
+
     # Check that we didn't check out any branch
     mock_git_utils["checkout"].assert_not_called()
 

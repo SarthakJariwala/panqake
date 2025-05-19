@@ -309,21 +309,21 @@ def rename_branch(old_name: str, new_name: str) -> bool:
     print_formatted_text(
         f"[info]Renaming branch '{old_name}' to '{new_name}'...[/info]"
     )
-    
+
     # Git command to rename a branch: git branch -m <old-name> <new-name>
     rename_cmd = ["branch", "-m", new_name]
     result = run_git_command(rename_cmd)
-    
+
     if result is None:
         print_formatted_text(
             f"[danger]Failed to rename branch '{old_name}' to '{new_name}'[/danger]"
         )
         return False
-    
+
     print_formatted_text(
         f"[success]Successfully renamed branch '{old_name}' to '{new_name}'[/success]"
     )
-    
+
     # If the renamed branch was pushed to the remote, we'll need to:
     # 1. Delete the old remote branch
     # 2. Push the new branch
@@ -331,13 +331,13 @@ def rename_branch(old_name: str, new_name: str) -> bool:
         print_formatted_text(
             f"[info]Branch '{old_name}' exists on remote. Updating remote references...[/info]"
         )
-        
+
         # Delete the old remote branch
         delete_remote_branch(old_name)
-        
+
         # Push the new branch to remote
         push_branch_to_remote(new_name)
-    
+
     return True
 
 

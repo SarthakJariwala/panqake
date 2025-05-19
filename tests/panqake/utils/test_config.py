@@ -201,7 +201,7 @@ def test_remove_from_stack_with_children(tmp_path, mock_repo_id):
     panqake_dir = tmp_path / ".panqake"
     stack_file = panqake_dir / "stacks.json"
     panqake_dir.mkdir()
-    
+
     # Setup test data with a branch hierarchy:
     # main <- feature <- child1, child2
     test_data = {
@@ -209,7 +209,7 @@ def test_remove_from_stack_with_children(tmp_path, mock_repo_id):
             "feature": {"parent": "main"},
             "child1": {"parent": "feature"},
             "child2": {"parent": "feature"},
-            "other": {"parent": "main"}
+            "other": {"parent": "main"},
         }
     }
     with open(stack_file, "w") as f:
@@ -220,7 +220,7 @@ def test_remove_from_stack_with_children(tmp_path, mock_repo_id):
         result = remove_from_stack("feature")
         assert result is True
 
-    # Verify: 
+    # Verify:
     # 1. The branch was removed
     # 2. Children of removed branch now point to its parent
     with open(stack_file) as f:
@@ -270,10 +270,11 @@ def test_remove_from_stack_file_io_error(tmp_path, mock_repo_id):
     """Test removing branch with file I/O error."""
     panqake_dir = tmp_path / ".panqake"
     stack_file = panqake_dir / "stacks.json"
-    
+
     # Mock stack file with IO error
-    with patch("panqake.utils.stack.STACK_FILE", stack_file), \
-         patch("builtins.open", side_effect=IOError("Permission denied")):
-        
+    with (
+        patch("panqake.utils.stack.STACK_FILE", stack_file),
+        patch("builtins.open", side_effect=IOError("Permission denied")),
+    ):
         result = remove_from_stack("feature")
         assert result is False  # Should return False for I/O errors

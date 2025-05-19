@@ -89,6 +89,34 @@ def update_pr_base(branch: str, new_base: str) -> bool:
     return result is not None
 
 
+def get_pr_checks_status(branch: str) -> bool:
+    """Check if all required status checks have passed for a PR.
+
+    Returns:
+        bool: True if all required checks passed or if there are no checks, False otherwise
+    """
+    result = run_gh_command(["pr", "view", branch, "--json", "statusCheckRollup"])
+    if not result:
+        return False
+
+    try:
+        data = json.loads(result)
+        checks = data.get("statusCheckRollup", [])
+
+        # If there are no checks, consider it passed
+        if not checks:
+            return True
+
+        # Check if any required checks have failed
+        for check in checks:
+            if check.get("state") != "SUCCESS":
+                return False
+
+        return True
+    except json.JSONDecodeError:
+        return False
+
+
 def merge_pr(branch: str, merge_method: str = "squash") -> bool:
     """Merge a PR using GitHub CLI."""
     result = run_gh_command(["pr", "merge", branch, f"--{merge_method}"])

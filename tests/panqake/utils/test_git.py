@@ -11,6 +11,7 @@ from panqake.utils.git import (
     get_repo_id,
     get_staged_files,
     is_git_repo,
+    is_last_commit_amended,
     list_all_branches,
     run_git_command,
     validate_branch,
@@ -145,3 +146,23 @@ def test_get_staged_files_renamed(mock_subprocess_run):
     assert files[0]["display"] == "Renamed: old.txt → new.txt"
     assert files[0]["original_path"] == "old.txt"
     assert files[0]["path"] == "new.txt"
+
+
+def test_is_last_commit_amended_true(mock_subprocess_run):
+    """Test detecting an amended commit."""
+    mock_subprocess_run.return_value.stdout = (
+        "abc1234 HEAD@{0}: commit (amend): Fix bug"
+    )
+    assert is_last_commit_amended() is True
+
+
+def test_is_last_commit_amended_false(mock_subprocess_run):
+    """Test detecting a regular commit."""
+    mock_subprocess_run.return_value.stdout = "abc1234 HEAD@{0}: commit: Fix bug"
+    assert is_last_commit_amended() is False
+
+
+def test_is_last_commit_amended_no_reflog(mock_subprocess_run):
+    """Test when git reflog command fails."""
+    mock_subprocess_run.side_effect = subprocess.CalledProcessError(1, "git")
+    assert is_last_commit_amended() is False

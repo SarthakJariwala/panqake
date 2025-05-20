@@ -6,6 +6,7 @@
 
 - Display clickable PR URLs after creating or updating pull requests in `pq submit` and `pq pr` commands
 - Check if PR required status checks have passed before merging, with option to proceed anyway
+- Automatically detect amended commits and use force-push with lease when needed during `pq submit`
 
 ## [v0.12.0] - 2025-05-13
 

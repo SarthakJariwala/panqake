@@ -139,7 +139,6 @@ def push_branch_to_remote(branch: str, force: bool = False) -> bool:
     push_cmd = ["push", "-u", "origin", branch]
     if force:
         push_cmd.insert(1, "--force-with-lease")
-        print_formatted_text("[info]Using force-with-lease for safer force push[/info]")
 
     result = run_git_command(push_cmd)
 
@@ -462,3 +461,16 @@ def get_unstaged_files() -> List[dict]:
         )
 
     return files
+
+
+def is_last_commit_amended() -> bool:
+    """Check if the last commit was an amend operation.
+
+    Returns:
+        True if the last commit was an amend, False otherwise
+    """
+    # Use git reflog to check the last entry for 'amend' keyword
+    reflog_result = run_git_command(["reflog", "-1"])
+    if reflog_result and "amend" in reflog_result.lower():
+        return True
+    return False

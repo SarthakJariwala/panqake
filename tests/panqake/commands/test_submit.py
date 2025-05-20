@@ -13,12 +13,15 @@ def mock_git_utils():
     with (
         patch("panqake.commands.submit.validate_branch") as mock_validate,
         patch("panqake.commands.submit.push_branch_to_remote") as mock_push,
+        patch("panqake.commands.submit.is_last_commit_amended") as mock_is_amended,
     ):
         mock_validate.return_value = "feature-branch"
         mock_push.return_value = True
+        mock_is_amended.return_value = False
         yield {
             "validate": mock_validate,
             "push": mock_push,
+            "is_amended": mock_is_amended,
         }
 
 
@@ -85,14 +88,14 @@ def test_update_pull_request_existing_pr(
     """Test updating a branch that has an existing PR."""
     # Setup
     mock_github_utils["has_pr"].return_value = True
-    mock_prompt["confirm"].return_value = True  # Confirm force push
+    mock_git_utils["is_amended"].return_value = False  # No amended commit
     mock_git_utils["push"].return_value = True  # Assume push succeeds
 
     # Execute
     update_pull_request("feature-branch")
 
     # Verify
-    mock_git_utils["push"].assert_called_once_with("feature-branch", force=True)
+    mock_git_utils["push"].assert_called_once_with("feature-branch", force=False)
     # Check the exact success message from submit.py
     mock_prompt["print"].assert_any_call(
         "[success]PR for feature-branch has been updated[/success]"
@@ -105,14 +108,15 @@ def test_update_pull_request_no_pr_create_confirmed(
     """Test updating a branch without PR and user confirms PR creation."""
     # Setup
     mock_github_utils["has_pr"].return_value = False
-    mock_prompt["confirm"].side_effect = [True, True]  # Force push and create PR
+    mock_git_utils["is_amended"].return_value = False  # No amended commit
+    mock_prompt["confirm"].return_value = True  # Create PR
     mock_config_utils["get_parent"].return_value = "main"
 
     # Execute
     update_pull_request("feature-branch")
 
     # Verify
-    mock_git_utils["push"].assert_called_once_with("feature-branch", force=True)
+    mock_git_utils["push"].assert_called_once_with("feature-branch", force=False)
     mock_github_utils["create_pr"].assert_called_once_with("feature-branch", "main")
 
 
@@ -122,29 +126,30 @@ def test_update_pull_request_no_pr_create_declined(
     """Test updating a branch without PR and user declines PR creation."""
     # Setup
     mock_github_utils["has_pr"].return_value = False
-    mock_prompt["confirm"].side_effect = [True, False]  # Force push but decline PR
-
-    # Execute
-    update_pull_request("feature-branch")
-
-    # Verify
-    mock_git_utils["push"].assert_called_once_with("feature-branch", force=True)
-    mock_prompt["print"].assert_any_call("[info]To create a PR, run: pq pr[/info]")
-
-
-def test_update_pull_request_force_push_declined(
-    mock_git_utils, mock_github_utils, mock_prompt
-):
-    """Test when user declines force push."""
-    # Setup
-    mock_github_utils["has_pr"].return_value = True
-    mock_prompt["confirm"].return_value = False  # Decline force push
+    mock_git_utils["is_amended"].return_value = False  # No amended commit
+    mock_prompt["confirm"].return_value = False  # Decline create PR
 
     # Execute
     update_pull_request("feature-branch")
 
     # Verify
     mock_git_utils["push"].assert_called_once_with("feature-branch", force=False)
+    mock_prompt["print"].assert_any_call("[info]To create a PR, run: pq pr[/info]")
+
+
+def test_update_pull_request_with_amended_commit(
+    mock_git_utils, mock_github_utils, mock_prompt
+):
+    """Test when last commit was amended, should force push."""
+    # Setup
+    mock_github_utils["has_pr"].return_value = True
+    mock_git_utils["is_amended"].return_value = True  # Commit was amended
+
+    # Execute
+    update_pull_request("feature-branch")
+
+    # Verify
+    mock_git_utils["push"].assert_called_once_with("feature-branch", force=True)
 
 
 def test_update_pull_request_push_failed(
@@ -154,13 +159,13 @@ def test_update_pull_request_push_failed(
     # Setup
     mock_github_utils["has_pr"].return_value = True
     mock_git_utils["push"].return_value = False  # Push fails
-    mock_prompt["confirm"].return_value = True
+    mock_git_utils["is_amended"].return_value = False  # No amended commit
 
     # Execute
     update_pull_request("feature-branch")
 
     # Verify
-    mock_git_utils["push"].assert_called_once_with("feature-branch", force=True)
+    mock_git_utils["push"].assert_called_once_with("feature-branch", force=False)
     # Check that info messages were printed, but not the final success message
     info_calls = 0
     success_call_found = False

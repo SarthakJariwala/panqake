@@ -10,7 +10,7 @@
   - Detect amended commits for automatic force-push with lease during `pq submit`
   - Detect non-fast-forward updates that would otherwise fail during `pq submit`
   - Eliminate need for user confirmation, making it safer and more convenient
-- Improved push behavior in `update` command:
+- Improved push behavior in `update` and `sync` commands:
   - Automatically push successfully updated branches to remote by default
   - Added `--no-push` option to skip pushing to remote
   - Skip pushing branches that don't exist on remote yet
@@ -18,11 +18,11 @@
 
 ### Changed
 
-- Refactored `update` command to leverage the `Stacks` class and utilities:
+- Refactored `update` and `sync` commands to leverage the `Stacks` class and utilities:
   - Replaced recursive implementation with a non-recursive approach
   - Added consistent error handling with (success, error_message) return pattern
   - Leveraged existing branch utilities to reduce code duplication
-- Enhanced conflict handling in `update` command:
+- Enhanced conflict handling in `update` and `sync` commands:
   - Continue updating other branches when one branch has conflicts
   - Skip branches whose parents had conflicts
   - Provide a report of branches with conflicts at the end

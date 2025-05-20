@@ -255,12 +255,17 @@ def merge(branch_name, no_delete_branch, no_update_children):
 
 @cli.command()
 @click.argument("main_branch", required=False, default="main")
-def sync(main_branch):
+@click.option(
+    "--no-push",
+    is_flag=True,
+    help="Skip pushing updated branches to remote",
+)
+def sync(main_branch, no_push=False):
     """Sync branches with remote repository changes.
 
     MAIN_BRANCH: Base branch to sync with (default: main)
     """
-    sync_with_remote(main_branch)
+    sync_with_remote(main_branch, skip_push=no_push)
 
 
 @cli.command()

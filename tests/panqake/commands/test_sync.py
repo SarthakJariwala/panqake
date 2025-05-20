@@ -33,17 +33,24 @@ def mock_git_utils():
 def mock_config_utils():
     """Mock config utility functions."""
     with (
-        patch("panqake.commands.sync.get_child_branches") as mock_children,
         patch("panqake.commands.sync.get_parent_branch") as mock_parent,
         patch("panqake.commands.sync.remove_from_stack") as mock_remove,
     ):
-        mock_children.return_value = ["feature1", "feature2"]
         mock_parent.return_value = "main"
         yield {
-            "children": mock_children,
             "parent": mock_parent,
             "remove": mock_remove,
         }
+
+
+@pytest.fixture
+def mock_stack_utils():
+    """Mock Stack utility functions."""
+    with patch("panqake.commands.sync.Stacks") as mock_stacks:
+        stack_instance = mock_stacks.return_value.__enter__.return_value
+        stack_instance.get_children.return_value = ["feature1", "feature2"]
+        stack_instance.get_all_descendants.return_value = ["feature1", "feature2"]
+        yield stack_instance
 
 
 @pytest.fixture
@@ -55,13 +62,19 @@ def mock_branch_ops():
         patch(
             "panqake.commands.sync.update_branch_with_conflict_detection"
         ) as mock_update,
+        patch("panqake.commands.sync.is_branch_pushed_to_remote") as mock_is_pushed,
+        patch("panqake.commands.sync.push_branch_to_remote") as mock_push,
     ):
         mock_fetch.return_value = True
         mock_update.return_value = (True, None)
+        mock_is_pushed.return_value = True
+        mock_push.return_value = True
         yield {
             "fetch": mock_fetch,
             "return": mock_return,
             "update": mock_update,
+            "is_pushed": mock_is_pushed,
+            "push": mock_push,
         }
 
 
@@ -147,94 +160,185 @@ def test_handle_merged_branches_delete_declined(
     mock_config_utils["remove"].assert_not_called()
 
 
-def test_update_branches_with_conflict_handling_no_children(mock_config_utils):
+def test_update_branches_with_conflict_handling_no_children(mock_stack_utils):
     """Test updating branches when no children exist."""
-    mock_config_utils["children"].return_value = []
+    mock_stack_utils.get_children.return_value = []
 
-    success, failed = update_branches_with_conflict_handling("main", "feature")
+    updated, conflicts = update_branches_with_conflict_handling("main", "feature")
 
-    assert success is True
-    assert failed == []
+    assert updated == []
+    assert conflicts == []
 
 
 def test_update_branches_with_conflict_handling_success(
-    mock_config_utils, mock_branch_ops
+    mock_stack_utils, mock_branch_ops
 ):
     """Test successful update of branches without conflicts."""
     # Simulate hierarchy: main -> feature -> feature1 -> (end)
-    mock_config_utils["children"].side_effect = [
+    mock_stack_utils.get_children.side_effect = [
         ["feature1"],  # Children of 'feature'
         [],  # Children of 'feature1'
     ]
     mock_branch_ops["update"].return_value = (True, None)
 
     # Execute: Start update from 'feature', assuming current branch is irrelevant here
-    success, failed = update_branches_with_conflict_handling(
+    updated, conflicts = update_branches_with_conflict_handling(
         "feature", "current-irrelevant"
     )
 
-    # Verify: Should succeed with no failed branches
-    assert success is True
-    assert failed == []
+    # Verify: Should succeed with updated branches and no conflicts
+    assert updated == ["feature1"]
+    assert conflicts == []
     # Update called for feature1 (based on feature)
     mock_branch_ops["update"].assert_called_once_with(
         "feature1",
         "feature",
         abort_on_conflict=True,  # Sync uses abort=True
     )
-    # Ensure get_child_branches was called for 'feature' and 'feature1'
-    assert mock_config_utils["children"].call_count == 2
 
 
 def test_update_branches_with_conflict_handling_conflict(
-    mock_config_utils, mock_branch_ops
+    mock_stack_utils, mock_branch_ops
 ):
     """Test update of branches with conflict."""
-    mock_config_utils["children"].return_value = ["feature1"]
-    mock_branch_ops["update"].return_value = (False, "Conflict in feature1")
+    mock_stack_utils.get_children.side_effect = [
+        ["feature1", "feature2"],  # Children of main
+        [],  # Children of feature1
+        [],  # Children of feature2
+    ]
+    # Set up conflicts for feature1 but success for feature2
+    mock_branch_ops["update"].side_effect = [
+        (False, "Conflict in feature1"),  # First call for feature1
+        (True, None),  # Second call for feature2
+    ]
 
-    success, failed = update_branches_with_conflict_handling("main", "feature")
+    updated, conflicts = update_branches_with_conflict_handling("main", "feature")
 
-    assert success is False
-    assert "feature1" in failed
+    # The function should now continue processing after conflicts
+    assert "feature1" in conflicts
+    assert "feature2" in updated
+
+    # Both branches should be processed
+    assert mock_branch_ops["update"].call_count == 2
 
 
-def test_handle_branch_updates_no_children(mock_config_utils):
+def test_update_branches_with_conflict_handling_parent_conflicts(
+    mock_stack_utils, mock_branch_ops
+):
+    """Test skipping branches whose parents had conflicts."""
+    # Simulate a hierarchy: main -> feature1 -> feature3
+    #                       main -> feature2
+    mock_stack_utils.get_children.side_effect = [
+        ["feature1", "feature2"],  # Children of main
+        ["feature3"],  # Children of feature1
+        [],  # Children of feature2
+        [],  # Children of feature3
+    ]
+
+    # Set up conflict for feature1 but success for feature2
+    mock_branch_ops["update"].side_effect = [
+        (False, "Conflict in feature1"),  # First call for feature1
+        (True, None),  # Second call for feature2
+    ]
+
+    updated, conflicts = update_branches_with_conflict_handling("main", "feature")
+
+    # feature1 has conflict, feature2 is updated, feature3 is skipped due to parent conflict
+    assert "feature1" in conflicts
+    assert "feature3" in conflicts  # Should be skipped and marked as conflict
+    assert "feature2" in updated
+
+    # Only feature1 and feature2 should be processed, feature3 should be skipped
+    assert mock_branch_ops["update"].call_count == 2
+
+
+def test_handle_branch_updates_no_children(mock_stack_utils):
     """Test handling branch updates when no children exist."""
-    mock_config_utils["children"].return_value = []
+    mock_stack_utils.get_children.return_value = []
 
-    success, failed = handle_branch_updates("main", "feature")
+    updated, conflicts = handle_branch_updates("main", "feature")
 
-    assert success is True
-    assert failed == []
+    assert updated == []
+    assert conflicts == []
 
 
 def test_handle_branch_updates_with_conflicts(
-    mock_config_utils, mock_branch_ops, mock_prompt
+    mock_stack_utils, mock_branch_ops, mock_prompt
 ):
     """Test handling branch updates with conflicts."""
-    mock_config_utils["children"].return_value = ["feature1"]
-    mock_branch_ops["update"].return_value = (False, "Conflict in feature1")
+    # Patch update_branches_with_conflict_handling to return conflicts
+    with patch(
+        "panqake.commands.sync.update_branches_with_conflict_handling"
+    ) as mock_update_branches:
+        mock_update_branches.return_value = (["feature2"], ["feature1"])
 
-    success, failed = handle_branch_updates("main", "feature")
+        updated, conflicts = handle_branch_updates("main", "feature")
 
-    assert success is False
-    assert "feature1" in failed
-    assert mock_prompt["print"].call_count >= 2  # Warning and branch name
+        assert "feature1" in conflicts
+        assert "feature2" in updated
+        assert mock_prompt["print"].call_count >= 2  # Warning and branch name
 
 
-def test_sync_with_remote_success(mock_git_utils, mock_branch_ops, mock_prompt):
+def test_sync_with_remote_success(
+    mock_git_utils, mock_branch_ops, mock_prompt, mock_stack_utils
+):
     """Test successful sync with remote."""
     mock_branch_ops["fetch"].return_value = True
     mock_git_utils["run"].return_value = ""  # No merged branches
 
-    sync_with_remote()
+    # Patch handle_branch_updates to return some updated branches
+    with patch("panqake.commands.sync.handle_branch_updates") as mock_handle_updates:
+        mock_handle_updates.return_value = (["feature1"], [])
 
-    mock_branch_ops["fetch"].assert_called_once()
-    mock_branch_ops["return"].assert_called_once()
-    mock_prompt["print"].assert_called_with(
-        "[success]Sync completed successfully[/success]"
-    )
+        result = sync_with_remote()
+
+        assert result == (True, None)
+        mock_branch_ops["fetch"].assert_called_once()
+        mock_branch_ops["return"].assert_called_once()
+        mock_branch_ops["push"].assert_called()  # Should attempt to push feature1
+        mock_prompt["print"].assert_any_call(
+            "[success]Sync completed successfully[/success]"
+        )
+
+
+def test_sync_with_remote_with_no_push_flag(
+    mock_git_utils, mock_branch_ops, mock_prompt, mock_stack_utils
+):
+    """Test sync with remote with --no-push flag."""
+    mock_branch_ops["fetch"].return_value = True
+    mock_git_utils["run"].return_value = ""  # No merged branches
+
+    # Patch handle_branch_updates to return some updated branches
+    with patch("panqake.commands.sync.handle_branch_updates") as mock_handle_updates:
+        mock_handle_updates.return_value = (["feature1"], [])
+
+        result = sync_with_remote(skip_push=True)
+
+        assert result == (True, None)
+        mock_branch_ops["push"].assert_not_called()  # Should not attempt to push
+        mock_prompt["print"].assert_any_call(
+            "[success]Sync completed successfully (local only)[/success]"
+        )
+
+
+def test_sync_with_remote_with_conflicts(
+    mock_git_utils, mock_branch_ops, mock_prompt, mock_stack_utils
+):
+    """Test sync with remote when there are conflicts."""
+    mock_branch_ops["fetch"].return_value = True
+    mock_git_utils["run"].return_value = ""  # No merged branches
+
+    # Patch handle_branch_updates to return conflicts
+    with patch("panqake.commands.sync.handle_branch_updates") as mock_handle_updates:
+        mock_handle_updates.return_value = (["feature2"], ["feature1"])
+
+        result = sync_with_remote()
+
+        assert result == (False, "Some branches had conflicts during sync")
+        mock_branch_ops["push"].assert_called()  # Should still push feature2
+        mock_prompt["print"].assert_any_call(
+            "[warning]The following branches had conflicts during sync:[/warning]"
+        )
 
 
 def test_sync_with_remote_fetch_failure(mock_git_utils, mock_branch_ops, mock_prompt):

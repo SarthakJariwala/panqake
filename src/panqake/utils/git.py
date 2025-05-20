@@ -474,3 +474,30 @@ def is_last_commit_amended() -> bool:
     if reflog_result and "amend" in reflog_result.lower():
         return True
     return False
+
+
+def is_force_push_needed(branch: str) -> bool:
+    """Check if force push is needed for a branch by doing a dry run.
+
+    This checks if a normal push would fail due to history rewrites.
+
+    Args:
+        branch: The branch name to check
+
+    Returns:
+        True if force push is needed, False otherwise
+    """
+    # Check if branch exists on remote first
+    if not is_branch_pushed_to_remote(branch):
+        return False  # Not on remote yet, no force push needed
+
+    # Try a dry run push to see if it would succeed
+    result = run_git_command(
+        ["push", "--dry-run", "--porcelain", "origin", branch], silent_fail=True
+    )
+
+    # If the result contains '[rejected]', force push is needed
+    if result and "[rejected]" in result:
+        return True
+
+    return False

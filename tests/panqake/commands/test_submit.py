@@ -14,14 +14,17 @@ def mock_git_utils():
         patch("panqake.commands.submit.validate_branch") as mock_validate,
         patch("panqake.commands.submit.push_branch_to_remote") as mock_push,
         patch("panqake.commands.submit.is_last_commit_amended") as mock_is_amended,
+        patch("panqake.commands.submit.is_force_push_needed") as mock_force_needed,
     ):
         mock_validate.return_value = "feature-branch"
         mock_push.return_value = True
         mock_is_amended.return_value = False
+        mock_force_needed.return_value = False
         yield {
             "validate": mock_validate,
             "push": mock_push,
             "is_amended": mock_is_amended,
+            "force_needed": mock_force_needed,
         }
 
 
@@ -144,12 +147,15 @@ def test_update_pull_request_with_amended_commit(
     # Setup
     mock_github_utils["has_pr"].return_value = True
     mock_git_utils["is_amended"].return_value = True  # Commit was amended
+    mock_git_utils["force_needed"].return_value = False  # Not used when amended is True
 
     # Execute
     update_pull_request("feature-branch")
 
     # Verify
     mock_git_utils["push"].assert_called_once_with("feature-branch", force=True)
+    # Make sure is_force_push_needed wasn't called since is_amended was True
+    mock_git_utils["force_needed"].assert_not_called()
 
 
 def test_update_pull_request_push_failed(
@@ -160,6 +166,7 @@ def test_update_pull_request_push_failed(
     mock_github_utils["has_pr"].return_value = True
     mock_git_utils["push"].return_value = False  # Push fails
     mock_git_utils["is_amended"].return_value = False  # No amended commit
+    mock_git_utils["force_needed"].return_value = False  # No force needed
 
     # Execute
     update_pull_request("feature-branch")
@@ -181,3 +188,24 @@ def test_update_pull_request_push_failed(
 
     assert info_calls >= 1  # Should print info messages before push
     assert not success_call_found  # Should NOT print success message if push failed
+
+
+def test_update_pull_request_with_non_fast_forward(
+    mock_git_utils, mock_github_utils, mock_prompt
+):
+    """Test when non-fast-forward update is detected."""
+    # Setup
+    mock_github_utils["has_pr"].return_value = True
+    mock_git_utils["is_amended"].return_value = False  # No amended commit
+    mock_git_utils["force_needed"].return_value = True  # Force push is needed
+
+    # Execute
+    update_pull_request("feature-branch")
+
+    # Verify
+    mock_git_utils["force_needed"].assert_called_once_with("feature-branch")
+    mock_git_utils["push"].assert_called_once_with("feature-branch", force=True)
+    # Check that the non-fast-forward info message was printed
+    mock_prompt["print"].assert_any_call(
+        "[info]Detected non-fast-forward update. Force push with lease will be used.[/info]"
+    )

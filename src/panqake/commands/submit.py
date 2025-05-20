@@ -5,6 +5,7 @@ import sys
 from panqake.commands.pr import create_pr_for_branch
 from panqake.utils.config import get_parent_branch
 from panqake.utils.git import (
+    is_force_push_needed,
     is_last_commit_amended,
     push_branch_to_remote,
     validate_branch,
@@ -47,8 +48,19 @@ def update_pull_request(branch_name=None):
             f"[info]The associated PR will also be updated for branch: [branch]{branch_name}[/branch][/info]"
         )
 
-    # Check if the last commit was amended - if so, use force push with lease
-    needs_force = is_last_commit_amended()
+    # Check if the last commit was amended
+    is_amended = is_last_commit_amended()
+
+    # Determine if force push is needed
+    needs_force = is_amended
+
+    # If we didn't detect an amended commit, check if a non-fast-forward issue would occur
+    if not needs_force:
+        needs_force = is_force_push_needed(branch_name)
+        if needs_force:
+            print_formatted_text(
+                "[info]Detected non-fast-forward update. Force push with lease will be used.[/info]"
+            )
 
     # Push the branch to remote
     success = push_branch_to_remote(branch_name, force=needs_force)

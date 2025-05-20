@@ -10,6 +10,7 @@ from panqake.utils.git import (
     get_current_branch,
     get_repo_id,
     get_staged_files,
+    is_force_push_needed,
     is_git_repo,
     is_last_commit_amended,
     list_all_branches,
@@ -166,3 +167,42 @@ def test_is_last_commit_amended_no_reflog(mock_subprocess_run):
     """Test when git reflog command fails."""
     mock_subprocess_run.side_effect = subprocess.CalledProcessError(1, "git")
     assert is_last_commit_amended() is False
+
+
+@patch("panqake.utils.git.is_branch_pushed_to_remote")
+def test_is_force_push_needed_branch_not_on_remote(mock_is_pushed, mock_subprocess_run):
+    """Test is_force_push_needed when branch is not on remote."""
+    mock_is_pushed.return_value = False
+    assert is_force_push_needed("feature") is False
+    # Ensure we don't try to do a dry-run push
+    mock_subprocess_run.assert_not_called()
+
+
+@patch("panqake.utils.git.is_branch_pushed_to_remote")
+def test_is_force_push_needed_true(mock_is_pushed, mock_subprocess_run):
+    """Test is_force_push_needed when force push is needed."""
+    mock_is_pushed.return_value = True
+    mock_subprocess_run.return_value.stdout = (
+        "To github.com:user/repo.git\n"
+        "! [rejected]        feature -> feature (non-fast-forward)\n"
+        "error: failed to push some refs"
+    )
+    assert is_force_push_needed("feature") is True
+    # Check that we called push with the right arguments
+    mock_subprocess_run.assert_called_once_with(
+        ["git", "push", "--dry-run", "--porcelain", "origin", "feature"],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+@patch("panqake.utils.git.is_branch_pushed_to_remote")
+def test_is_force_push_needed_false(mock_is_pushed, mock_subprocess_run):
+    """Test is_force_push_needed when force push is not needed."""
+    mock_is_pushed.return_value = True
+    mock_subprocess_run.return_value.stdout = (
+        "To github.com:user/repo.git\n= [up to date]      feature -> feature"
+    )
+    assert is_force_push_needed("feature") is False

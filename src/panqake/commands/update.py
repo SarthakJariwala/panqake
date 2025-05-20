@@ -9,11 +9,8 @@ from panqake.utils.branch_operations import (
 from panqake.utils.git import (
     checkout_branch,
     get_current_branch,
+    is_branch_pushed_to_remote,
     push_branch_to_remote,
-)
-from panqake.utils.github import (
-    branch_has_pr,
-    check_github_cli_installed,
 )
 from panqake.utils.questionary_prompt import (
     format_branch,
@@ -63,19 +60,18 @@ def get_affected_branches(branch_name):
     return affected_branches
 
 
-def update_branch_and_children(branch, current_branch, updated_branches=None):
+def update_branch_and_children(branch, current_branch):
     """Update all child branches using a non-recursive approach.
 
     Args:
         branch: The branch to update children for
         current_branch: The original branch the user was on
-        updated_branches: List to track successfully updated branches
 
     Returns:
-        List of successfully updated branches
+        Tuple of (list of successfully updated branches, list of branches with conflicts)
     """
-    if updated_branches is None:
-        updated_branches = []
+    updated_branches = []
+    conflict_branches = []
 
     with Stacks() as stacks:
         # Get all descendants in depth-first order
@@ -102,22 +98,29 @@ def update_branch_and_children(branch, current_branch, updated_branches=None):
                 f"[info]based on changes to[/info] {format_branch(parent)}..."
             )
 
+            # Skip branches whose parents had conflicts
+            if parent in conflict_branches:
+                print_formatted_text(
+                    f"[warning]Skipping {format_branch(child)} as its parent {format_branch(parent)} had conflicts[/warning]"
+                )
+                conflict_branches.append(child)
+                continue
+
             # Use utility function to update the branch with conflict detection
             success, error_msg = update_branch_with_conflict_detection(
-                child, parent, abort_on_conflict=False
+                child, parent, abort_on_conflict=True
             )
 
             if not success:
                 print_formatted_text(f"[warning]{error_msg}[/warning]")
                 print_formatted_text(
-                    f"[warning]Then run 'pq update {child}' to continue updating the stack[/warning]"
+                    f"[warning]Run 'pq update {child}' after resolving conflicts to continue updating the stack[/warning]"
                 )
-                sys.exit(1)
+                conflict_branches.append(child)
+            else:
+                updated_branches.append(child)
 
-            # Add to successfully updated branches
-            updated_branches.append(child)
-
-    return updated_branches
+    return updated_branches, conflict_branches
 
 
 def update_branches(branch_name=None, skip_push=False):
@@ -141,56 +144,66 @@ def update_branches(branch_name=None, skip_push=False):
         f"[info]Starting stack update from branch[/info] {format_branch(branch_name)}..."
     )
 
-    # Track successfully updated branches
-    updated_branches = update_branch_and_children(branch_name, current_branch)
+    # Track successfully updated branches and branches with conflicts
+    updated_branches, conflict_branches = update_branch_and_children(
+        branch_name, current_branch
+    )
 
-    # Push to remote if requested (new functionality)
+    # Push to remote if requested
     if not skip_push and updated_branches:
         print_formatted_text("[info]Pushing updated branches to remote...[/info]")
 
-        # Check for GitHub CLI if we want to display PR info
-        has_github_cli = check_github_cli_installed()
-        if not has_github_cli:
-            print_formatted_text(
-                "[info]GitHub CLI not installed. Will push to remote but can't update PR info.[/info]"
-            )
-
         # Push each branch that was successfully updated
+        successfully_pushed = []
         for branch in updated_branches:
-            # Always use force-with-lease for safety since we've rebased
+            # Skip branches that don't exist on remote yet
+            if not is_branch_pushed_to_remote(branch):
+                print_formatted_text(
+                    f"[info]Skipping push for {format_branch(branch)} as it doesn't exist on remote yet[/info]"
+                )
+                continue
+
             try:
                 checkout_branch(branch)
             except SystemExit:
-                return False, f"Failed to checkout branch '{branch}'"
+                print_formatted_text(
+                    f"[warning]Failed to checkout branch '{branch}' for pushing[/warning]"
+                )
+                continue
 
+            # Always use force-with-lease for safety since we've rebased
             success = push_branch_to_remote(branch, force=True)
 
             if not success:
-                return_to_branch(current_branch)
-                return False, f"Failed to push branch '{branch}' to remote"
-
-            if success:
-                if has_github_cli and branch_has_pr(branch):
-                    print_formatted_text(
-                        f"[success]PR for {format_branch(branch)} has been updated[/success]"
-                    )
-                else:
-                    print_formatted_text(
-                        f"[success]Branch {format_branch(branch)} pushed to remote[/success]"
-                    )
+                print_formatted_text(
+                    f"[warning]Failed to push branch '{branch}' to remote[/warning]"
+                )
+            else:
+                successfully_pushed.append(branch)
+                print_formatted_text(
+                    f"[success]Branch {format_branch(branch)} pushed to remote[/success]"
+                )
 
     # Return to the original branch using our utility function
     if not return_to_branch(current_branch):
         return False, f"Failed to return to branch '{current_branch}'"
 
+    # Report success
     if skip_push:
-        print_formatted_text(
-            f"[success]Stack update complete (local only). Returned to branch {format_branch(current_branch)}[/success]"
-        )
+        print_formatted_text("[success]Stack update complete (local only).")
     else:
+        print_formatted_text("[success]Stack update complete.[/success]")
+
+    # Report overall success based on conflicts
+    if conflict_branches:
         print_formatted_text(
-            "[success]Stack update complete (local and remote).[/success]"
+            "[warning]The following branches had conflicts during stack update:[/warning]"
         )
-        print_formatted_text(f"[success]Returned to branch {current_branch}[/success]")
+        for branch in conflict_branches:
+            print_formatted_text(f"  [warning]{format_branch(branch)}[/warning]")
+        print_formatted_text(
+            "[info]Please resolve conflicts in these branches and run 'pq update <branch>' again[/info]"
+        )
+        return False, "Some branches had conflicts during update"
 
     return True, None

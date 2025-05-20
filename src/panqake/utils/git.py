@@ -14,12 +14,16 @@ def is_git_repo() -> bool:
     return result is not None
 
 
-def run_git_command(command: List[str], silent_fail: bool = False) -> Optional[str]:
+def run_git_command(
+    command: List[str], silent_fail: bool = False, return_stderr_on_error: bool = False
+) -> Optional[str]:
     """Run a git command and return its output.
 
     Args:
         command: The git command to run
         silent_fail: If True, don't print error messages on failure
+        return_stderr_on_error: If True, return stderr content on failure instead of None
+            (only applies when silent_fail=True)
     """
     try:
         result = subprocess.run(
@@ -33,7 +37,14 @@ def run_git_command(command: List[str], silent_fail: bool = False) -> Optional[s
     except subprocess.CalledProcessError as e:
         if not silent_fail:
             print(f"Error running git command: {e}")
-            print(f"stderr: {e.stderr}")
+            if hasattr(e, "stderr"):
+                print(f"stderr: {e.stderr}")
+            return None
+
+        # When silent_fail=True and return_stderr_on_error=True, return stderr
+        if return_stderr_on_error and hasattr(e, "stderr") and e.stderr:
+            return e.stderr.strip()
+
         return None
 
 
@@ -493,11 +504,13 @@ def is_force_push_needed(branch: str) -> bool:
 
     # Try a dry run push to see if it would succeed
     result = run_git_command(
-        ["push", "--dry-run", "--porcelain", "origin", branch], silent_fail=True
+        ["push", "--dry-run", "--porcelain", "origin", branch],
+        silent_fail=True,
+        return_stderr_on_error=True,
     )
 
-    # If the result contains '[rejected]', force push is needed
-    if result and "[rejected]" in result:
+    # If the result contains '[rejected]' or 'error: failed', force push is needed
+    if result and ("[rejected]" in result or "error: failed" in result):
         return True
 
     return False

@@ -173,20 +173,15 @@ def test_update_pull_request_push_failed(
 
     # Verify
     mock_git_utils["push"].assert_called_once_with("feature-branch", force=False)
-    # Check that info messages were printed, but not the final success message
-    info_calls = 0
     success_call_found = False
     expected_success_message = (
         "[success]PR for feature-branch has been updated[/success]"
     )
     for call_args, call_kwargs in mock_prompt["print"].call_args_list:
         message = call_args[0]
-        if message.startswith("[info]"):
-            info_calls += 1
         if message == expected_success_message:
             success_call_found = True
 
-    assert info_calls >= 1  # Should print info messages before push
     assert not success_call_found  # Should NOT print success message if push failed
 
 

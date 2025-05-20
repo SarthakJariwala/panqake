@@ -36,18 +36,6 @@ def update_pull_request(branch_name=None):
 
     branch_name = validate_branch(branch_name)
 
-    # Check if branch has a PR
-    has_pr = branch_has_pr(branch_name)
-
-    # Ask for confirmation for force push
-    print_formatted_text(
-        f"[info]Updating remote branch [branch]{branch_name}[/branch][/info]"
-    )
-    if has_pr:
-        print_formatted_text(
-            f"[info]The associated PR will also be updated for branch: [branch]{branch_name}[/branch][/info]"
-        )
-
     # Check if the last commit was amended
     is_amended = is_last_commit_amended()
 
@@ -66,7 +54,7 @@ def update_pull_request(branch_name=None):
     success = push_branch_to_remote(branch_name, force=needs_force)
 
     if success:
-        if has_pr:
+        if branch_has_pr(branch_name):
             print_formatted_text(
                 f"[success]PR for {format_branch(branch_name)} has been updated[/success]"
             )

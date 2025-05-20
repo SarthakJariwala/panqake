@@ -11,6 +11,13 @@
   - Detect non-fast-forward updates that would otherwise fail during `pq submit`
   - Eliminate need for user confirmation, making it safer and more convenient
 
+### Changed
+
+- Refactored `update` command to leverage the `Stacks` class and utilities:
+  - Replaced recursive implementation with a non-recursive approach
+  - Added consistent error handling with (success, error_message) return pattern
+  - Leveraged existing branch utilities to reduce code duplication
+
 ## [v0.12.0] - 2025-05-13
 
 ### Added

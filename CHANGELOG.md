@@ -10,6 +10,11 @@
   - Detect amended commits for automatic force-push with lease during `pq submit`
   - Detect non-fast-forward updates that would otherwise fail during `pq submit`
   - Eliminate need for user confirmation, making it safer and more convenient
+- Improved push behavior in `update` command:
+  - Automatically push successfully updated branches to remote by default
+  - Added `--no-push` option to skip pushing to remote
+  - Skip pushing branches that don't exist on remote yet
+  - Only push branches that were successfully updated
 
 ### Changed
 
@@ -17,6 +22,16 @@
   - Replaced recursive implementation with a non-recursive approach
   - Added consistent error handling with (success, error_message) return pattern
   - Leveraged existing branch utilities to reduce code duplication
+- Enhanced conflict handling in `update` command:
+  - Continue updating other branches when one branch has conflicts
+  - Skip branches whose parents had conflicts
+  - Provide a report of branches with conflicts at the end
+  - Return specific error messages for conflicted branches
+- Improved Git error handling with explicit parameter to control stderr return behavior
+
+### Fixed
+
+- Fixed force-push detection to properly capture Git error messages
 
 ## [v0.12.0] - 2025-05-13
 

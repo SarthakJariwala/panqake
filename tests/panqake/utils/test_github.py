@@ -209,12 +209,12 @@ def test_merge_pr_different_method(mock_subprocess_run):
     [
         # All checks passed
         (
-            '{"statusCheckRollup": [{"state": "SUCCESS"}, {"state": "SUCCESS"}]}',
+            '{"statusCheckRollup": [{"conclusion": "SUCCESS"}, {"conclusion": "SUCCESS"}]}',
             True,
         ),
         # Some checks failed
         (
-            '{"statusCheckRollup": [{"state": "SUCCESS"}, {"state": "FAILURE"}]}',
+            '{"statusCheckRollup": [{"conclusion": "SUCCESS"}, {"conclusion": "FAILURE"}]}',
             False,
         ),
         # No checks

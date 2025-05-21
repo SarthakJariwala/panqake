@@ -109,7 +109,7 @@ def get_pr_checks_status(branch: str) -> bool:
 
         # Check if any required checks have failed
         for check in checks:
-            if check.get("state") != "SUCCESS":
+            if check.get("conclusion") != "SUCCESS":
                 return False
 
         return True

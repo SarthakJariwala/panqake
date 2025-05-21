@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## v0.13.1 - 2025-05-21
+
+### Fixed
+
+- Fixed checking PR checks status by using `conclusion` field instead of `state` field
+
 ## v0.13.0 - 2025-05-21
 
 ### Added

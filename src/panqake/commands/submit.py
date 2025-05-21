@@ -51,7 +51,7 @@ def update_pull_request(branch_name=None):
             )
 
     # Push the branch to remote
-    success = push_branch_to_remote(branch_name, force=needs_force)
+    success = push_branch_to_remote(branch_name, force_with_lease=needs_force)
 
     if success:
         if branch_has_pr(branch_name):

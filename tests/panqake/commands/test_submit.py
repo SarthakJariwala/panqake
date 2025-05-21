@@ -98,7 +98,9 @@ def test_update_pull_request_existing_pr(
     update_pull_request("feature-branch")
 
     # Verify
-    mock_git_utils["push"].assert_called_once_with("feature-branch", force=False)
+    mock_git_utils["push"].assert_called_once_with(
+        "feature-branch", force_with_lease=False
+    )
     # Check the exact success message from submit.py
     mock_prompt["print"].assert_any_call(
         "[success]PR for feature-branch has been updated[/success]"
@@ -119,7 +121,9 @@ def test_update_pull_request_no_pr_create_confirmed(
     update_pull_request("feature-branch")
 
     # Verify
-    mock_git_utils["push"].assert_called_once_with("feature-branch", force=False)
+    mock_git_utils["push"].assert_called_once_with(
+        "feature-branch", force_with_lease=False
+    )
     mock_github_utils["create_pr"].assert_called_once_with("feature-branch", "main")
 
 
@@ -136,7 +140,9 @@ def test_update_pull_request_no_pr_create_declined(
     update_pull_request("feature-branch")
 
     # Verify
-    mock_git_utils["push"].assert_called_once_with("feature-branch", force=False)
+    mock_git_utils["push"].assert_called_once_with(
+        "feature-branch", force_with_lease=False
+    )
     mock_prompt["print"].assert_any_call("[info]To create a PR, run: pq pr[/info]")
 
 
@@ -153,7 +159,9 @@ def test_update_pull_request_with_amended_commit(
     update_pull_request("feature-branch")
 
     # Verify
-    mock_git_utils["push"].assert_called_once_with("feature-branch", force=True)
+    mock_git_utils["push"].assert_called_once_with(
+        "feature-branch", force_with_lease=True
+    )
     # Make sure is_force_push_needed wasn't called since is_amended was True
     mock_git_utils["force_needed"].assert_not_called()
 
@@ -172,7 +180,9 @@ def test_update_pull_request_push_failed(
     update_pull_request("feature-branch")
 
     # Verify
-    mock_git_utils["push"].assert_called_once_with("feature-branch", force=False)
+    mock_git_utils["push"].assert_called_once_with(
+        "feature-branch", force_with_lease=False
+    )
     success_call_found = False
     expected_success_message = (
         "[success]PR for feature-branch has been updated[/success]"
@@ -199,7 +209,9 @@ def test_update_pull_request_with_non_fast_forward(
 
     # Verify
     mock_git_utils["force_needed"].assert_called_once_with("feature-branch")
-    mock_git_utils["push"].assert_called_once_with("feature-branch", force=True)
+    mock_git_utils["push"].assert_called_once_with(
+        "feature-branch", force_with_lease=True
+    )
     # Check that the non-fast-forward info message was printed
     mock_prompt["print"].assert_any_call(
         "[info]Detected non-fast-forward update. Force push with lease will be used.[/info]"

@@ -135,12 +135,12 @@ def create_branch(branch_name: str, base_branch: str) -> None:
         sys.exit(1)
 
 
-def push_branch_to_remote(branch: str, force: bool = False) -> bool:
+def push_branch_to_remote(branch: str, force_with_lease: bool = False) -> bool:
     """Push a branch to the remote.
 
     Args:
         branch: The branch name to push
-        force: Whether to use force-with-lease for the push
+        force_with_lease: Whether to use force-with-lease for the push
 
     Returns:
         True if the push was successful, False otherwise
@@ -148,7 +148,7 @@ def push_branch_to_remote(branch: str, force: bool = False) -> bool:
     print_formatted_text(f"[info]Pushing [branch]{branch}[/branch] to origin...[/info]")
 
     push_cmd = ["push", "-u", "origin", branch]
-    if force:
+    if force_with_lease:
         push_cmd.insert(1, "--force-with-lease")
 
     result = run_git_command(push_cmd)

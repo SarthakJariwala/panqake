@@ -5,7 +5,7 @@ The `merge` command merges a pull request for a branch and updates all dependent
 `panqake` will prompt you to select one of `squash`, `rebase`, or `merge` strategies. It will also warn you if the required CI checks have not passed.
 
 ::: info
-This command requires `gh` CLI to be installed and authenticated. See [installation](../installation) for information.
+This command requires `gh` CLI to be installed and authenticated. See [installation](../../installation) for information.
 :::
 
 For instance, if your stack looks like the following before merging `feature-backend` into `main`:

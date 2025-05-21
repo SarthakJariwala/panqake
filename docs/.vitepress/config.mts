@@ -6,9 +6,6 @@ export default defineConfig({
   description: "Stack Git Branches Without the Headache",
   cleanUrls: true,
 
-  // Temporary until I clean up other pending docs sections
-  ignoreDeadLinks: true,
-
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
     logo: "/panqake.svg",

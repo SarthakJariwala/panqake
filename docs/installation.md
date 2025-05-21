@@ -60,4 +60,4 @@ Throughout this documentation, we'll use the `pq` command as a shorthand for `pa
 Now that you've installed Panqake, you're ready to start using it:
 
 - Continue to the [Quick Start Guide](/quickstart) to learn basic usage
-- Explore the [Commands Reference](/commands) for detailed information about each command
+- Explore the [Commands Reference](/commands/index) for detailed information about each command

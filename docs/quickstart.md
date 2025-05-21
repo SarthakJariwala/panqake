@@ -231,5 +231,5 @@ pq delete branch-name
 
 Now that you understand the basic workflow:
 
-- Explore the [Commands Reference](/commands) for detailed information about each command
+- Explore the [Commands Reference](/commands/index) for detailed information about each command
 - Check out the [Advanced Workflows](/advanced-workflows) section for more complex scenarios

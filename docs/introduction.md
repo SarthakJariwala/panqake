@@ -75,4 +75,4 @@ With Panqake, you can focus on writing code instead of managing complex Git oper
 
 - [Installation and Setup](/installation): Get started with Panqake
 - [Quick Start Guide](/quickstart): Learn the basic workflow
-- [Commands Reference](/commands): Explore all available commands
+- [Commands Reference](/commands/index): Explore all available commands

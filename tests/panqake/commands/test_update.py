@@ -17,15 +17,10 @@ def mock_git_utils():
     """Mock git utility functions."""
     with (
         patch("panqake.commands.update.get_current_branch") as mock_current,
-        patch("panqake.commands.update.checkout_branch") as mock_checkout,
-        patch("panqake.commands.update.push_branch_to_remote") as mock_push,
     ):
         mock_current.return_value = "feature-1"
-        mock_push.return_value = True
         yield {
-            "checkout": mock_checkout,
             "current": mock_current,
-            "push": mock_push,
         }
 
 
@@ -45,14 +40,17 @@ def mock_branch_ops():
     """Mock branch operation functions."""
     with (
         patch(
-            "panqake.commands.update.update_branch_with_conflict_detection"
-        ) as mock_update,
+            "panqake.commands.update.update_branches_and_handle_conflicts"
+        ) as mock_update_branches,
         patch("panqake.commands.update.return_to_branch") as mock_return,
+        patch("panqake.commands.update.push_updated_branches") as mock_push,
     ):
-        mock_update.return_value = (True, None)
+        mock_update_branches.return_value = (["feature-2", "feature-3"], [])
+        mock_push.return_value = ["feature-2", "feature-3"]
         yield {
-            "update": mock_update,
+            "update_branches": mock_update_branches,
             "return": mock_return,
+            "push": mock_push,
         }
 
 
@@ -146,32 +144,23 @@ def test_get_affected_branches_user_cancels(mock_stack_utils, mock_prompt):
 
 def test_update_branch_and_children_success(mock_stack_utils, mock_branch_ops):
     """Test successful branch updates with the new non-recursive approach."""
-    # Mock stack.get_children for the different branches
-    mock_stack_utils.get_children.side_effect = [
-        ["feature-2", "feature-3"],  # Children of feature-1
-        [],  # Children of feature-2 (none)
-        [],  # Children of feature-3 (none)
-    ]
     # Execute
     updated_branches, conflict_branches = update_branch_and_children(
         "feature-1", "feature-1"
     )
 
     # Verify
-    # Check the contents, order might vary depending on implementation
+    # The function now delegates to update_branches_and_handle_conflicts
+    mock_branch_ops["update_branches"].assert_called_once_with("feature-1", "feature-1")
     assert set(updated_branches) == {"feature-2", "feature-3"}
     assert len(updated_branches) == 2
     assert len(conflict_branches) == 0
-    # Called once for feature-2, once for feature-3
-    assert mock_branch_ops["update"].call_count == 2
 
 
 def test_update_branch_and_children_conflict(mock_stack_utils, mock_branch_ops):
     """Test handling update conflicts."""
     # Setup
-    mock_branch_ops["update"].return_value = (False, "Merge conflict detected")
-    # Setup the children for feature-1 to simulate the tree structure
-    mock_stack_utils.get_children.side_effect = [["feature-2", "feature-3"], [], []]
+    mock_branch_ops["update_branches"].return_value = ([], ["feature-2", "feature-3"])
 
     # Execute
     updated_branches, conflict_branches = update_branch_and_children(
@@ -179,14 +168,12 @@ def test_update_branch_and_children_conflict(mock_stack_utils, mock_branch_ops):
     )
 
     # Verify
+    mock_branch_ops["update_branches"].assert_called_once_with("feature-1", "feature-1")
     assert len(updated_branches) == 0
     assert set(conflict_branches) == {"feature-2", "feature-3"}
-    assert mock_branch_ops["update"].call_count == 2
 
 
-@patch("panqake.commands.update.update_branch_and_children")
 def test_update_branches_full_success(
-    mock_update_children,
     mock_git_utils,
     mock_stack_utils,
     mock_branch_ops,
@@ -194,23 +181,19 @@ def test_update_branches_full_success(
 ):
     """Test full update process with pushing to remote."""
     mock_stack_utils.get_all_descendants.return_value = ["feature-2", "feature-3"]
-    mock_update_children.return_value = (["feature-2", "feature-3"], [])
     # Assume validate_branch determines current branch is 'main'
     mock_git_utils["current"].return_value = "main"
-    # Set is_branch_pushed_to_remote to return True
-    with patch("panqake.commands.update.is_branch_pushed_to_remote", return_value=True):
-        update_branches("feature-1")
+
+    update_branches("feature-1")
 
     mock_stack_utils.get_all_descendants.assert_called_with("feature-1")
-    mock_update_children.assert_called_once_with("feature-1", "main")
-    mock_git_utils["push"].assert_called()
+    mock_branch_ops["update_branches"].assert_called_once_with("feature-1", "main")
+    mock_branch_ops["push"].assert_called_once_with(["feature-2", "feature-3"], False)
     mock_branch_ops["return"].assert_called_once_with("main")
     assert mock_prompt["print"].call_args_list[-1].args[0].startswith("[success]")
 
 
-@patch("panqake.commands.update.update_branch_and_children")
 def test_update_branches_skip_push(
-    mock_update_children,
     mock_git_utils,
     mock_stack_utils,
     mock_branch_ops,
@@ -218,14 +201,12 @@ def test_update_branches_skip_push(
 ):
     """Test update process without pushing to remote."""
     mock_stack_utils.get_all_descendants.return_value = ["feature-2", "feature-3"]
-    mock_update_children.return_value = (["feature-2", "feature-3"], [])
     mock_git_utils["current"].return_value = "main"
 
     update_branches("feature-1", skip_push=True)
 
     mock_stack_utils.get_all_descendants.assert_called_with("feature-1")
-    mock_update_children.assert_called_once_with("feature-1", "main")
-    mock_git_utils["push"].assert_not_called()
+    mock_branch_ops["update_branches"].assert_called_once_with("feature-1", "main")
     mock_branch_ops["return"].assert_called_once_with("main")
     success_message_found = False
     for call in mock_prompt["print"].call_args_list:
@@ -235,9 +216,7 @@ def test_update_branches_skip_push(
     assert success_message_found, "Success message with 'local only' not found"
 
 
-@patch("panqake.commands.update.update_branch_and_children")
 def test_update_branches_with_conflicts(
-    mock_update_children,
     mock_git_utils,
     mock_stack_utils,
     mock_branch_ops,
@@ -245,15 +224,19 @@ def test_update_branches_with_conflicts(
 ):
     """Test update process with conflict branches."""
     mock_stack_utils.get_all_descendants.return_value = ["feature-2", "feature-3"]
-    mock_update_children.return_value = (["feature-2"], ["feature-3"])
+    mock_branch_ops["update_branches"].return_value = (["feature-2"], ["feature-3"])
     mock_git_utils["current"].return_value = "main"
-    # Set is_branch_pushed_to_remote to return True
-    with patch("panqake.commands.update.is_branch_pushed_to_remote", return_value=True):
+
+    with patch(
+        "panqake.commands.update.report_update_conflicts",
+        return_value=(False, "Some branches had conflicts during update"),
+    ) as mock_report:
         result, error = update_branches("feature-1")
 
     assert result is False
     assert "conflicts" in error
     mock_stack_utils.get_all_descendants.assert_called_with("feature-1")
-    mock_update_children.assert_called_once_with("feature-1", "main")
-    mock_git_utils["push"].assert_called()
+    mock_branch_ops["update_branches"].assert_called_once_with("feature-1", "main")
+    mock_branch_ops["push"].assert_called_once_with(["feature-2"], False)
     mock_branch_ops["return"].assert_called_once_with("main")
+    mock_report.assert_called_once_with(["feature-3"])

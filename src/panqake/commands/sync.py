@@ -4,8 +4,10 @@ import sys
 
 from panqake.utils.branch_operations import (
     fetch_latest_from_remote,
+    push_updated_branches,
+    report_update_conflicts,
     return_to_branch,
-    update_branch_with_conflict_detection,
+    update_branches_and_handle_conflicts,
 )
 from panqake.utils.config import (
     get_parent_branch,
@@ -14,12 +16,9 @@ from panqake.utils.config import (
 from panqake.utils.git import (
     checkout_branch,
     get_current_branch,
-    is_branch_pushed_to_remote,
-    push_branch_to_remote,
     run_git_command,
 )
 from panqake.utils.questionary_prompt import (
-    format_branch,
     print_formatted_text,
     prompt_confirm,
 )
@@ -96,57 +95,8 @@ def update_branches_with_conflict_handling(branch_name, current_branch):
     Returns:
         Tuple of (list of successfully updated branches, list of branches with conflicts)
     """
-    updated_branches = []
-    conflict_branches = []
 
-    with Stacks() as stacks:
-        # Get all descendants in depth-first order
-        all_branches_to_update = []
-        branches_to_process = [(branch_name, None)]  # (branch, parent) pairs
-
-        # Build a list of all branches to update with their parents
-        while branches_to_process:
-            current, parent = branches_to_process.pop(0)
-
-            # Skip the starting branch itself
-            if parent is not None:
-                all_branches_to_update.append((current, parent))
-
-            # Add all children with current as their parent
-            children = stacks.get_children(current)
-            for child in children:
-                branches_to_process.append((child, current))
-
-        # Process all branches in order
-        for child, parent in all_branches_to_update:
-            print_formatted_text(
-                f"[info]Updating branch[/info] {format_branch(child)} "
-                f"[info]based on changes to[/info] {format_branch(parent)}..."
-            )
-
-            # Skip branches whose parents had conflicts
-            if parent in conflict_branches:
-                print_formatted_text(
-                    f"[warning]Skipping {format_branch(child)} as its parent {format_branch(parent)} had conflicts[/warning]"
-                )
-                conflict_branches.append(child)
-                continue
-
-            # Use utility function to update the branch with conflict detection
-            success, error_msg = update_branch_with_conflict_detection(
-                child, parent, abort_on_conflict=True
-            )
-
-            if not success:
-                print_formatted_text(f"[warning]{error_msg}[/warning]")
-                print_formatted_text(
-                    f"[warning]Run 'pq update {child}' after resolving conflicts to continue updating the stack[/warning]"
-                )
-                conflict_branches.append(child)
-            else:
-                updated_branches.append(child)
-
-    return updated_branches, conflict_branches
+    return update_branches_and_handle_conflicts(branch_name, current_branch)
 
 
 def handle_branch_updates(main_branch, current_branch):
@@ -217,39 +167,8 @@ def sync_with_remote(main_branch="main", skip_push=False):
     )
 
     # 5. Push to remote if requested
-    if not skip_push and updated_branches:
-        print_formatted_text("[info]Pushing updated branches to remote...[/info]")
-
-        # Push each branch that was successfully updated
-        successfully_pushed = []
-        for branch in updated_branches:
-            # Skip branches that don't exist on remote yet
-            if not is_branch_pushed_to_remote(branch):
-                print_formatted_text(
-                    f"[info]Skipping push for {format_branch(branch)} as it doesn't exist on remote yet[/info]"
-                )
-                continue
-
-            try:
-                checkout_branch(branch)
-            except SystemExit:
-                print_formatted_text(
-                    f"[warning]Failed to checkout branch '{branch}' for pushing[/warning]"
-                )
-                continue
-
-            # Always use force-with-lease for safety since we've rebased
-            success = push_branch_to_remote(branch, force=True)
-
-            if not success:
-                print_formatted_text(
-                    f"[warning]Failed to push branch '{branch}' to remote[/warning]"
-                )
-            else:
-                successfully_pushed.append(branch)
-                print_formatted_text(
-                    f"[success]Branch {format_branch(branch)} pushed to remote[/success]"
-                )
+    if not skip_push:
+        push_updated_branches(updated_branches)
 
     # 6. Return to original branch or fallback to main if it was deleted
     return_to_branch(current_branch, main_branch, deleted_branches)
@@ -263,15 +182,4 @@ def sync_with_remote(main_branch="main", skip_push=False):
         print_formatted_text("[success]Sync completed successfully[/success]")
 
     # 8. Report overall success based on conflicts
-    if conflict_branches:
-        print_formatted_text(
-            "[warning]The following branches had conflicts during sync:[/warning]"
-        )
-        for branch in conflict_branches:
-            print_formatted_text(f"  [warning]{format_branch(branch)}[/warning]")
-        print_formatted_text(
-            "[info]Please resolve conflicts in these branches and run 'pq update <branch>' again[/info]"
-        )
-        return False, "Some branches had conflicts during sync"
-
-    return True, None
+    return report_update_conflicts(conflict_branches)

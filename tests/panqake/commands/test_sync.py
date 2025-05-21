@@ -60,21 +60,21 @@ def mock_branch_ops():
         patch("panqake.commands.sync.fetch_latest_from_remote") as mock_fetch,
         patch("panqake.commands.sync.return_to_branch") as mock_return,
         patch(
-            "panqake.commands.sync.update_branch_with_conflict_detection"
-        ) as mock_update,
-        patch("panqake.commands.sync.is_branch_pushed_to_remote") as mock_is_pushed,
-        patch("panqake.commands.sync.push_branch_to_remote") as mock_push,
+            "panqake.commands.sync.update_branches_and_handle_conflicts"
+        ) as mock_update_branches,
+        patch("panqake.commands.sync.push_updated_branches") as mock_push,
+        patch("panqake.commands.sync.report_update_conflicts") as mock_report,
     ):
         mock_fetch.return_value = True
-        mock_update.return_value = (True, None)
-        mock_is_pushed.return_value = True
-        mock_push.return_value = True
+        mock_update_branches.return_value = (["feature1", "feature2"], [])
+        mock_push.return_value = ["feature1", "feature2"]
+        mock_report.return_value = (True, None)
         yield {
             "fetch": mock_fetch,
             "return": mock_return,
-            "update": mock_update,
-            "is_pushed": mock_is_pushed,
+            "update_branches": mock_update_branches,
             "push": mock_push,
+            "report": mock_report,
         }
 
 
@@ -174,82 +174,54 @@ def test_update_branches_with_conflict_handling_success(
     mock_stack_utils, mock_branch_ops
 ):
     """Test successful update of branches without conflicts."""
-    # Simulate hierarchy: main -> feature -> feature1 -> (end)
-    mock_stack_utils.get_children.side_effect = [
-        ["feature1"],  # Children of 'feature'
-        [],  # Children of 'feature1'
-    ]
-    mock_branch_ops["update"].return_value = (True, None)
+    # Mock return value for the refactored function
+    mock_branch_ops["update_branches"].return_value = (["feature1"], [])
 
     # Execute: Start update from 'feature', assuming current branch is irrelevant here
     updated, conflicts = update_branches_with_conflict_handling(
         "feature", "current-irrelevant"
     )
 
-    # Verify: Should succeed with updated branches and no conflicts
+    # Verify: Function now delegates to the shared utility
+    mock_branch_ops["update_branches"].assert_called_once_with(
+        "feature", "current-irrelevant"
+    )
     assert updated == ["feature1"]
     assert conflicts == []
-    # Update called for feature1 (based on feature)
-    mock_branch_ops["update"].assert_called_once_with(
-        "feature1",
-        "feature",
-        abort_on_conflict=True,  # Sync uses abort=True
-    )
 
 
 def test_update_branches_with_conflict_handling_conflict(
     mock_stack_utils, mock_branch_ops
 ):
     """Test update of branches with conflict."""
-    mock_stack_utils.get_children.side_effect = [
-        ["feature1", "feature2"],  # Children of main
-        [],  # Children of feature1
-        [],  # Children of feature2
-    ]
-    # Set up conflicts for feature1 but success for feature2
-    mock_branch_ops["update"].side_effect = [
-        (False, "Conflict in feature1"),  # First call for feature1
-        (True, None),  # Second call for feature2
-    ]
+    # Mock the return value for the refactored function
+    mock_branch_ops["update_branches"].return_value = (["feature2"], ["feature1"])
 
     updated, conflicts = update_branches_with_conflict_handling("main", "feature")
 
-    # The function should now continue processing after conflicts
+    # Verify the function calls the shared utility
+    mock_branch_ops["update_branches"].assert_called_once_with("main", "feature")
     assert "feature1" in conflicts
     assert "feature2" in updated
-
-    # Both branches should be processed
-    assert mock_branch_ops["update"].call_count == 2
 
 
 def test_update_branches_with_conflict_handling_parent_conflicts(
     mock_stack_utils, mock_branch_ops
 ):
     """Test skipping branches whose parents had conflicts."""
-    # Simulate a hierarchy: main -> feature1 -> feature3
-    #                       main -> feature2
-    mock_stack_utils.get_children.side_effect = [
-        ["feature1", "feature2"],  # Children of main
-        ["feature3"],  # Children of feature1
-        [],  # Children of feature2
-        [],  # Children of feature3
-    ]
-
-    # Set up conflict for feature1 but success for feature2
-    mock_branch_ops["update"].side_effect = [
-        (False, "Conflict in feature1"),  # First call for feature1
-        (True, None),  # Second call for feature2
-    ]
+    # Mock return value for the refactored function
+    mock_branch_ops["update_branches"].return_value = (
+        ["feature2"],
+        ["feature1", "feature3"],
+    )
 
     updated, conflicts = update_branches_with_conflict_handling("main", "feature")
 
-    # feature1 has conflict, feature2 is updated, feature3 is skipped due to parent conflict
+    # Verify the function calls the shared utility
+    mock_branch_ops["update_branches"].assert_called_once_with("main", "feature")
     assert "feature1" in conflicts
-    assert "feature3" in conflicts  # Should be skipped and marked as conflict
+    assert "feature3" in conflicts
     assert "feature2" in updated
-
-    # Only feature1 and feature2 should be processed, feature3 should be skipped
-    assert mock_branch_ops["update"].call_count == 2
 
 
 def test_handle_branch_updates_no_children(mock_stack_utils):
@@ -289,13 +261,16 @@ def test_sync_with_remote_success(
     # Patch handle_branch_updates to return some updated branches
     with patch("panqake.commands.sync.handle_branch_updates") as mock_handle_updates:
         mock_handle_updates.return_value = (["feature1"], [])
+        mock_branch_ops["report"].return_value = (True, None)
 
         result = sync_with_remote()
 
         assert result == (True, None)
         mock_branch_ops["fetch"].assert_called_once()
         mock_branch_ops["return"].assert_called_once()
-        mock_branch_ops["push"].assert_called()  # Should attempt to push feature1
+        mock_branch_ops["push"].assert_called_once_with(
+            ["feature1"]
+        )  # Should attempt to push feature1
         mock_prompt["print"].assert_any_call(
             "[success]Sync completed successfully[/success]"
         )
@@ -311,11 +286,12 @@ def test_sync_with_remote_with_no_push_flag(
     # Patch handle_branch_updates to return some updated branches
     with patch("panqake.commands.sync.handle_branch_updates") as mock_handle_updates:
         mock_handle_updates.return_value = (["feature1"], [])
+        mock_branch_ops["report"].return_value = (True, None)
 
         result = sync_with_remote(skip_push=True)
 
         assert result == (True, None)
-        mock_branch_ops["push"].assert_not_called()  # Should not attempt to push
+
         mock_prompt["print"].assert_any_call(
             "[success]Sync completed successfully (local only)[/success]"
         )
@@ -331,14 +307,18 @@ def test_sync_with_remote_with_conflicts(
     # Patch handle_branch_updates to return conflicts
     with patch("panqake.commands.sync.handle_branch_updates") as mock_handle_updates:
         mock_handle_updates.return_value = (["feature2"], ["feature1"])
+        mock_branch_ops["report"].return_value = (
+            False,
+            "Some branches had conflicts during sync",
+        )
 
         result = sync_with_remote()
 
         assert result == (False, "Some branches had conflicts during sync")
-        mock_branch_ops["push"].assert_called()  # Should still push feature2
-        mock_prompt["print"].assert_any_call(
-            "[warning]The following branches had conflicts during sync:[/warning]"
-        )
+        mock_branch_ops["push"].assert_called_once_with(
+            ["feature2"]
+        )  # Should still push feature2
+        mock_branch_ops["report"].assert_called_once_with(["feature1"])
 
 
 def test_sync_with_remote_fetch_failure(mock_git_utils, mock_branch_ops, mock_prompt):

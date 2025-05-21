@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.13.0 - 2025-05-21
+
 ### Added
 
 - Display clickable PR URLs after creating or updating pull requests in `pq submit` and `pq pr` commands
@@ -34,7 +36,7 @@
 
 - Fixed force-push detection to properly capture Git error messages
 
-## [v0.12.0] - 2025-05-13
+## v0.12.0 - 2025-05-13
 
 ### Added
 
@@ -52,7 +54,7 @@
   - Pull Request Operations (pr, submit, merge)
 - Enhanced help menu formatting and readability with rich-click styling
 
-## [v0.11.0] - 2025-05-13
+## v0.11.0 - 2025-05-13
 
 ### Added
 
@@ -81,19 +83,19 @@
 - Fixed `delete` command to prompt for branch name when none is provided
 - Added protection to prevent deletion of main and master branches
 
-## [v0.10.0] - 2025-05-05
+## v0.10.0 - 2025-05-05
 
 ### Changed
 
 - Run rebase using `--autostash` option to allow running on dirty worktree.
 
-## [v0.9.1] - 2025-05-02
+## v0.9.1 - 2025-05-02
 
 ### Changed
 
 - Minor formatting changes to outputs of certain commands
 
-## [v0.9.0] - 2025-04-30
+## v0.9.0 - 2025-04-30
 
 ### Added
 
@@ -103,7 +105,7 @@
 
 - Removed old prompt utils that were no longer being used
 
-## [v0.8.0] - 2025-04-29
+## v0.8.0 - 2025-04-29
 
 ### Added
 
@@ -116,7 +118,7 @@
 - Enhanced branch hierarchy display before showing switching options in switch command
 - Improved update command to continue instead of aborting on conflicts
 
-## [v0.7.0] - 2025-04-28
+## v0.7.0 - 2025-04-28
 
 ### Added
 
@@ -136,7 +138,7 @@
 - Fixed formatting issues for printing information
 - Fixed `delete` command to work without confirmation when upstream branch is deleted and confirmed by user
 
-## [v0.6.0] - 2025-04-28
+## v0.6.0 - 2025-04-28
 
 ### Added
 
@@ -147,14 +149,14 @@
 
 - Refactored `merge` and `update` to use common extracted branch utility functions
 
-## [v0.5.0] - 2025-04-24
+## v0.5.0 - 2025-04-24
 
 ### Added
 
 - Added Git command pass-through functionality - any unrecognized commands are passed to vanilla Git
 - Improved CLI experience by allowing standard Git commands to work seamlessly within Panqake
 
-## [v0.4.0] - 2025-04-23
+## v0.4.0 - 2025-04-23
 
 ### Added
 
@@ -169,19 +171,19 @@
 - Modified branch detection to better handle parent branch identification
 - Improved user experience with clear feedback during file staging
 
-## [v0.3.1] - 2025-04-23
+## v0.3.1 - 2025-04-23
 
 ### Fixed
 
 - Fixed error messages appearing when checking if a branch exists during branch creation
 
-## [v0.3.0] - 2025-04-23
+## v0.3.0 - 2025-04-23
 
 ### Added
 
 - Added track command to add existing Git branches to the stack
 
-## [v0.2.0] - 2025-04-22
+## v0.2.0 - 2025-04-22
 
 ### Added
 
@@ -211,7 +213,7 @@
 - Removed test_pr
 - Removed claude.md
 
-## [v0.1.0] - Initial Release
+## v0.1.0 - Initial Release
 
 ### Added
 

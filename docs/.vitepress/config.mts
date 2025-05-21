@@ -73,7 +73,7 @@ export default defineConfig({
         text: "Guides & Tutorials",
         items: [{ text: "Advanced Workflows", link: "/advanced-workflows" }],
       },
-      { text: "Changelog", link: "/Changelog" },
+      { text: "Changelog", link: "/CHANGELOG" },
     ],
 
     socialLinks: [

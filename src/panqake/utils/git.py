@@ -514,3 +514,38 @@ def is_force_push_needed(branch: str) -> bool:
         return True
 
     return False
+
+
+def has_unpushed_changes(branch: str) -> bool:
+    """Check if branch has unpushed changes compared to its remote counterpart.
+
+    This uses git rev-list to compare the local and remote branches to determine
+    if there are any commits that need to be pushed.
+
+    Args:
+        branch: The branch name to check
+
+    Returns:
+        True if the branch has unpushed changes, False otherwise
+    """
+    # Check if branch exists on remote first
+    if not is_branch_pushed_to_remote(branch):
+        return True  # Not on remote, so definitely needs to be pushed
+
+    # Use rev-list to count commits that differ between local and remote
+    result = run_git_command(
+        ["rev-list", "--left-right", "--count", f"origin/{branch}...{branch}"],
+        silent_fail=True,
+    )
+
+    if not result:
+        return False  # Failed to get count, safer to assume no differences
+
+    # Parse the output which is in format "N M" where:
+    # N = number of commits in origin/branch but not in local branch
+    # M = number of commits in local branch but not in origin/branch
+    try:
+        behind, ahead = map(int, result.split())
+        return ahead > 0  # If we have local commits not in origin
+    except (ValueError, TypeError):
+        return False  # Parse error, safer to assume no differences

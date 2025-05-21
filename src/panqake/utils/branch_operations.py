@@ -3,6 +3,7 @@
 from panqake.utils.git import (
     branch_exists,
     checkout_branch,
+    has_unpushed_changes,
     is_branch_pushed_to_remote,
     push_branch_to_remote,
     run_git_command,
@@ -227,6 +228,13 @@ def push_updated_branches(updated_branches):
         if not is_branch_pushed_to_remote(branch):
             print_formatted_text(
                 f"[info]Skipping push for {format_branch(branch)} as it doesn't exist on remote yet[/info]"
+            )
+            continue
+
+        # Check if the branch has unpushed changes
+        if not has_unpushed_changes(branch):
+            print_formatted_text(
+                f"[info]Skipping push for {format_branch(branch)} as it's already in sync with remote[/info]"
             )
             continue
 

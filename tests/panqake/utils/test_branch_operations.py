@@ -6,6 +6,7 @@ import pytest
 
 from panqake.utils.branch_operations import (
     fetch_latest_from_remote,
+    push_updated_branches,
     return_to_branch,
     update_branch_with_conflict_detection,
 )
@@ -190,3 +191,73 @@ def test_return_to_branch_checkout_failure(mock_git_utils, mock_prompt):
     success = return_to_branch("feature")
 
     assert success is False
+
+
+@patch("panqake.utils.branch_operations.is_branch_pushed_to_remote")
+@patch("panqake.utils.branch_operations.has_unpushed_changes")
+@patch("panqake.utils.branch_operations.push_branch_to_remote")
+@patch("panqake.utils.branch_operations.checkout_branch")
+def test_push_updated_branches_with_changes(
+    mock_checkout, mock_push, mock_has_changes, mock_is_pushed, mock_prompt
+):
+    """Test pushing branches with changes."""
+    # Setup mocks for a branch that exists on remote and has changes
+    mock_is_pushed.return_value = True
+    mock_has_changes.return_value = True
+    mock_push.return_value = True
+
+    branches = ["feature1", "feature2"]
+    result = push_updated_branches(branches)
+
+    assert result == branches
+    assert mock_checkout.call_count == 2
+    assert mock_push.call_count == 2
+    # Verify correct args were passed
+    mock_push.assert_any_call("feature1", force_with_lease=True)
+    mock_push.assert_any_call("feature2", force_with_lease=True)
+
+
+@patch("panqake.utils.branch_operations.is_branch_pushed_to_remote")
+@patch("panqake.utils.branch_operations.has_unpushed_changes")
+@patch("panqake.utils.branch_operations.push_branch_to_remote")
+@patch("panqake.utils.branch_operations.checkout_branch")
+def test_push_updated_branches_no_changes(
+    mock_checkout, mock_push, mock_has_changes, mock_is_pushed, mock_prompt
+):
+    """Test skipping branches with no changes."""
+    # Setup mocks for a branch that exists on remote but has no changes
+    mock_is_pushed.return_value = True
+    mock_has_changes.return_value = False
+
+    branches = ["feature1", "feature2"]
+    result = push_updated_branches(branches)
+
+    assert result == []
+    # Shouldn't even attempt to checkout or push
+    mock_checkout.assert_not_called()
+    mock_push.assert_not_called()
+
+
+@patch("panqake.utils.branch_operations.is_branch_pushed_to_remote")
+@patch("panqake.utils.branch_operations.has_unpushed_changes")
+@patch("panqake.utils.branch_operations.push_branch_to_remote")
+@patch("panqake.utils.branch_operations.checkout_branch")
+def test_push_updated_branches_mixed_status(
+    mock_checkout, mock_push, mock_has_changes, mock_is_pushed, mock_prompt
+):
+    """Test pushing with mixed branch statuses."""
+    # Branch 1: On remote, has changes
+    # Branch 2: Not on remote yet
+    # Branch 3: On remote, no changes
+    # Branch 4: On remote, has changes but push fails
+    mock_is_pushed.side_effect = [True, False, True, True]
+    mock_has_changes.side_effect = [True, True, False, True]
+    mock_push.side_effect = [True, False]  # Branch 4 push fails
+
+    branches = ["feature1", "feature2", "feature3", "feature4"]
+    result = push_updated_branches(branches)
+
+    # Only feature1 should be successfully pushed
+    assert result == ["feature1"]
+    assert mock_checkout.call_count == 2  # Only for feature1 and feature4
+    assert mock_push.call_count == 2  # Only for feature1 and feature4

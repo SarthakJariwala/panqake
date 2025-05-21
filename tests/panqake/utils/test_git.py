@@ -10,6 +10,7 @@ from panqake.utils.git import (
     get_current_branch,
     get_repo_id,
     get_staged_files,
+    has_unpushed_changes,
     is_force_push_needed,
     is_git_repo,
     is_last_commit_amended,
@@ -206,3 +207,43 @@ def test_is_force_push_needed_false(mock_is_pushed, mock_subprocess_run):
         "To github.com:user/repo.git\n= [up to date]      feature -> feature"
     )
     assert is_force_push_needed("feature") is False
+
+
+@patch("panqake.utils.git.is_branch_pushed_to_remote")
+def test_has_unpushed_changes_branch_not_on_remote(mock_is_pushed, mock_subprocess_run):
+    """Test has_unpushed_changes when branch is not on remote."""
+    mock_is_pushed.return_value = False
+    assert has_unpushed_changes("feature") is True
+    # Ensure we don't try to get rev-list
+    mock_subprocess_run.assert_not_called()
+
+
+@patch("panqake.utils.git.is_branch_pushed_to_remote")
+def test_has_unpushed_changes_with_changes(mock_is_pushed, mock_subprocess_run):
+    """Test has_unpushed_changes when local is ahead of remote."""
+    mock_is_pushed.return_value = True
+    mock_subprocess_run.return_value.stdout = "0 3"  # 0 behind, 3 ahead
+    assert has_unpushed_changes("feature") is True
+    mock_subprocess_run.assert_called_once_with(
+        ["git", "rev-list", "--left-right", "--count", "origin/feature...feature"],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+@patch("panqake.utils.git.is_branch_pushed_to_remote")
+def test_has_unpushed_changes_no_changes(mock_is_pushed, mock_subprocess_run):
+    """Test has_unpushed_changes when local and remote are in sync."""
+    mock_is_pushed.return_value = True
+    mock_subprocess_run.return_value.stdout = "0 0"  # 0 behind, 0 ahead
+    assert has_unpushed_changes("feature") is False
+
+
+@patch("panqake.utils.git.is_branch_pushed_to_remote")
+def test_has_unpushed_changes_behind_only(mock_is_pushed, mock_subprocess_run):
+    """Test has_unpushed_changes when local is behind remote but not ahead."""
+    mock_is_pushed.return_value = True
+    mock_subprocess_run.return_value.stdout = "2 0"  # 2 behind, 0 ahead
+    assert has_unpushed_changes("feature") is False

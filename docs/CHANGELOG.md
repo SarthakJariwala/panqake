@@ -15,6 +15,7 @@
   - Added `--no-push` option to skip pushing to remote
   - Skip pushing branches that don't exist on remote yet
   - Only push branches that were successfully updated
+  - Skip pushing branches that are already in sync with remote
 
 ### Changed
 

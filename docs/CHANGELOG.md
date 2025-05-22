@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added multiline support for PR descriptions
+
 ## v0.13.1 - 2025-05-21
 
 ### Fixed

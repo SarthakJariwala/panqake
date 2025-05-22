@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added multiline support for PR descriptions
+
+### Fixed
+
+- Fixed `update_branches_with_conflict_handling` to properly handle cases when no child branches exist
+
 ## v0.13.1 - 2025-05-21
 
 ### Fixed

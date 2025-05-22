@@ -167,8 +167,7 @@ def create_pr_for_branch(branch, parent):
     )
 
     description = prompt_input(
-        "Enter PR description (optional): ",
-        default="",
+        "Enter PR description (optional): ", default="", multiline=True
     )
 
     # Show summary and confirm

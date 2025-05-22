@@ -110,8 +110,10 @@ def prompt_input(
     validator: Optional[Validator] = None,
     completer: Optional[Union[List[str], Any]] = None,
     default: str = "",
+    multiline: bool = False,
 ) -> str:
     """Get user input using questionary with Rich styling for the prompt."""
+
     rich_prompt(f"{message}", "prompt")  # Display prompt using Rich
 
     choices = None
@@ -129,7 +131,11 @@ def prompt_input(
     else:
         # Pass empty message to questionary
         return questionary.text(
-            "", default=default, validate=validator, style=style
+            "",
+            default=default,
+            validate=validator,
+            style=style,
+            multiline=multiline,
         ).ask()
 
 

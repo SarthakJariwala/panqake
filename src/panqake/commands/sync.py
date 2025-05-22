@@ -95,6 +95,10 @@ def update_branches_with_conflict_handling(branch_name, current_branch):
     Returns:
         Tuple of (list of successfully updated branches, list of branches with conflicts)
     """
+    with Stacks() as stacks:
+        children = stacks.get_children(branch_name)
+        if not children:
+            return [], []
 
     return update_branches_and_handle_conflicts(branch_name, current_branch)
 

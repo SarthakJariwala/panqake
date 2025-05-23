@@ -9,6 +9,7 @@ from panqake.utils.github import (
     branch_has_pr,
     check_github_cli_installed,
     create_pr,
+    get_potential_reviewers,
     get_pr_checks_status,
     get_pr_url,
     merge_pr,
@@ -132,6 +133,82 @@ def test_create_pr_failure(mock_subprocess_run):
     success, url = create_pr(base="main", head="feature", title="Test PR")
     assert success is False
     assert url is None
+
+
+def test_create_pr_with_reviewers(mock_subprocess_run):
+    """Test successful PR creation with reviewers."""
+    mock_subprocess_run.return_value.stdout = (
+        "PR created\nhttps://github.com/user/repo/pull/123"
+    )
+    success, url = create_pr(
+        base="main",
+        head="feature",
+        title="Test PR",
+        body="PR description",
+        reviewers=["reviewer1", "reviewer2"],
+    )
+    assert success is True
+    assert url == "https://github.com/user/repo/pull/123"
+    mock_subprocess_run.assert_called_once_with(
+        [
+            "gh",
+            "pr",
+            "create",
+            "--base",
+            "main",
+            "--head",
+            "feature",
+            "--title",
+            "Test PR",
+            "--body",
+            "PR description",
+            "--reviewer",
+            "reviewer1",
+            "--reviewer",
+            "reviewer2",
+        ],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+def test_get_potential_reviewers_success(mock_subprocess_run):
+    """Test successful retrieval of potential reviewers."""
+    mock_subprocess_run.return_value.stdout = """{
+        "owner": {"login": "owner_user"},
+        "assignableUsers": [
+            {"login": "assignable1"},
+            {"login": "assignable2"},
+            {"login": "owner_user"}
+        ]
+    }"""
+    reviewers = get_potential_reviewers()
+    assert reviewers == ["assignable1", "assignable2", "owner_user"]
+    mock_subprocess_run.assert_called_once_with(
+        ["gh", "repo", "view", "--json", "owner,assignableUsers"],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+def test_get_potential_reviewers_failure(mock_subprocess_run):
+    """Test failed retrieval of potential reviewers."""
+    mock_subprocess_run.side_effect = subprocess.CalledProcessError(
+        1, "gh", stderr="error"
+    )
+    reviewers = get_potential_reviewers()
+    assert reviewers == []
+
+
+def test_get_potential_reviewers_invalid_json(mock_subprocess_run):
+    """Test handling of invalid JSON response."""
+    mock_subprocess_run.return_value.stdout = "invalid json"
+    reviewers = get_potential_reviewers()
+    assert reviewers == []
 
 
 def test_get_pr_url(mock_subprocess_run):

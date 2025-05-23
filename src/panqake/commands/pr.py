@@ -18,15 +18,40 @@ from panqake.utils.github import (
     branch_has_pr,
     check_github_cli_installed,
     create_pr,
+    get_potential_reviewers,
 )
 from panqake.utils.questionary_prompt import (
     PRTitleValidator,
     console,
     format_branch,
     print_formatted_text,
+    prompt_checkbox,
     prompt_confirm,
     prompt_input,
 )
+
+
+def prompt_for_reviewers(potential_reviewers):
+    """Prompt the user to select reviewers from a list of potential reviewers.
+
+    Args:
+        potential_reviewers: List of potential reviewer usernames
+
+    Returns:
+        List of selected reviewer usernames
+    """
+    if not potential_reviewers:
+        return []
+
+    # Add option to skip reviewer selection
+    choices = [{"name": "(Skip - no reviewers)", "value": ""}] + [
+        {"name": reviewer, "value": reviewer} for reviewer in potential_reviewers
+    ]
+
+    selected = prompt_checkbox("Select reviewers (optional):", choices, default=[])
+
+    # Filter out empty selections (skip option)
+    return [reviewer for reviewer in selected if reviewer]
 
 
 def find_oldest_branch_without_pr(branch):
@@ -170,10 +195,18 @@ def create_pr_for_branch(branch, parent):
         "Enter PR description (optional): ", default="", multiline=True
     )
 
+    # Get potential reviewers and prompt for selection
+    potential_reviewers = get_potential_reviewers()
+    selected_reviewers = prompt_for_reviewers(potential_reviewers)
+
     # Show summary and confirm
     # Create formatted content for the panel
     arrow = Text(" ← ", style="muted")
     title_info = Text(f"Title: {title}", style="info")
+    reviewers_info = Text(
+        f"Reviewers: {', '.join(selected_reviewers) if selected_reviewers else 'None'}",
+        style="muted",
+    )
 
     # Create branch relationship line
     relationship = Group(
@@ -181,6 +214,8 @@ def create_pr_for_branch(branch, parent):
         Text.assemble(title_info),
         Text(""),
         Text.assemble(description),
+        Text(""),
+        Text.assemble(reviewers_info),
     )
 
     # Create and print panel with all information
@@ -201,7 +236,7 @@ def create_pr_for_branch(branch, parent):
         return False
 
     # Create the PR
-    success, pr_url = create_pr(parent, branch, title, description)
+    success, pr_url = create_pr(parent, branch, title, description, selected_reviewers)
     if success:
         print_formatted_text(
             f"[success]PR created successfully for {format_branch(branch)}[/success]"

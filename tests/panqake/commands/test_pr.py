@@ -11,6 +11,7 @@ from panqake.commands.pr import (
     find_oldest_branch_without_pr,
     is_branch_in_path_to_target,
     process_branch_for_pr,
+    prompt_for_reviewers,
 )
 
 
@@ -57,14 +58,17 @@ def mock_github_utils():
         patch("panqake.commands.pr.check_github_cli_installed") as mock_check_cli,
         patch("panqake.commands.pr.branch_has_pr") as mock_has_pr,
         patch("panqake.commands.pr.create_pr") as mock_create_pr,
+        patch("panqake.commands.pr.get_potential_reviewers") as mock_get_reviewers,
     ):
         mock_check_cli.return_value = True
         mock_has_pr.return_value = False
         mock_create_pr.return_value = (True, "https://github.com/user/repo/pull/123")
+        mock_get_reviewers.return_value = ["reviewer1", "reviewer2"]
         yield {
             "check_cli": mock_check_cli,
             "has_pr": mock_has_pr,
             "create_pr": mock_create_pr,
+            "get_reviewers": mock_get_reviewers,
         }
 
 
@@ -75,14 +79,17 @@ def mock_prompt():
         patch("panqake.commands.pr.print_formatted_text") as mock_print,
         patch("panqake.commands.pr.prompt_confirm") as mock_confirm,
         patch("panqake.commands.pr.prompt_input") as mock_input,
+        patch("panqake.commands.pr.prompt_for_reviewers") as mock_prompt_reviewers,
         patch("panqake.commands.pr.console.print") as mock_console_print,
     ):
         mock_confirm.return_value = True
         mock_input.return_value = "Test PR"
+        mock_prompt_reviewers.return_value = []
         yield {
             "print": mock_print,
             "confirm": mock_confirm,
             "input": mock_input,
+            "prompt_reviewers": mock_prompt_reviewers,
             "console_print": mock_console_print,
         }
 
@@ -276,7 +283,9 @@ def test_create_pr_for_branch_no_commits(mock_git_utils, mock_prompt):
     assert result is False
 
 
-def test_create_pr_for_branch_user_cancelled(mock_git_utils, mock_prompt):
+def test_create_pr_for_branch_user_cancelled(
+    mock_git_utils, mock_github_utils, mock_prompt
+):
     """Test PR creation cancelled by user."""
     # Setup
     mock_git_utils["pushed"].return_value = True
@@ -288,3 +297,33 @@ def test_create_pr_for_branch_user_cancelled(mock_git_utils, mock_prompt):
 
     # Verify
     assert result is False
+
+
+def test_prompt_for_reviewers():
+    """Test prompt_for_reviewers functionality."""
+    with patch("panqake.commands.pr.prompt_checkbox") as mock_checkbox:
+        mock_checkbox.return_value = ["user1", "user2"]
+
+        result = prompt_for_reviewers(["user1", "user2", "user3"])
+
+        assert result == ["user1", "user2"]
+        mock_checkbox.assert_called_once()
+
+
+def test_prompt_for_reviewers_empty_list():
+    """Test prompt_for_reviewers with empty list."""
+    with patch("panqake.commands.pr.prompt_checkbox") as mock_checkbox:
+        result = prompt_for_reviewers([])
+        assert result == []
+        mock_checkbox.assert_not_called()
+
+
+def test_prompt_for_reviewers_skip_selection():
+    """Test prompt_for_reviewers when skip option is selected."""
+    with patch("panqake.commands.pr.prompt_checkbox") as mock_checkbox:
+        mock_checkbox.return_value = [""]
+
+        result = prompt_for_reviewers(["user1", "user2"])
+
+        assert result == []
+        mock_checkbox.assert_called_once()

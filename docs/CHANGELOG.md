@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## v0.16.0 - 2025-05-23
+
+### Added
+
+- Enhanced `pq merge` command to show specific failed check names and status instead of generic warning
+  - Now displays which checks failed (e.g., "Tests (FAILURE)", "CI (PENDING)")
+  - Users no longer need to check GitHub to see which checks haven't passed
+
 ## v0.15.0 - 2025-05-23
 
 ### Added

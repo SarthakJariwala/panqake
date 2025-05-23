@@ -137,15 +137,16 @@ def update_pr_base(branch: str, new_base: str) -> bool:
     return result is not None
 
 
-def get_pr_checks_status(branch: str) -> bool:
+def get_pr_checks_status(branch: str) -> Tuple[bool, List[str]]:
     """Check if all required status checks have passed for a PR.
 
     Returns:
-        bool: True if all required checks passed or if there are no checks, False otherwise
+        Tuple[bool, List[str]]: (all_passed, failed_checks) where all_passed indicates
+        if all checks passed and failed_checks is a list of failed check names
     """
     result = run_gh_command(["pr", "view", branch, "--json", "statusCheckRollup"])
     if not result:
-        return False
+        return False, ["Failed to retrieve check status"]
 
     try:
         data = json.loads(result)
@@ -153,16 +154,21 @@ def get_pr_checks_status(branch: str) -> bool:
 
         # If there are no checks, consider it passed
         if not checks:
-            return True
+            return True, []
 
-        # Check if any required checks have failed
+        failed_checks = []
+        # Check for failed or incomplete checks
         for check in checks:
-            if check.get("conclusion") != "SUCCESS":
-                return False
+            conclusion = check.get("conclusion")
+            name = check.get("name", "Unknown check")
 
-        return True
+            if conclusion != "SUCCESS":
+                status = conclusion or "PENDING"
+                failed_checks.append(f"{name} ({status})")
+
+        return len(failed_checks) == 0, failed_checks
     except json.JSONDecodeError:
-        return False
+        return False, ["Failed to parse check status"]
 
 
 def merge_pr(branch: str, merge_method: str = "squash") -> bool:

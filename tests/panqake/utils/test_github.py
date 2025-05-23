@@ -287,27 +287,32 @@ def test_merge_pr_different_method(mock_subprocess_run):
         # All checks passed
         (
             '{"statusCheckRollup": [{"conclusion": "SUCCESS"}, {"conclusion": "SUCCESS"}]}',
-            True,
+            (True, []),
         ),
         # Some checks failed
         (
             '{"statusCheckRollup": [{"conclusion": "SUCCESS"}, {"conclusion": "FAILURE"}]}',
-            False,
+            (False, ["Unknown check (FAILURE)"]),
+        ),
+        # Checks with names and different statuses
+        (
+            '{"statusCheckRollup": [{"name": "CI", "conclusion": "SUCCESS"}, {"name": "Tests", "conclusion": "FAILURE"}, {"name": "Lint", "conclusion": null}]}',
+            (False, ["Tests (FAILURE)", "Lint (PENDING)"]),
         ),
         # No checks
         (
             '{"statusCheckRollup": []}',
-            True,
+            (True, []),
         ),
         # Invalid JSON
         (
             "Invalid JSON",
-            False,
+            (False, ["Failed to parse check status"]),
         ),
         # Empty result
         (
             None,
-            False,
+            (False, ["Failed to retrieve check status"]),
         ),
     ],
 )

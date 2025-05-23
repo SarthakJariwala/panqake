@@ -44,29 +44,77 @@ def check_github_cli_installed() -> bool:
     return bool(shutil.which("gh"))
 
 
+def get_potential_reviewers() -> List[str]:
+    """Get list of potential reviewers from the repository.
+
+    Returns:
+        List[str]: List of usernames that can be added as reviewers
+    """
+    # Get repository assignable users (users who can be assigned as reviewers)
+    result = run_gh_command(["repo", "view", "--json", "owner,assignableUsers"])
+    if not result:
+        return []
+
+    try:
+        data = json.loads(result)
+        reviewers = []
+
+        # Add repository owner
+        owner = data.get("owner", {}).get("login")
+        if owner:
+            reviewers.append(owner)
+
+        # Add assignable users
+        assignable_users = data.get("assignableUsers", [])
+        for user in assignable_users:
+            login = user.get("login")
+            if login and login not in reviewers:
+                reviewers.append(login)
+
+        return sorted(reviewers)
+    except json.JSONDecodeError:
+        return []
+
+
 def create_pr(
-    base: str, head: str, title: str, body: str = ""
+    base: str,
+    head: str,
+    title: str,
+    body: str = "",
+    reviewers: Optional[List[str]] = None,
 ) -> Tuple[bool, Optional[str]]:
     """Create a pull request using GitHub CLI.
+
+    Args:
+        base: Base branch for the PR
+        head: Head branch for the PR
+        title: PR title
+        body: PR description
+        reviewers: Optional list of reviewer usernames
 
     Returns:
         Tuple[bool, Optional[str]]: (success, url) where success indicates if
         PR creation was successful and url is the PR URL if available
     """
-    result = run_gh_command(
-        [
-            "pr",
-            "create",
-            "--base",
-            base,
-            "--head",
-            head,
-            "--title",
-            title,
-            "--body",
-            body,
-        ]
-    )
+    cmd = [
+        "pr",
+        "create",
+        "--base",
+        base,
+        "--head",
+        head,
+        "--title",
+        title,
+        "--body",
+        body,
+    ]
+
+    # Add reviewers if provided
+    if reviewers:
+        for reviewer in reviewers:
+            cmd.extend(["--reviewer", reviewer])
+
+    result = run_gh_command(cmd)
 
     if result is None:
         return False, None

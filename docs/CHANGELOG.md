@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## v0.15.0 - 2025-05-23
+
+### Added
+
+- Added reviewer selection functionality for PR creation in `pq submit` and `pq pr` commands
+  - Automatically fetch repository collaborators and owner as potential reviewers
+  - Interactive checkbox interface for selecting multiple reviewers
+  - Option to skip reviewer selection entirely
+  - Selected reviewers are automatically assigned when creating PRs
+
+## v0.14.0 - 2025-05-22
+
 ### Added
 
 - Added multiline support for PR descriptions

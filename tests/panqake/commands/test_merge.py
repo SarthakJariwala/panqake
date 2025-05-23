@@ -339,11 +339,11 @@ def test_merge_branch_with_children(
     "checks_passed,user_confirm,expected_result",
     [
         # All checks passed - should proceed with merge
-        (True, True, True),
+        ((True, []), True, True),
         # Checks failed but user confirms - should proceed with merge
-        (False, True, True),
+        ((False, ["CI (FAILURE)"]), True, True),
         # Checks failed and user cancels - should abort
-        (False, False, False),
+        ((False, ["CI (FAILURE)", "Tests (PENDING)"]), False, False),
     ],
 )
 def test_merge_with_checks_status(

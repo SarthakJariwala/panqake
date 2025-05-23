@@ -240,10 +240,15 @@ def perform_merge_operations(
     handle_pr_base_updates(branch_name, parent_branch, update_children)
 
     # Check if all required checks have passed
-    if not get_pr_checks_status(branch_name):
+    checks_passed, failed_checks = get_pr_checks_status(branch_name)
+    if not checks_passed:
         print_formatted_text(
             "[warning]Warning: Not all required checks have passed for this PR.[/warning]"
         )
+        print_formatted_text("[warning]Failed checks:[/warning]")
+        for check in failed_checks:
+            print_formatted_text(f"[warning]  - {check}[/warning]")
+        print("")
         if not prompt_confirm("Do you want to proceed with the merge anyway?"):
             print_formatted_text("[info]Merge cancelled.[/info]")
             return False

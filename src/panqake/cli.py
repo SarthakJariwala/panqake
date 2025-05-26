@@ -6,7 +6,8 @@ A Python implementation of git-stacking workflow management
 
 import sys
 
-import rich_click as click
+import typer
+from rich.console import Console
 
 from panqake.commands.delete import delete_branch
 from panqake.commands.down import down as down_command
@@ -27,263 +28,179 @@ from panqake.utils.config import init_panqake
 from panqake.utils.git import is_git_repo, run_git_command
 from panqake.utils.questionary_prompt import print_formatted_text
 
-# Configure rich-click styling and command groups
-click.rich_click.USE_RICH_MARKUP = True
-click.rich_click.SHOW_ARGUMENTS = True
-click.rich_click.GROUP_ARGUMENTS_OPTIONS = True
-
-# Style customization
-click.rich_click.STYLE_COMMANDS_HEADING = "bold cyan"
-click.rich_click.STYLE_COMMANDS = "cyan"
-click.rich_click.STYLE_OPTIONS_HEADING = "bold green"
-click.rich_click.STYLE_OPTIONS = "green"
-click.rich_click.STYLE_ARGUMENTS = "yellow"
-click.rich_click.STYLE_METAVAR = "bold yellow"
-click.rich_click.STYLE_EPILOG = "italic"
-
-# Define our command groups with descriptive names
-PANQAKE_COMMAND_GROUPS = [
-    {
-        "name": "Navigation Commands (move between branches)",
-        "commands": ["up", "down", "switch", "co", "list", "ls"],
-    },
-    {
-        "name": "Branch Management (create, delete, modify branches)",
-        "commands": ["new", "delete", "rename", "track", "untrack"],
-    },
-    {
-        "name": "Update & Sync (update branches and remote)",
-        "commands": ["update", "modify", "sync"],
-    },
-    {
-        "name": "Pull Request Operations (PR creation and merging)",
-        "commands": ["pr", "submit", "merge"],
-    },
-]
-
-# Apply to both pq and panqake commands
-click.rich_click.COMMAND_GROUPS = {
-    "pq": PANQAKE_COMMAND_GROUPS,
-    "panqake": PANQAKE_COMMAND_GROUPS,
-}
-
 # Define known commands for passthrough handling
-KNOWN_COMMANDS = [
-    "new",
-    "list",
-    "ls",  # Alias for list
-    "update",
-    "delete",
-    "pr",
-    "switch",
-    "co",  # Alias for switch
-    "track",
-    "untrack",
-    "rename",
-    "modify",
-    "submit",
-    "merge",
-    "sync",
-    "up",
-    "down",
-    "--help",
-    "-h",
-]
+# These are commands/options that Typer itself might not list in app.registered_commands
+# or app.registered_groups but should prevent git passthrough.
+# Typer handles --help and -h for the app and subcommands automatically if they are defined.
+# We only need to ensure that if these are passed as sys.argv[1], our logic lets Typer handle them.
+KNOWN_COMMANDS = ["--help", "-h"]
 
-
-@click.group(
-    context_settings={
-        "help_option_names": ["-h", "--help"],
-        "ignore_unknown_options": True,
-    }
+app = typer.Typer(
+    rich_markup_mode="markdown",
+    context_settings={"help_option_names": ["-h", "--help"]},
+    no_args_is_help=True,
+    add_completion=False,
+    name="panqake",
+    help="Panqake - Git Branch Stacking Utility",
 )
-def cli():
-    """Panqake - Git Branch Stacking Utility"""
-    pass
+console = Console()
+
+# All commands will be registered directly on the main 'app'
 
 
-@cli.command()
-@click.argument("branch_name", required=False)
-@click.argument("base_branch", required=False)
-def new(branch_name, base_branch):
-    """Create a new branch in the stack.
+@app.command(name="list", help="List the branch stack.")
+def list_command(
+    branch_name: str = typer.Argument(None, help="Optional branch to start from"),
+):
+    """List the branch stack. (Longer description from docstring)"""
+    list_branches(branch_name)
 
-    BRANCH_NAME: Name of the new branch
 
-    BASE_BRANCH: Parent branch
-    """
+@app.command(help="Create a new branch in the stack.")
+def new(
+    branch_name: str = typer.Argument(None, help="Name of the new branch"),
+    base_branch: str = typer.Argument(None, help="Parent branch"),
+):
+    """Create a new branch in the stack. (Longer description from docstring)"""
     create_new_branch(branch_name, base_branch)
 
 
-@cli.command(name="list")
-@click.argument("branch_name", required=False)
-def list_command(branch_name):
-    """List the branch stack.
-
-    BRANCH_NAME: Optional branch to start from
-    """
+@app.command(name="ls", help="Alias for 'list' - List the branch stack.")
+def ls_command(
+    branch_name: str = typer.Argument(None, help="Optional branch to start from"),
+):
+    """Alias for 'list' - List the branch stack. (Longer description from docstring)"""
     list_branches(branch_name)
 
 
-@cli.command(name="ls")
-@click.argument("branch_name", required=False)
-def ls_command(branch_name):
-    """Alias for 'list' - List the branch stack.
-
-    BRANCH_NAME: Optional branch to start from
-    """
-    list_branches(branch_name)
-
-
-@cli.command()
-@click.argument("branch_name", required=False)
-@click.option(
-    "--no-push",
-    is_flag=True,
-    help="Don't push changes to remote after updating branches",
-)
-def update(branch_name, no_push):
-    """Update branches after changes and push to remote.
-
-    BRANCH_NAME: Optional branch to start updating from
-    """
+@app.command(help="Update branches after changes and push to remote.")
+def update(
+    branch_name: str = typer.Argument(
+        None, help="Optional branch to start updating from"
+    ),
+    no_push: bool = typer.Option(
+        False, "--no-push", help="Don't push changes to remote after updating branches"
+    ),
+):
+    """Update branches after changes and push to remote. (Longer description from docstring)"""
     update_branches(branch_name, skip_push=no_push)
 
 
-@cli.command()
-@click.argument("branch_name")
-def delete(branch_name):
-    """Delete a branch and relink the stack.
-
-    BRANCH_NAME: Name of the branch to delete
-    """
+@app.command(help="Delete a branch and relink the stack.")
+def delete(branch_name: str = typer.Argument(..., help="Name of the branch to delete")):
+    """Delete a branch and relink the stack. (Longer description from docstring)"""
     delete_branch(branch_name)
 
 
-@cli.command()
-@click.argument("branch_name", required=False)
-def pr(branch_name):
-    """Create PRs for the branch stack.
-
-    BRANCH_NAME: Optional branch to start from
-    """
+@app.command(help="Create PRs for the branch stack.")
+def pr(branch_name: str = typer.Argument(None, help="Optional branch to start from")):
+    """Create PRs for the branch stack. (Longer description from docstring)"""
     create_pull_requests(branch_name)
 
 
-@cli.command()
-@click.argument("branch_name", required=False)
-def switch(branch_name):
-    """Interactively switch between branches.
-
-    BRANCH_NAME: Optional branch to switch to
-    """
+@app.command(help="Interactively switch between branches.")
+def switch(
+    branch_name: str = typer.Argument(None, help="Optional branch to switch to"),
+):
+    """Interactively switch between branches. (Longer description from docstring)"""
     switch_branch(branch_name)
 
 
-@cli.command(name="co")
-@click.argument("branch_name", required=False)
-def co_command(branch_name):
-    """Alias for 'switch' - Interactively switch between branches.
-
-    BRANCH_NAME: Optional branch to switch to
-    """
+@app.command(
+    name="co", help="Alias for 'switch' - Interactively switch between branches."
+)
+def co_command(
+    branch_name: str = typer.Argument(None, help="Optional branch to switch to"),
+):
+    """Alias for 'switch' - Interactively switch between branches. (Longer description from docstring)"""
     switch_branch(branch_name)
 
 
-@cli.command(name="track")
-@click.argument("branch_name", required=False)
-def track_branch(branch_name):
-    """Track an existing Git branch in the panqake stack.
-
-    BRANCH_NAME: Optional name of branch to track
-    """
+@app.command(name="track", help="Track an existing Git branch in the panqake stack.")
+def track_branch(
+    branch_name: str = typer.Argument(None, help="Optional name of branch to track"),
+):
+    """Track an existing Git branch in the panqake stack. (Longer description from docstring)"""
     track(branch_name)
 
 
-@cli.command(name="untrack")
-@click.argument("branch_name", required=False)
-def untrack_branch(branch_name):
-    """Remove a branch from the panqake stack (does not delete the git branch).
-
-    BRANCH_NAME: Optional name of branch to untrack
-    """
+@app.command(name="untrack", help="Untrack a branch (does not delete git branch).")
+def untrack_branch(
+    branch_name: str = typer.Argument(None, help="Optional name of branch to untrack"),
+):
+    """Remove a branch from the panqake stack (does not delete the git branch). (Longer description from docstring)"""
     untrack(branch_name)
 
 
-@cli.command()
-@click.option(
-    "-c", "--commit", is_flag=True, help="Create a new commit instead of amending"
-)
-@click.option("-m", "--message", help="Commit message for the new or amended commit")
-@click.option(
-    "--no-amend", is_flag=True, help="Always create a new commit instead of amending"
-)
-def modify(commit, message, no_amend):
-    """Modify/amend the current commit or create a new one."""
+@app.command(help="Modify/amend the current commit or create a new one.")
+def modify(
+    commit: bool = typer.Option(
+        False, "-c", "--commit", help="Create a new commit instead of amending"
+    ),
+    message: str = typer.Option(
+        None, "-m", "--message", help="Commit message for the new or amended commit"
+    ),
+    no_amend: bool = typer.Option(
+        False, "--no-amend", help="Always create a new commit instead of amending"
+    ),
+):
+    """Modify/amend the current commit or create a new one. (Longer description from docstring)"""
     modify_commit(commit, message, no_amend)
 
 
-@cli.command(name="submit")
-@click.argument("branch_name", required=False)
-def submit(branch_name):
-    """Update remote branch and PR after changes.
-
-    BRANCH_NAME: Optional branch to update PR for
-    """
+@app.command(name="submit", help="Update remote branch and PR after changes.")
+def submit(
+    branch_name: str = typer.Argument(None, help="Optional branch to update PR for"),
+):
+    """Update remote branch and PR after changes. (Longer description from docstring)"""
     update_pull_request(branch_name)
 
 
-@cli.command()
-@click.argument("branch_name", required=False)
-@click.option(
-    "--no-delete-branch",
-    is_flag=True,
-    help="Don't delete the local branch after merging",
-)
-@click.option(
-    "--no-update-children",
-    is_flag=True,
-    help="Don't update child branches after merging",
-)
-def merge(branch_name, no_delete_branch, no_update_children):
-    """Merge a PR and manage the branch stack after merge.
-
-    BRANCH_NAME: Optional branch to merge
-    """
+@app.command(help="Merge a PR and manage the branch stack after merge.")
+def merge(
+    branch_name: str = typer.Argument(None, help="Optional branch to merge"),
+    no_delete_branch: bool = typer.Option(
+        False, "--no-delete-branch", help="Don't delete the local branch after merging"
+    ),
+    no_update_children: bool = typer.Option(
+        False,
+        "--no-update-children",
+        help="Don't update child branches after merging",
+    ),
+):
+    """Merge a PR and manage the branch stack after merge. (Longer description from docstring)"""
     merge_branch(branch_name, not no_delete_branch, not no_update_children)
 
 
-@cli.command()
-@click.argument("main_branch", required=False, default="main")
-@click.option(
-    "--no-push",
-    is_flag=True,
-    help="Skip pushing updated branches to remote",
-)
-def sync(main_branch, no_push=False):
-    """Sync branches with remote repository changes.
-
-    MAIN_BRANCH: Base branch to sync with (default: main)
-    """
+@app.command(help="Sync branches with remote repository changes.")
+def sync(
+    main_branch: str = typer.Argument(
+        "main", help="Base branch to sync with (default: main)"
+    ),  # Added default to help
+    no_push: bool = typer.Option(
+        False, "--no-push", help="Skip pushing updated branches to remote"
+    ),
+):
+    """Sync branches with remote repository changes. (Longer description from docstring)"""
     sync_with_remote(main_branch, skip_push=no_push)
 
 
-@cli.command()
-@click.argument("old_name", required=False)
-@click.argument("new_name", required=False)
-def rename(old_name, new_name):
-    """Rename a branch while maintaining stack relationships.
-
-    OLD_NAME: Current name of the branch to rename (default: current branch)
-
-    NEW_NAME: New name for the branch (if not provided, will prompt)
-    """
+@app.command(help="Rename a branch while maintaining stack relationships.")
+def rename(
+    old_name: str = typer.Argument(
+        None, help="Current name of the branch to rename (default: current branch)"
+    ),
+    new_name: str = typer.Argument(
+        None, help="New name for the branch (if not provided, will prompt)"
+    ),
+):
+    """Rename a branch while maintaining stack relationships. (Longer description from docstring)"""
     rename_branch(old_name, new_name)
 
 
-@cli.command()
+@app.command(help="Navigate to the parent branch in the stack.")
 def up():
-    """Navigate to the parent branch in the stack.
+    """Navigate to the parent branch in the stack. (Longer description from docstring)
 
     Move up from the current branch to its closest ancestor.
     If there is no parent branch, informs the user.
@@ -291,9 +208,9 @@ def up():
     up_command()
 
 
-@cli.command()
+@app.command(help="Navigate to a child branch in the stack.")
 def down():
-    """Navigate to a child branch in the stack.
+    """Navigate to a child branch in the stack. (Longer description from docstring)
 
     Move down from the current branch to a child branch.
     If there are multiple children, prompts for selection.
@@ -309,27 +226,49 @@ def main():
 
     # Check if we're in a git repository
     if not is_git_repo():
-        click.echo("Error: Not in a git repository")
+        console.print("Error: Not in a git repository")
         sys.exit(1)
 
-    # Check if any arguments were provided
-    if len(sys.argv) <= 1:
-        # No arguments, show help
-        cli.main(args=["--help"])
-        return
+    # Check if any arguments were provided and if the command is known
+    # Typer automatically handles help for no args or --help
+    # We need to handle the git passthrough for unknown commands.
 
-    # Get the first argument (potential command)
-    potential_command = sys.argv[1]
+    # Build a set of all known Typer command names (including subcommand names like "nav list")
+    # and group names.
+    all_typer_commands_and_groups = set(KNOWN_COMMANDS)
 
-    # If the potential command is known, use Click CLI
-    if potential_command in KNOWN_COMMANDS:
-        cli.main(standalone_mode=False)
-    # Otherwise, pass all arguments to git
-    else:
-        print_formatted_text("[info]Passing command to git...[/info]")
-        result = run_git_command(sys.argv[1:])
-        if result is not None:
-            click.echo(result)
+    # Add top-level command names
+    for cmd_info in app.registered_commands:
+        all_typer_commands_and_groups.add(cmd_info.name)
+        # Typer's CommandInfo doesn't directly expose aliases in a simple list.
+        # Aliases are often handled by Typer by registering multiple command names
+        # pointing to the same callback. If aliases need to be specifically enumerated here
+        # beyond what KNOWN_COMMANDS covers, a different approach for alias detection
+        # might be needed, or ensure aliases are in KNOWN_COMMANDS if not primary names.
+
+    # Add group names and command names within groups
+    # With a flat structure, there are no registered_groups to iterate for commands.
+    # for group_info in app.registered_groups:
+    #     all_typer_commands_and_groups.add(group_info.name)
+    #     if group_info.typer_instance:
+    #         for cmd_info_in_group in group_info.typer_instance.registered_commands:
+    #             all_typer_commands_and_groups.add(cmd_info_in_group.name)
+
+    if len(sys.argv) > 1:
+        potential_command = sys.argv[1]
+        # If the first argument is an option (starts with '-'), let Typer handle it.
+        # Otherwise, if it's not a recognized Typer command/group, pass to git.
+        if (
+            not potential_command.startswith("-")
+            and potential_command not in all_typer_commands_and_groups
+        ):
+            print_formatted_text("[info]Passing command to git...[/info]")
+            result = run_git_command(sys.argv[1:])
+            if result is not None:
+                console.print(result)
+            return  # Exit after passing to git
+
+    app()
 
 
 if __name__ == "__main__":

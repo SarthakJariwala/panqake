@@ -5,11 +5,10 @@ description = "Git Branch Stacking Utility"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "click>=8.1.8",
     "prompt-toolkit>=3.0.51",
     "questionary>=2.1.0",
     "rich>=14.0.0",
-    "rich-click>=1.8.8",
+    "typer>=0.16.0",
 ]
 
 [project.scripts]

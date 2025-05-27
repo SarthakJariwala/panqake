@@ -11,6 +11,11 @@
   - Changed `--no-update-children` to `--update-children/--no-update-children` (default: update) for merge command
   - Changed `--no-amend` to `--amend/--no-amend` (default: amend) for modify command
 
+### Fixed
+
+- Fixed type errors in utility functions for better type safety
+- Enhanced type hints across utils module with semantic type aliases for improved type safety and code readability.
+
 ## v0.16.0 - 2025-05-23
 
 ### Added

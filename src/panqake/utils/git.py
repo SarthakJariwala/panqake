@@ -3,9 +3,10 @@
 import os
 import subprocess
 import sys
-from typing import List, Optional
+from typing import Any, Dict, List
 
 from panqake.utils.questionary_prompt import print_formatted_text
+from panqake.utils.types import BranchName, RepoId
 
 
 def is_git_repo() -> bool:
@@ -15,8 +16,10 @@ def is_git_repo() -> bool:
 
 
 def run_git_command(
-    command: List[str], silent_fail: bool = False, return_stderr_on_error: bool = False
-) -> Optional[str]:
+    command: List[str],
+    silent_fail: bool = False,
+    return_stderr_on_error: bool = False,
+) -> str | None:
     """Run a git command and return its output.
 
     Args:
@@ -48,7 +51,7 @@ def run_git_command(
         return None
 
 
-def get_repo_id() -> Optional[str]:
+def get_repo_id() -> RepoId | None:
     """Get the current repository identifier."""
     repo_path = run_git_command(["rev-parse", "--show-toplevel"])
     if repo_path:
@@ -56,12 +59,12 @@ def get_repo_id() -> Optional[str]:
     return None
 
 
-def get_current_branch() -> Optional[str]:
+def get_current_branch() -> BranchName | None:
     """Get the current branch name."""
     return run_git_command(["symbolic-ref", "--short", "HEAD"])
 
 
-def list_all_branches() -> List[str]:
+def list_all_branches() -> List[BranchName]:
     """Get a list of all branches."""
     result = run_git_command(["branch", "--format=%(refname:short)"])
     if result:
@@ -69,7 +72,7 @@ def list_all_branches() -> List[str]:
     return []
 
 
-def branch_exists(branch: str) -> bool:
+def branch_exists(branch: BranchName) -> bool:
     """Check if a branch exists."""
     # Use silent_fail=True because it's normal for this command to fail when checking
     # if a branch exists before creating it
@@ -79,7 +82,7 @@ def branch_exists(branch: str) -> bool:
     return result is not None
 
 
-def validate_branch(branch_name: Optional[str] = None) -> str:
+def validate_branch(branch_name: BranchName | None = None) -> BranchName:
     """Validate branch exists and get current branch if none specified.
 
     Args:
@@ -96,16 +99,23 @@ def validate_branch(branch_name: Optional[str] = None) -> str:
         branch_name = get_current_branch()
 
     # Check if target branch exists
-    if not branch_exists(branch_name):
+    if branch_name and not branch_exists(branch_name):
         print_formatted_text(
             f"<warning>Error: Branch '{branch_name}' does not exist</warning>"
+        )
+        sys.exit(1)
+
+    # At this point branch_name should not be None due to earlier assignment
+    if branch_name is None:
+        print_formatted_text(
+            "<warning>Error: Could not determine branch name</warning>"
         )
         sys.exit(1)
 
     return branch_name
 
 
-def checkout_branch(branch_name: str) -> None:
+def checkout_branch(branch_name: BranchName) -> None:
     """Checkout to the specified branch."""
     print_formatted_text(f"[info]Switching to branch '{branch_name}'...[/info]")
     result = run_git_command(["checkout", branch_name])
@@ -119,7 +129,7 @@ def checkout_branch(branch_name: str) -> None:
         sys.exit(1)
 
 
-def create_branch(branch_name: str, base_branch: str) -> None:
+def create_branch(branch_name: BranchName, base_branch: BranchName) -> None:
     """Create a new branch based on the specified base branch and checkout to it."""
     print_formatted_text(
         f"[info]Creating new branch '{branch_name}' based on '{base_branch}'...[/info]"
@@ -135,7 +145,7 @@ def create_branch(branch_name: str, base_branch: str) -> None:
         sys.exit(1)
 
 
-def push_branch_to_remote(branch: str, force_with_lease: bool = False) -> bool:
+def push_branch_to_remote(branch: BranchName, force_with_lease: bool = False) -> bool:
     """Push a branch to the remote.
 
     Args:
@@ -161,13 +171,13 @@ def push_branch_to_remote(branch: str, force_with_lease: bool = False) -> bool:
     return False
 
 
-def is_branch_pushed_to_remote(branch: str) -> bool:
+def is_branch_pushed_to_remote(branch: BranchName) -> bool:
     """Check if a branch exists on the remote."""
     result = run_git_command(["ls-remote", "--heads", "origin", branch])
     return bool(result and result.strip())
 
 
-def delete_remote_branch(branch: str) -> bool:
+def delete_remote_branch(branch: BranchName) -> bool:
     """Delete a branch on the remote repository."""
     print_formatted_text(
         f"[info]Deleting remote branch [branch]{branch}[/branch]...[/info]"
@@ -187,7 +197,7 @@ def delete_remote_branch(branch: str) -> bool:
     return False
 
 
-def get_potential_parents(branch: str) -> List[str]:
+def get_potential_parents(branch: BranchName) -> List[BranchName]:
     """Get a list of potential parent branches from the Git history.
 
     This function analyzes the Git history of the specified branch and
@@ -231,7 +241,9 @@ def get_potential_parents(branch: str) -> List[str]:
     return potential_parents
 
 
-def branch_has_commits(branch: str = None, parent_branch: Optional[str] = None) -> bool:
+def branch_has_commits(
+    branch: BranchName | None = None, parent_branch: BranchName | None = None
+) -> bool:
     """Check if the branch has any commits since the specified parent branch.
 
     This checks if a branch has new commits relative to a given parent.
@@ -247,6 +259,9 @@ def branch_has_commits(branch: str = None, parent_branch: Optional[str] = None) 
     """
     if not branch:
         branch = get_current_branch()
+
+    if not branch:
+        return False  # Cannot determine branch
 
     if not branch:
         return False  # Cannot determine branch
@@ -270,6 +285,8 @@ def branch_has_commits(branch: str = None, parent_branch: Optional[str] = None) 
     count_output = run_git_command(count_cmd, silent_fail=True)
 
     try:
+        if count_output is None:
+            return False
         commit_count = int(count_output)
         return commit_count > 0
     except (ValueError, TypeError, AttributeError):
@@ -280,7 +297,7 @@ def branch_has_commits(branch: str = None, parent_branch: Optional[str] = None) 
         return False  # Safer to return False if count fails
 
 
-def rename_branch(old_name: str, new_name: str) -> bool:
+def rename_branch(old_name: BranchName, new_name: BranchName) -> bool:
     """Rename a git branch.
 
     Args:
@@ -351,7 +368,7 @@ def rename_branch(old_name: str, new_name: str) -> bool:
     return True
 
 
-def get_staged_files() -> List[dict]:
+def get_staged_files() -> List[Dict[str, Any]]:
     """Get a list of staged files using git diff --staged.
 
     Returns:
@@ -418,7 +435,7 @@ def get_staged_files() -> List[dict]:
     return files
 
 
-def get_unstaged_files() -> List[dict]:
+def get_unstaged_files() -> List[Dict[str, Any]]:
     """Get a list of unstaged files using git ls-files and git status.
 
     Returns:
@@ -487,7 +504,7 @@ def is_last_commit_amended() -> bool:
     return False
 
 
-def is_force_push_needed(branch: str) -> bool:
+def is_force_push_needed(branch: BranchName) -> bool:
     """Check if force push is needed for a branch by doing a dry run.
 
     This checks if a normal push would fail due to history rewrites.
@@ -516,7 +533,7 @@ def is_force_push_needed(branch: str) -> bool:
     return False
 
 
-def has_unpushed_changes(branch: str) -> bool:
+def has_unpushed_changes(branch: BranchName) -> bool:
     """Check if branch has unpushed changes compared to its remote counterpart.
 
     This uses git rev-list to compare the local and remote branches to determine

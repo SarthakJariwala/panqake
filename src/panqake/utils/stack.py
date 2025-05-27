@@ -2,20 +2,28 @@
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import List, Set
 
 from panqake.utils.git import get_repo_id
 from panqake.utils.questionary_prompt import format_branch
+from panqake.utils.types import (
+    BranchMetadata,
+    BranchName,
+    ParentBranchName,
+    RepoId,
+    SerializedStacksData,
+    StacksData,
+)
 
 # Global constants
-PANQAKE_DIR = Path.home() / ".panqake"
-STACK_FILE = PANQAKE_DIR / "stacks.json"
+PANQAKE_DIR: Path = Path.home() / ".panqake"
+STACK_FILE: Path = PANQAKE_DIR / "stacks.json"
 
 
 class Branch:
     """Represents a branch in a stack with its relationships."""
 
-    def __init__(self, name: str, parent: str = ""):
+    def __init__(self, name: BranchName, parent: ParentBranchName = "") -> None:
         """Initialize a branch with its name and parent.
 
         Args:
@@ -25,7 +33,7 @@ class Branch:
         self.name = name
         self.parent = parent
 
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> BranchMetadata:
         """Convert branch to dictionary for serialization.
 
         Returns:
@@ -34,7 +42,7 @@ class Branch:
         return {"parent": self.parent}
 
     @classmethod
-    def from_dict(cls, name: str, data: Dict[str, str]) -> "Branch":
+    def from_dict(cls, name: BranchName, data: BranchMetadata) -> "Branch":
         """Create a Branch instance from dictionary data.
 
         Args:
@@ -50,10 +58,10 @@ class Branch:
 class Stacks:
     """Manages the hierarchical branch relationships."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize an empty stacks structure."""
-        self._branches: Dict[str, Dict[str, Branch]] = {}
-        self._current_repo_id: Optional[str] = None
+        self._branches: StacksData = {}
+        self._current_repo_id: RepoId | None = None
         self._loaded = False
         # Auto-load data on initialization
         self._ensure_loaded()
@@ -87,7 +95,10 @@ class Stacks:
         if not self._ensure_repo_id():
             return False
 
-        if self._current_repo_id not in self._branches:
+        if (
+            self._current_repo_id is not None
+            and self._current_repo_id not in self._branches
+        ):
             self._branches[self._current_repo_id] = {}
         return True
 
@@ -106,7 +117,7 @@ class Stacks:
         try:
             with open(STACK_FILE, "r") as f:
                 try:
-                    raw_data = json.load(f)
+                    raw_data: SerializedStacksData = json.load(f)
 
                     # Convert raw data to Branch objects
                     self._branches = {}
@@ -137,7 +148,7 @@ class Stacks:
 
         try:
             # Convert Branch objects to dictionaries
-            raw_data = {}
+            raw_data: SerializedStacksData = {}
             for repo_id, branches in self._branches.items():
                 raw_data[repo_id] = {}
                 for branch_name, branch in branches.items():
@@ -149,7 +160,7 @@ class Stacks:
         except (IOError, OSError):
             return False
 
-    def get_parent(self, branch: str) -> str:
+    def get_parent(self, branch: BranchName) -> ParentBranchName:
         """Get the parent branch of the given branch.
 
         Args:
@@ -162,13 +173,14 @@ class Stacks:
             return ""
 
         if (
-            self._current_repo_id in self._branches
+            self._current_repo_id is not None
+            and self._current_repo_id in self._branches
             and branch in self._branches[self._current_repo_id]
         ):
             return self._branches[self._current_repo_id][branch].parent
         return ""
 
-    def get_children(self, branch: str) -> List[str]:
+    def get_children(self, branch: BranchName) -> List[BranchName]:
         """Get all immediate child branches of the given branch.
 
         Args:
@@ -180,8 +192,11 @@ class Stacks:
         if not self._ensure_loaded() or not self._ensure_repo_id():
             return []
 
-        children = []
-        if self._current_repo_id in self._branches:
+        children: List[BranchName] = []
+        if (
+            self._current_repo_id is not None
+            and self._current_repo_id in self._branches
+        ):
             for child_name, child_branch in self._branches[
                 self._current_repo_id
             ].items():
@@ -189,7 +204,7 @@ class Stacks:
                     children.append(child_name)
         return children
 
-    def add_branch(self, branch: str, parent: str) -> bool:
+    def add_branch(self, branch: BranchName, parent: ParentBranchName) -> bool:
         """Add a branch to the stack.
 
         Args:
@@ -202,10 +217,11 @@ class Stacks:
         if not self._ensure_loaded() or not self._ensure_repo_exists():
             return False
 
-        self._branches[self._current_repo_id][branch] = Branch(branch, parent)
+        if self._current_repo_id is not None:
+            self._branches[self._current_repo_id][branch] = Branch(branch, parent)
         return self.save()
 
-    def remove_branch(self, branch: str) -> bool:
+    def remove_branch(self, branch: BranchName) -> bool:
         """Remove a branch from the stack and update child references.
 
         This method removes the specified branch from the stack and updates
@@ -220,12 +236,16 @@ class Stacks:
         if not self._ensure_loaded() or not self._ensure_repo_id():
             return False
 
-        repo_id = self._current_repo_id
-        if repo_id not in self._branches or branch not in self._branches[repo_id]:
+        repo_id: RepoId | None = self._current_repo_id
+        if (
+            repo_id is None
+            or repo_id not in self._branches
+            or branch not in self._branches[repo_id]
+        ):
             return False
 
         # Get the parent of the branch being removed
-        parent = self._branches[repo_id][branch].parent
+        parent: ParentBranchName = self._branches[repo_id][branch].parent
 
         # Update all children of this branch to point to its parent
         for child_name, child_branch in self._branches[repo_id].items():
@@ -238,7 +258,7 @@ class Stacks:
         # Save changes
         return self.save()
 
-    def get_branch_lineage(self, branch: str) -> List[str]:
+    def get_branch_lineage(self, branch: BranchName) -> List[BranchName]:
         """Get the ancestry chain of a branch (all parents up to root).
 
         Args:
@@ -251,13 +271,17 @@ class Stacks:
             return []
 
         # Check if branch exists first
-        repo_id = self._current_repo_id
-        if repo_id not in self._branches or branch not in self._branches[repo_id]:
+        repo_id: RepoId | None = self._current_repo_id
+        if (
+            repo_id is None
+            or repo_id not in self._branches
+            or branch not in self._branches[repo_id]
+        ):
             return []
 
-        lineage = []
-        current = branch
-        visited = set()  # Protect against circular references
+        lineage: List[BranchName] = []
+        current: BranchName = branch
+        visited: Set[BranchName] = set()  # Protect against circular references
 
         while current and current not in visited:
             lineage.append(current)
@@ -266,7 +290,9 @@ class Stacks:
 
         return lineage
 
-    def _would_create_cycle(self, branch: str, new_parent: str) -> bool:
+    def _would_create_cycle(
+        self, branch: BranchName, new_parent: ParentBranchName
+    ) -> bool:
         """Check if changing a branch's parent would create a cycle.
 
         Args:
@@ -284,7 +310,7 @@ class Stacks:
         descendants = self.get_all_descendants(branch)
         return new_parent in descendants
 
-    def get_all_descendants(self, branch: str) -> List[str]:
+    def get_all_descendants(self, branch: BranchName) -> List[BranchName]:
         """Get all descendant branches of the given branch (children, grandchildren, etc.).
 
         Args:
@@ -296,12 +322,12 @@ class Stacks:
         if not self._ensure_loaded() or not self._ensure_repo_id():
             return []
 
-        descendants = []
-        to_process = self.get_children(branch)
-        processed: Set[str] = set()
+        descendants: List[BranchName] = []
+        to_process: List[BranchName] = self.get_children(branch)
+        processed: Set[BranchName] = set()
 
         while to_process:
-            current = to_process.pop(0)
+            current: BranchName = to_process.pop(0)
             if current not in processed:
                 descendants.append(current)
                 processed.add(current)
@@ -309,7 +335,7 @@ class Stacks:
 
         return descendants
 
-    def change_parent(self, branch: str, new_parent: str) -> bool:
+    def change_parent(self, branch: BranchName, new_parent: ParentBranchName) -> bool:
         """Change the parent of a branch.
 
         Args:
@@ -322,8 +348,12 @@ class Stacks:
         if not self._ensure_loaded() or not self._ensure_repo_exists():
             return False
 
-        repo_id = self._current_repo_id
-        if repo_id not in self._branches or branch not in self._branches[repo_id]:
+        repo_id: RepoId | None = self._current_repo_id
+        if (
+            repo_id is None
+            or repo_id not in self._branches
+            or branch not in self._branches[repo_id]
+        ):
             return False
 
         # Avoid circular references - check if new_parent is a descendant of branch
@@ -339,7 +369,9 @@ class Stacks:
         self._branches[repo_id][branch].parent = new_parent
         return self.save()
 
-    def get_common_ancestor(self, branch1: str, branch2: str) -> Optional[str]:
+    def get_common_ancestor(
+        self, branch1: BranchName, branch2: BranchName
+    ) -> BranchName | None:
         """Find the common ancestor of two branches.
 
         Args:
@@ -352,11 +384,11 @@ class Stacks:
         if not self._ensure_loaded() or not self._ensure_repo_id():
             return None
 
-        lineage1 = self.get_branch_lineage(branch1)
-        lineage2 = self.get_branch_lineage(branch2)
+        lineage1: List[BranchName] = self.get_branch_lineage(branch1)
+        lineage2: List[BranchName] = self.get_branch_lineage(branch2)
 
         # Convert second lineage to a set for faster lookup
-        lineage2_set = set(lineage2)
+        lineage2_set: Set[BranchName] = set(lineage2)
 
         # Find the first common branch
         for branch in lineage1:
@@ -365,7 +397,9 @@ class Stacks:
 
         return None
 
-    def _format_branch_display(self, branch: str, current_branch: str) -> str:
+    def _format_branch_display(
+        self, branch: BranchName, current_branch: BranchName
+    ) -> str:
         """Format branch display with current branch indicator.
 
         Args:
@@ -376,10 +410,12 @@ class Stacks:
             Formatted branch display string
         """
 
-        is_current = branch == current_branch
+        is_current: bool = branch == current_branch
         return format_branch(branch, current=is_current)
 
-    def _print_branch_tree(self, start_branch: str, current_branch: str) -> list:
+    def _print_branch_tree(
+        self, start_branch: BranchName, current_branch: BranchName
+    ) -> List[str]:
         """Generate tree representation of branch hierarchy.
 
         Args:
@@ -389,11 +425,11 @@ class Stacks:
         Returns:
             List of formatted lines for the tree
         """
-        output = []
+        output: List[str] = []
 
         # Track branches to process with their indent and last-sibling status
         # Each item is (branch, indent, is_last_child)
-        queue = [(start_branch, "", True)]
+        queue: List[tuple[BranchName, str, bool]] = [(start_branch, "", True)]
 
         while queue:
             branch, indent, is_last = queue.pop(0)
@@ -410,21 +446,23 @@ class Stacks:
             )
 
             # Get children
-            children = sorted(self.get_children(branch))
-            child_count = len(children)
+            children: List[BranchName] = sorted(self.get_children(branch))
+            child_count: int = len(children)
 
             if children:
                 # Calculate indent for children: add vertical line or space
-                child_indent = indent + ("    " if is_last else "│   ")
+                child_indent: str = indent + ("    " if is_last else "│   ")
 
                 # Add children to queue
                 for i, child in enumerate(children):
-                    is_last_child = i == child_count - 1
+                    is_last_child: bool = i == child_count - 1
                     queue.insert(i, (child, child_indent, is_last_child))
 
         return output
 
-    def visualize_tree(self, root: str = "", current_branch: str = "") -> str:
+    def visualize_tree(
+        self, root: BranchName = "", current_branch: BranchName = ""
+    ) -> str:
         """Generate a text representation of the branch tree with proper formatting.
 
         Args:
@@ -437,18 +475,18 @@ class Stacks:
         if not self._ensure_loaded() or not self._ensure_repo_id():
             return ""
 
-        repo_id = self._current_repo_id
-        if repo_id not in self._branches:
+        repo_id: RepoId | None = self._current_repo_id
+        if repo_id is None or repo_id not in self._branches:
             return ""
 
-        output = []
+        output: list[str] = []
 
         if root:
             # Start from specific root
             output.extend(self._print_branch_tree(root, current_branch))
         else:
             # Find all root branches (branches with no parent)
-            roots = []
+            roots: List[BranchName] = []
             for branch_name, branch in self._branches[repo_id].items():
                 if not branch.parent:
                     roots.append(branch_name)
@@ -464,7 +502,7 @@ class Stacks:
 
         return "\n".join(output)
 
-    def get_all_branches(self) -> List[str]:
+    def get_all_branches(self) -> List[BranchName]:
         """Get all tracked branches for the current repository.
 
         Returns:
@@ -473,13 +511,13 @@ class Stacks:
         if not self._ensure_loaded() or not self._ensure_repo_id():
             return []
 
-        repo_id = self._current_repo_id
-        if repo_id not in self._branches:
+        repo_id: RepoId | None = self._current_repo_id
+        if repo_id is None or repo_id not in self._branches:
             return []
 
         return list(self._branches[repo_id].keys())
 
-    def branch_exists(self, branch: str) -> bool:
+    def branch_exists(self, branch: BranchName) -> bool:
         """Check if a branch exists in the stack.
 
         Args:
@@ -491,10 +529,14 @@ class Stacks:
         if not self._ensure_loaded() or not self._ensure_repo_id():
             return False
 
-        repo_id = self._current_repo_id
-        return repo_id in self._branches and branch in self._branches[repo_id]
+        repo_id: RepoId | None = self._current_repo_id
+        return (
+            repo_id is not None
+            and repo_id in self._branches
+            and branch in self._branches[repo_id]
+        )
 
-    def rename_branch(self, old_name: str, new_name: str) -> bool:
+    def rename_branch(self, old_name: BranchName, new_name: BranchName) -> bool:
         """Rename a branch in the stack and update all references.
 
         This method performs the following:
@@ -511,8 +553,12 @@ class Stacks:
         if not self._ensure_loaded() or not self._ensure_repo_id():
             return False
 
-        repo_id = self._current_repo_id
-        if repo_id not in self._branches or old_name not in self._branches[repo_id]:
+        repo_id: RepoId | None = self._current_repo_id
+        if (
+            repo_id is None
+            or repo_id not in self._branches
+            or old_name not in self._branches[repo_id]
+        ):
             return False
 
         # Check if new name already exists in stack
@@ -520,7 +566,7 @@ class Stacks:
             return False
 
         # Get the branch data
-        branch_data = self._branches[repo_id][old_name]
+        branch_data: Branch = self._branches[repo_id][old_name]
 
         # Create new branch entry with the same parent
         self._branches[repo_id][new_name] = Branch(new_name, branch_data.parent)

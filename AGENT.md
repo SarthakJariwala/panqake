@@ -13,6 +13,7 @@
 - Run linter: `ruff check --fix`
 - Run formatter: `ruff format`
 - Python 3.12+ required
+- Always use modern Python type hints for type safety. Check type errors using `uvx pyrefly check`
 - Uses pre-commit hooks for code quality (trailing whitespace, line endings, YAML/TOML validation)
 
 ## Naming & Import Conventions

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Migrated CLI from Click to Typer
+- Improved boolean flag naming for better clarity and consistency:
+  - Changed `--no-push` to `--push/--no-push` (default: push) for update and sync commands
+  - Changed `--no-delete-branch` to `--delete-branch/--no-delete-branch` (default: delete) for merge command
+  - Changed `--no-update-children` to `--update-children/--no-update-children` (default: update) for merge command
+  - Changed `--no-amend` to `--amend/--no-amend` (default: amend) for modify command
+
 ## v0.16.0 - 2025-05-23
 
 ### Added

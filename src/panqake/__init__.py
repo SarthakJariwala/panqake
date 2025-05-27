@@ -1,3 +1,3 @@
-"""Panqake - Git branch stacking utility."""
+"""Panqake - CLI for Git stacking."""
 
-__version__ = "0.1.0"
+__version__ = "0.16.0"

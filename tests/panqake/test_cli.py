@@ -51,10 +51,10 @@ def test_cli_help(runner):
     """Test CLI help text generation."""
     # Use typer's CliRunner to invoke the app with --help
     result = runner.invoke(app, ["--help"])
-    
+
     # Verify exit code is 0 (success)
     assert result.exit_code == 0
-    
+
     # Verify help text contains expected content
     output = result.stdout
     assert "Usage" in output

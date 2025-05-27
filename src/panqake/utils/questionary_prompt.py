@@ -27,7 +27,7 @@ Usage example:
     console.print("[success]Operation successful![/success]")
 """
 
-from typing import Any, List, Optional, Union
+from typing import Any, List, Union
 
 import questionary
 from questionary import Choice, ValidationError, Validator
@@ -107,8 +107,8 @@ def rich_prompt(message: str, style_name: str = "prompt") -> None:
 
 def prompt_input(
     message: str,
-    validator: Optional[Validator] = None,
-    completer: Optional[Union[List[str], Any]] = None,
+    validator: Validator | None = None,
+    completer: Union[List[str], Any] | None = None,
     default: str = "",
     multiline: bool = False,
 ) -> str:
@@ -149,7 +149,7 @@ def prompt_confirm(message: str) -> bool:
 def prompt_checkbox(
     message: str,
     choices: List[Union[str, dict]],
-    default: Optional[List[Union[str, dict]]] = None,
+    default: List[Union[str, dict]] | None = None,
 ) -> List[str]:
     """Prompt user to select multiple items from a list, using Rich for the prompt."""
     rich_prompt(f"{message}", "prompt")  # Display prompt using Rich
@@ -191,7 +191,7 @@ def prompt_checkbox(
 
 
 def prompt_select(
-    message: str, choices: List[Union[str, dict]], default: Optional[str] = None
+    message: str, choices: List[Union[str, dict]], default: str | None = None
 ) -> str:
     """Display a select prompt with the given choices.
 
@@ -220,7 +220,9 @@ def prompt_select(
                 )
         else:
             # Handle simple string choices
-            questionary_choices.append(choice)
+            questionary_choices.append(
+                questionary.Choice(title=str(choice), value=choice)
+            )
 
     # Show the prompt with rich styling
     rich_prompt(f"{message}", "prompt")
@@ -261,7 +263,7 @@ class PRTitleValidator(Validator):
             raise ValidationError(message="PR title should be at least 10 characters")
 
 
-def prompt_for_parent(potential_parents: List[str]) -> Optional[str]:
+def prompt_for_parent(potential_parents: List[str]) -> str | None:
     """Prompt the user to select a parent branch from a list of potential parents.
 
     Args:

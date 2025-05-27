@@ -4,7 +4,6 @@ A Python implementation of git-stacking workflow management
 """
 
 import sys
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -75,10 +74,8 @@ app = typer.Typer(
 
 @app.command()
 def new(
-    branch_name: Optional[str] = typer.Argument(
-        None, help="Name of the new branch"
-    ),
-    base_branch: Optional[str] = typer.Argument(None, help="Parent branch"),
+    branch_name: str | None = typer.Argument(None, help="Name of the new branch"),
+    base_branch: str | None = typer.Argument(None, help="Parent branch"),
 ):
     """Create a new branch in the stack."""
     create_new_branch(branch_name, base_branch)
@@ -86,7 +83,7 @@ def new(
 
 @app.command(name="list")
 def list_command(
-    branch_name: Optional[str] = typer.Argument(
+    branch_name: str | None = typer.Argument(
         None, help="Optional branch to start from"
     ),
 ):
@@ -96,7 +93,7 @@ def list_command(
 
 @app.command(name="ls")
 def ls_command(
-    branch_name: Optional[str] = typer.Argument(
+    branch_name: str | None = typer.Argument(
         None, help="Optional branch to start from"
     ),
 ):
@@ -106,7 +103,7 @@ def ls_command(
 
 @app.command()
 def update(
-    branch_name: Optional[str] = typer.Argument(
+    branch_name: str | None = typer.Argument(
         None, help="Optional branch to start updating from"
     ),
     push: bool = typer.Option(
@@ -127,7 +124,7 @@ def delete(
 
 @app.command()
 def pr(
-    branch_name: Optional[str] = typer.Argument(
+    branch_name: str | None = typer.Argument(
         None, help="Optional branch to start from"
     ),
 ):
@@ -137,9 +134,7 @@ def pr(
 
 @app.command()
 def switch(
-    branch_name: Optional[str] = typer.Argument(
-        None, help="Optional branch to switch to"
-    ),
+    branch_name: str | None = typer.Argument(None, help="Optional branch to switch to"),
 ):
     """Interactively switch between branches."""
     switch_branch(branch_name)
@@ -147,9 +142,7 @@ def switch(
 
 @app.command(name="co")
 def co_command(
-    branch_name: Optional[str] = typer.Argument(
-        None, help="Optional branch to switch to"
-    ),
+    branch_name: str | None = typer.Argument(None, help="Optional branch to switch to"),
 ):
     """Alias for 'switch' - Interactively switch between branches."""
     switch_branch(branch_name)
@@ -157,7 +150,7 @@ def co_command(
 
 @app.command(name="track")
 def track_branch(
-    branch_name: Optional[str] = typer.Argument(
+    branch_name: str | None = typer.Argument(
         None, help="Optional name of branch to track"
     ),
 ):
@@ -167,7 +160,7 @@ def track_branch(
 
 @app.command(name="untrack")
 def untrack_branch(
-    branch_name: Optional[str] = typer.Argument(
+    branch_name: str | None = typer.Argument(
         None, help="Optional name of branch to untrack"
     ),
 ):
@@ -180,15 +173,13 @@ def modify(
     commit: bool = typer.Option(
         False, "-c", "--commit", help="Create a new commit instead of amending"
     ),
-    message: Optional[str] = typer.Option(
+    message: str | None = typer.Option(
         None,
         "-m",
         "--message",
         help="Commit message for the new or amended commit",
     ),
-    amend: bool = typer.Option(
-        True, help="Amend the current commit if possible"
-    ),
+    amend: bool = typer.Option(True, help="Amend the current commit if possible"),
 ):
     """Modify/amend the current commit or create a new one."""
     modify_commit(commit, message, no_amend=not amend)
@@ -196,7 +187,7 @@ def modify(
 
 @app.command(name="submit")
 def submit(
-    branch_name: Optional[str] = typer.Argument(
+    branch_name: str | None = typer.Argument(
         None, help="Optional branch to update PR for"
     ),
 ):
@@ -206,9 +197,7 @@ def submit(
 
 @app.command()
 def merge(
-    branch_name: Optional[str] = typer.Argument(
-        None, help="Optional branch to merge"
-    ),
+    branch_name: str | None = typer.Argument(None, help="Optional branch to merge"),
     delete_branch: bool = typer.Option(
         True, help="Delete the local branch after merging"
     ),
@@ -235,11 +224,11 @@ def sync(
 
 @app.command()
 def rename(
-    old_name: Optional[str] = typer.Argument(
+    old_name: str | None = typer.Argument(
         None,
         help="Current name of the branch to rename (default: current branch)",
     ),
-    new_name: Optional[str] = typer.Argument(
+    new_name: str | None = typer.Argument(
         None, help="New name for the branch (if not provided, will prompt)"
     ),
 ):

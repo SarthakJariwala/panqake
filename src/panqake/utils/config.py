@@ -4,6 +4,7 @@ import json
 from typing import List
 
 from panqake.utils.stack import PANQAKE_DIR, STACK_FILE, Stacks
+from panqake.utils.types import BranchName, ParentBranchName
 
 
 def init_panqake() -> None:
@@ -18,25 +19,25 @@ def init_panqake() -> None:
             json.dump({}, f)
 
 
-def get_parent_branch(branch: str) -> str:
+def get_parent_branch(branch: BranchName) -> ParentBranchName:
     """Get parent branch of the given branch."""
     stacks = Stacks()
     return stacks.get_parent(branch)
 
 
-def get_child_branches(branch: str) -> List[str]:
+def get_child_branches(branch: BranchName) -> List[BranchName]:
     """Get all child branches of the given branch."""
     stacks = Stacks()
     return stacks.get_children(branch)
 
 
-def add_to_stack(branch: str, parent: str) -> None:
+def add_to_stack(branch: BranchName, parent: ParentBranchName) -> None:
     """Add a branch to the stack."""
     stacks = Stacks()
     stacks.add_branch(branch, parent)
 
 
-def remove_from_stack(branch: str) -> bool:
+def remove_from_stack(branch: BranchName) -> bool:
     """Remove a branch from the stack.
 
     This function removes the specified branch from the stack and updates

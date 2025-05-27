@@ -1,5 +1,7 @@
 """Utility functions for common branch operations used across commands."""
 
+from typing import List, Tuple
+
 from panqake.utils.git import (
     branch_exists,
     checkout_branch,
@@ -13,9 +15,12 @@ from panqake.utils.questionary_prompt import (
     print_formatted_text,
 )
 from panqake.utils.stack import Stacks
+from panqake.utils.types import BranchName
 
 
-def update_branch_with_conflict_detection(branch, parent, abort_on_conflict=True):
+def update_branch_with_conflict_detection(
+    branch: BranchName, parent: BranchName, abort_on_conflict: bool = True
+) -> Tuple[bool, str | None]:
     """Update a branch with conflict detection.
 
     Args:
@@ -52,7 +57,9 @@ def update_branch_with_conflict_detection(branch, parent, abort_on_conflict=True
     return True, None
 
 
-def fetch_latest_from_remote(branch_name, current_branch=None):
+def fetch_latest_from_remote(
+    branch_name: BranchName, current_branch: BranchName | None = None
+) -> bool:
     """Fetch the latest changes for a branch from remote.
 
     Args:
@@ -97,7 +104,11 @@ def fetch_latest_from_remote(branch_name, current_branch=None):
     return True
 
 
-def return_to_branch(target_branch, fallback_branch=None, deleted_branches=None):
+def return_to_branch(
+    target_branch: BranchName,
+    fallback_branch: BranchName | None = None,
+    deleted_branches: List[BranchName] | None = None,
+) -> bool:
     """Return to the target branch or fallback branch if target was deleted.
 
     Args:
@@ -144,7 +155,9 @@ def return_to_branch(target_branch, fallback_branch=None, deleted_branches=None)
         return False
 
 
-def update_branches_and_handle_conflicts(branch_name, current_branch):
+def update_branches_and_handle_conflicts(
+    branch_name: BranchName, current_branch: BranchName
+) -> Tuple[List[BranchName], List[BranchName]]:
     """Update all branches in the stack using a non-recursive approach.
 
     Args:
@@ -154,13 +167,15 @@ def update_branches_and_handle_conflicts(branch_name, current_branch):
     Returns:
         Tuple of (list of successfully updated branches, list of branches with conflicts)
     """
-    updated_branches = []
-    conflict_branches = []
+    updated_branches: List[BranchName] = []
+    conflict_branches: List[BranchName] = []
 
     with Stacks() as stacks:
         # Get all descendants in depth-first order
-        all_branches_to_update = []
-        branches_to_process = [(branch_name, None)]  # (branch, parent) pairs
+        all_branches_to_update: List[Tuple[BranchName, BranchName]] = []
+        branches_to_process: List[Tuple[BranchName, BranchName | None]] = [
+            (branch_name, None)
+        ]  # (branch, parent) pairs
 
         # Build a list of all branches to update with their parents
         while branches_to_process:
@@ -207,7 +222,7 @@ def update_branches_and_handle_conflicts(branch_name, current_branch):
     return updated_branches, conflict_branches
 
 
-def push_updated_branches(updated_branches):
+def push_updated_branches(updated_branches: List[BranchName]) -> List[BranchName]:
     """Push successfully updated branches to remote.
 
     Args:
@@ -262,7 +277,9 @@ def push_updated_branches(updated_branches):
     return successfully_pushed
 
 
-def report_update_conflicts(conflict_branches):
+def report_update_conflicts(
+    conflict_branches: List[BranchName],
+) -> Tuple[bool, str | None]:
     """Report branches with conflicts after an update operation.
 
     Args:

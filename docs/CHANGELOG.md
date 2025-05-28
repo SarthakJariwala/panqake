@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.17.0 - 2025-05-28
+
 ### Added
 
 - Added search functionality to selection prompts for easier navigation through long lists. Users can type to filter options in real-time with clear "(type to search)" hints.

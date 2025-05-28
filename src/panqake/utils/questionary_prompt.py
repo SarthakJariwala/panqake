@@ -27,7 +27,7 @@ Usage example:
     console.print("[success]Operation successful![/success]")
 """
 
-from typing import Any, List, Union
+from typing import Any, Dict, List, Union
 
 import questionary
 from questionary import Choice, ValidationError, Validator
@@ -148,11 +148,23 @@ def prompt_confirm(message: str) -> bool:
 
 def prompt_checkbox(
     message: str,
-    choices: List[Union[str, dict]],
-    default: List[Union[str, dict]] | None = None,
+    choices: List[Union[str, Dict[str, Any]]],
+    default: List[Union[str, Dict[str, Any]]] | None = None,
+    enable_search: bool = False,
 ) -> List[str]:
-    """Prompt user to select multiple items from a list, using Rich for the prompt."""
-    rich_prompt(f"{message}", "prompt")  # Display prompt using Rich
+    """Prompt user to select multiple items from a list, using Rich for the prompt.
+
+    Args:
+        message: The message to display
+        choices: List of choices (strings or dicts with display/value keys)
+        default: Default selected items
+        enable_search: Enable search filtering when True (useful for long lists)
+    """
+    # Add search hint if enabled
+    display_message = message
+    if enable_search:
+        display_message = f"{message} (type to search)"
+    rich_prompt(display_message, "prompt")  # Display prompt using Rich
 
     default_values = []
     if default is not None:
@@ -185,13 +197,22 @@ def prompt_checkbox(
             processed_choices.append(Choice(name, value=value, checked=checked))
 
     # Use the Choice objects with checked state (no default parameter needed)
-    result = questionary.checkbox("", choices=processed_choices, style=style).ask()
+    result = questionary.checkbox(
+        "",
+        choices=processed_choices,
+        style=style,
+        use_search_filter=enable_search,
+        use_jk_keys=False if enable_search else True,
+    ).ask()
 
     return result
 
 
 def prompt_select(
-    message: str, choices: List[Union[str, dict]], default: str | None = None
+    message: str,
+    choices: List[Union[str, Dict[str, Any]]],
+    default: str | None = None,
+    enable_search: bool = False,
 ) -> str:
     """Display a select prompt with the given choices.
 
@@ -199,6 +220,7 @@ def prompt_select(
         message: The message to display
         choices: List of choice dictionaries with 'display', 'value', and optional 'disabled' keys
         default: Default selected item
+        enable_search: Enable search filtering when True (useful for long lists)
 
     Returns:
         The value of the selected choice
@@ -225,13 +247,19 @@ def prompt_select(
             )
 
     # Show the prompt with rich styling
-    rich_prompt(f"{message}", "prompt")
+    # Add search hint if enabled
+    display_message = message
+    if enable_search:
+        display_message = f"{message} (type to search)"
+    rich_prompt(display_message, "prompt")
 
     # Use questionary's select with empty message since we displayed it with rich_prompt
     result = questionary.select(
         "",
         choices=questionary_choices,
         style=style,
+        use_search_filter=enable_search,
+        use_jk_keys=False if enable_search else True,
     ).ask()
 
     return result
@@ -276,9 +304,17 @@ def prompt_for_parent(potential_parents: List[str]) -> str | None:
         return None
 
     # Use rich to style the prompt message
-    rich_prompt("Select a parent branch (autocomplete or arrow keys)", "prompt")
+    # Always enable search for parent branch selection
+    message = "Select a parent branch (type to search)"
+    rich_prompt(message, "prompt")
 
     # Use questionary with empty message since we've already displayed it
-    selected = questionary.select("", choices=potential_parents, style=style).ask()
+    selected = questionary.select(
+        "",
+        choices=potential_parents,
+        style=style,
+        use_search_filter=True,
+        use_jk_keys=False,
+    ).ask()
 
     return selected

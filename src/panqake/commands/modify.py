@@ -157,8 +157,13 @@ def modify_commit(commit_flag=False, message=None, no_amend=False):
         print_formatted_text("[info]The following files have unstaged changes:[/info]")
 
         # Prompt user to select files to stage
+        # Enable search if there are many files
+        enable_search = len(unstaged_files) > 10
         selected_items = prompt_checkbox(
-            "Select files to stage (optional):", unstaged_files, default=unstaged_files
+            "Select files to stage (optional):",
+            unstaged_files,
+            default=unstaged_files,
+            enable_search=enable_search,
         )
 
         # selected_items will be a list of the selected files' paths

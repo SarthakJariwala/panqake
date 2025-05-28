@@ -57,9 +57,9 @@ def switch_branch(branch_name=None):
         return
 
     # Show interactive branch selection using the prompt_select function
+    # Always enable search for branch selection
     selected = prompt_select(
-        "Select a branch to switch to:",
-        choices,
+        "Select a branch to switch to:", choices, enable_search=True
     )
 
     if selected:

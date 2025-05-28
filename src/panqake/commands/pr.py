@@ -48,7 +48,9 @@ def prompt_for_reviewers(potential_reviewers):
         {"name": reviewer, "value": reviewer} for reviewer in potential_reviewers
     ]
 
-    selected = prompt_checkbox("Select reviewers (optional):", choices, default=[])
+    selected = prompt_checkbox(
+        "Select reviewers (optional):", choices, default=[], enable_search=True
+    )
 
     # Filter out empty selections (skip option)
     return [reviewer for reviewer in selected if reviewer]

@@ -123,6 +123,30 @@ def test_prompt_checkbox_with_dict_choices(mock_questionary):
     assert result == ["item1", "item2"]
 
 
+def test_prompt_checkbox_with_search_enabled(mock_questionary):
+    """Test checkbox selection with search enabled."""
+    choices = [f"item{i}" for i in range(15)]  # Create a long list
+    result = prompt_checkbox("Select items:", choices, enable_search=True)
+    mock_questionary["checkbox"].assert_called_once()
+
+    # Verify that use_search_filter was passed as True
+    call_args = mock_questionary["checkbox"].call_args
+    assert call_args[1]["use_search_filter"] is True
+    assert result == ["item1", "item2"]
+
+
+def test_prompt_checkbox_search_disabled(mock_questionary):
+    """Test checkbox selection with search disabled."""
+    choices = ["item1", "item2", "item3"]  # Short list
+    result = prompt_checkbox("Select items:", choices, enable_search=False)
+    mock_questionary["checkbox"].assert_called_once()
+
+    # Verify that use_search_filter was passed as False
+    call_args = mock_questionary["checkbox"].call_args
+    assert call_args[1]["use_search_filter"] is False
+    assert result == ["item1", "item2"]
+
+
 def test_prompt_select(mock_questionary):
     """Test single selection prompt."""
     choices = ["option1", "option2"]
@@ -142,11 +166,39 @@ def test_prompt_select_with_dict_choices(mock_questionary):
     assert result == "selected"
 
 
+def test_prompt_select_with_search_enabled(mock_questionary):
+    """Test select prompt with search enabled."""
+    choices = [f"option{i}" for i in range(15)]  # Create a long list
+    result = prompt_select("Select one:", choices, enable_search=True)
+    mock_questionary["select"].assert_called_once()
+
+    # Verify that use_search_filter was passed as True
+    call_args = mock_questionary["select"].call_args
+    assert call_args[1]["use_search_filter"] is True
+    assert result == "selected"
+
+
+def test_prompt_select_search_disabled(mock_questionary):
+    """Test select prompt with search disabled."""
+    choices = ["option1", "option2", "option3"]  # Short list
+    result = prompt_select("Select one:", choices, enable_search=False)
+    mock_questionary["select"].assert_called_once()
+
+    # Verify that use_search_filter was passed as False
+    call_args = mock_questionary["select"].call_args
+    assert call_args[1]["use_search_filter"] is False
+    assert result == "selected"
+
+
 def test_prompt_for_parent(mock_questionary):
     """Test parent branch selection prompt."""
     branches = ["main", "develop", "feature"]
     result = prompt_for_parent(branches)
     mock_questionary["select"].assert_called_once()
+
+    # Verify that search is always enabled for parent selection
+    call_args = mock_questionary["select"].call_args
+    assert call_args[1]["use_search_filter"] is True
     assert result == "selected"
 
 
@@ -154,6 +206,18 @@ def test_prompt_for_parent_empty_list():
     """Test parent branch selection with empty list."""
     result = prompt_for_parent([])
     assert result is None
+
+
+def test_prompt_for_parent_always_enables_search(mock_questionary):
+    """Test parent branch selection always enables search regardless of list size."""
+    branches = ["main", "develop", "feature"]  # Small list
+    result = prompt_for_parent(branches)
+    mock_questionary["select"].assert_called_once()
+
+    # Verify that use_search_filter is always True for parent selection
+    call_args = mock_questionary["select"].call_args
+    assert call_args[1]["use_search_filter"] is True
+    assert result == "selected"
 
 
 def test_branch_name_validator_valid():

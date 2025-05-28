@@ -45,10 +45,9 @@ def down():
             child_item = {"display": child, "value": child}
             choices.append(child_item)
 
-        # Show interactive branch selection
+        # Show interactive branch selection with search enabled
         selected = prompt_select(
-            "Select a child branch to switch to:",
-            choices,
+            "Select a child branch to switch to:", choices, enable_search=True
         )
 
         if selected:

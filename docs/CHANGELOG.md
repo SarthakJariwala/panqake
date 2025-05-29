@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Reduced terminal verbosity by replacing intermediate status messages with Rich Status spinners
+  - Commands like `pq sync`, `pq update`, and `pq merge` now show clean progressive status updates
+  - Only final status messages remain after command completion
+  - Implemented nested status context handling to prevent spinner conflicts
+
 ## v0.17.0 - 2025-05-28
 
 ### Added

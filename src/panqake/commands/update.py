@@ -17,6 +17,7 @@ from panqake.utils.questionary_prompt import (
     prompt_confirm,
 )
 from panqake.utils.stack import Stacks
+from panqake.utils.status import status
 
 
 def validate_branch(branch_name):
@@ -89,19 +90,15 @@ def update_branches(branch_name=None, skip_push=False):
     if affected_branches is None:
         return True, None  # No affected branches is not an error
 
-    # Start the update process
-    print_formatted_text(
-        f"[info]Starting stack update from branch[/info] {format_branch(branch_name)}..."
-    )
-
     # Track successfully updated branches and branches with conflicts
-    updated_branches, conflict_branches = update_branch_and_children(
-        branch_name, current_branch
-    )
+    with status(f"Starting stack update from {branch_name}..."):
+        updated_branches, conflict_branches = update_branch_and_children(
+            branch_name, current_branch
+        )
 
     # Push to remote if requested
     if not skip_push:
-        push_updated_branches(updated_branches, skip_push)
+        push_updated_branches(updated_branches)
 
     # Return to the original branch using our utility function
     if not return_to_branch(current_branch):

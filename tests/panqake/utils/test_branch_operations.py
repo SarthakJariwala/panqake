@@ -1,6 +1,6 @@
 """Tests for branch_operations.py module."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -33,11 +33,19 @@ def mock_prompt():
     with (
         patch("panqake.utils.branch_operations.format_branch") as mock_format,
         patch("panqake.utils.branch_operations.print_formatted_text") as mock_print,
+        patch("panqake.utils.branch_operations.status") as mock_status,
     ):
         mock_format.side_effect = lambda branch: f"[formatted]{branch}[/formatted]"
+        # Make status context manager return a mock that calls print_formatted_text directly
+        mock_status_obj = MagicMock()
+        mock_status_obj.pause_and_print = mock_print
+        mock_status_obj.update = MagicMock()
+        mock_status.return_value.__enter__.return_value = mock_status_obj
+        mock_status.return_value.__exit__.return_value = None
         yield {
             "format": mock_format,
             "print": mock_print,
+            "status": mock_status,
         }
 
 
@@ -61,7 +69,7 @@ def test_update_branch_checkout_failure(mock_git_utils, mock_prompt):
     success, error = update_branch_with_conflict_detection("feature", "main")
 
     assert success is False
-    assert "Failed to checkout" in error
+    assert error is not None and "Failed to checkout" in error
     mock_git_utils["run"].assert_not_called()
 
 
@@ -73,7 +81,7 @@ def test_update_branch_conflict_abort(mock_git_utils, mock_prompt):
     success, error = update_branch_with_conflict_detection("feature", "main")
 
     assert success is False
-    assert "conflict detected" in error
+    assert error is not None and "conflict detected" in error
     # Ensure checkout, rebase, and abort were called in order
     mock_git_utils["checkout"].assert_called_once_with("feature")
     calls = mock_git_utils["run"].call_args_list
@@ -91,7 +99,7 @@ def test_update_branch_conflict_no_abort(mock_git_utils, mock_prompt):
     )
 
     assert success is False
-    assert "resolve conflicts" in error
+    assert error is not None and "resolve conflicts" in error
     # Should not abort the rebase
     assert ["rebase", "--abort"] not in mock_git_utils["run"].call_args_list
 

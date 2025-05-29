@@ -188,7 +188,7 @@ def test_update_branches_full_success(
 
     mock_stack_utils.get_all_descendants.assert_called_with("feature-1")
     mock_branch_ops["update_branches"].assert_called_once_with("feature-1", "main")
-    mock_branch_ops["push"].assert_called_once_with(["feature-2", "feature-3"], False)
+    mock_branch_ops["push"].assert_called_once_with(["feature-2", "feature-3"])
     mock_branch_ops["return"].assert_called_once_with("main")
     assert mock_prompt["print"].call_args_list[-1].args[0].startswith("[success]")
 
@@ -237,6 +237,6 @@ def test_update_branches_with_conflicts(
     assert "conflicts" in error
     mock_stack_utils.get_all_descendants.assert_called_with("feature-1")
     mock_branch_ops["update_branches"].assert_called_once_with("feature-1", "main")
-    mock_branch_ops["push"].assert_called_once_with(["feature-2"], False)
+    mock_branch_ops["push"].assert_called_once_with(["feature-2"])
     mock_branch_ops["return"].assert_called_once_with("main")
     mock_report.assert_called_once_with(["feature-3"])

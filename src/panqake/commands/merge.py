@@ -36,6 +36,7 @@ from panqake.utils.questionary_prompt import (
     prompt_confirm,
     prompt_select,
 )
+from panqake.utils.status import status
 
 
 def fetch_latest_base_branch(branch_name):
@@ -56,27 +57,22 @@ def update_pr_base_for_children(branch_name, parent_branch):
     if not children:
         return True
 
-    print_formatted_text(
-        "[info]Updating PR base references for child branches...[/info]"
-    )
+    with status("Updating PR base references for child branches...") as s:
+        success = True
+        for child in children:
+            # Check if the child has a PR
+            if branch_has_pr(child):
+                s.update(f"Updating PR base for {child}...")
+                if update_pr_base(child, parent_branch):
+                    s.pause_and_print("[success]PR base updated successfully[/success]")
+                else:
+                    s.pause_and_print(
+                        f"[warning]Warning: Failed to update PR base for '{child}'[/warning]"
+                    )
+                    success = False
 
-    success = True
-    for child in children:
-        # Check if the child has a PR
-        if branch_has_pr(child):
-            print_formatted_text(
-                f"[info]Updating PR base for child branch[/info] {format_branch(child)}..."
-            )
-            if update_pr_base(child, parent_branch):
-                print_formatted_text("[success]PR base updated successfully[/success]")
-            else:
-                print_formatted_text(
-                    f"[warning]Warning: Failed to update PR base for '{child}'[/warning]"
-                )
-                success = False
-
-        # Recursively update grandchildren
-        update_pr_base_for_children(child, child)
+            # Recursively update grandchildren
+            update_pr_base_for_children(child, child)
 
     return success
 
@@ -114,36 +110,31 @@ def update_child_branches(branch_name, parent_branch, current_branch):
     if not children:
         return True
 
-    print_formatted_text("[info]Updating child branches...[/info]")
+    with status("Updating child branches...") as s:
+        success = True
+        for child in children:
+            s.update(f"Updating {child} to use new base {parent_branch}...")
 
-    success = True
-    for child in children:
-        print_formatted_text(
-            f"[info]Updating child branch[/info] {format_branch(child)} "
-            f"[info]to use new base[/info] {format_branch(parent_branch)}..."
-        )
+            checkout_branch(child)
 
-        # Checkout the child branch
-        checkout_branch(child)
+            # Update the parent-child relationship
+            add_to_stack(child, parent_branch)
+            s.pause_and_print(
+                f"[info]Updated branch relationship for {format_branch(child)}[/info]"
+            )
 
-        # Update the parent-child relationship in stacks.json
-        add_to_stack(child, parent_branch)
-        print_formatted_text(
-            f"[info]Updated branch relationship for {format_branch(child)}[/info]"
-        )
+            # Use the utility function for rebasing with conflict detection
+            rebase_success, error_msg = update_branch_with_conflict_detection(
+                child, parent_branch, abort_on_conflict=False
+            )
 
-        # Use the utility function for rebasing with conflict detection
-        rebase_success, error_msg = update_branch_with_conflict_detection(
-            child, parent_branch, abort_on_conflict=False
-        )
+            if not rebase_success:
+                s.pause_and_print(f"[warning]{error_msg}[/warning]")
+                success = False
+                break
 
-        if not rebase_success:
-            print_formatted_text(f"[warning]{error_msg}[/warning]")
-            success = False
-            break
-
-        # Recursively update this branch's children
-        update_child_branches(child, child, current_branch)
+            # Recursively update this branch's children
+            update_child_branches(child, child, current_branch)
 
     return success
 
@@ -151,32 +142,28 @@ def update_child_branches(branch_name, parent_branch, current_branch):
 def cleanup_local_branch(branch_name):
     """Delete the local branch after successful merge."""
     if branch_exists(branch_name):
-        print_formatted_text(
-            f"[info]Deleting local branch {format_branch(branch_name)}...[/info]"
-        )
+        with status(f"Deleting local branch {branch_name}...") as s:
+            # Make sure we're not on the branch we're trying to delete
+            current = get_current_branch()
+            if current == branch_name:
+                parent = get_parent_branch(branch_name)
+                if not parent:
+                    parent = "main"  # Default to main if no parent
 
-        # Make sure we're not on the branch we're trying to delete
-        current = get_current_branch()
-        if current == branch_name:
-            parent = get_parent_branch(branch_name)
-            if not parent:
-                parent = "main"  # Default to main if no parent
+                s.update(f"Switching to {parent} before deletion...")
+                checkout_branch(parent)
 
-            print_formatted_text(
-                f"[info]Switching to {format_branch(parent)} before deletion[/info]"
-            )
-            checkout_branch(parent)
+            # Delete the branch
+            s.update(f"Deleting branch {branch_name}...")
+            delete_result = run_git_command(["branch", "-D", branch_name])
+            if delete_result is None:
+                print_formatted_text(
+                    f"[warning]Error: Failed to delete local branch '{branch_name}'[/warning]"
+                )
+                return False
 
-        # Delete the branch
-        delete_result = run_git_command(["branch", "-D", branch_name])
-        if delete_result is None:
-            print_formatted_text(
-                f"[warning]Error: Failed to delete local branch '{branch_name}'[/warning]"
-            )
-            return False
-
-        # Clean up stacks.json file by removing the branch
-        stack_removal = remove_from_stack(branch_name)
+            # Clean up stacks.json file by removing the branch
+            stack_removal = remove_from_stack(branch_name)
 
         if stack_removal:
             print_formatted_text("[success]Local branch deleted successfully[/success]")

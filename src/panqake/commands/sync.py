@@ -23,6 +23,7 @@ from panqake.utils.questionary_prompt import (
     prompt_confirm,
 )
 from panqake.utils.stack import Stacks
+from panqake.utils.status import status
 
 
 def get_merged_branches(into_branch="main"):
@@ -47,15 +48,16 @@ def get_merged_branches(into_branch="main"):
 
 def handle_merged_branches(main_branch):
     """Handle merged branches by prompting user for deletion."""
-    merged_branches = get_merged_branches(main_branch)
-    branches_to_delete = []
-    deleted_branches = []
+    with status(f"Checking for merged branches into {main_branch}..."):
+        merged_branches = get_merged_branches(main_branch)
+        branches_to_delete = []
+        deleted_branches = []
 
-    # Only prompt to delete branches that have main as their parent
-    for branch in merged_branches:
-        parent = get_parent_branch(branch)
-        if parent == main_branch:
-            branches_to_delete.append(branch)
+        # Only prompt to delete branches that have main as their parent
+        for branch in merged_branches:
+            parent = get_parent_branch(branch)
+            if parent == main_branch:
+                branches_to_delete.append(branch)
 
     # Ask user if they want to delete merged branches
     success = True
@@ -65,22 +67,26 @@ def handle_merged_branches(main_branch):
                 f"[info]{branch} is merged into {main_branch}. Delete it?[/info]"
             )
             if prompt_confirm(""):
-                # Delete the branch
-                delete_result = run_git_command(["branch", "-D", branch])
+                with status(f"Deleting branch {branch}..."):
+                    # Delete the branch
+                    delete_result = run_git_command(["branch", "-D", branch])
+                    if delete_result is not None:
+                        # Remove from stacks config
+                        stack_removal = remove_from_stack(branch)
+                        if not stack_removal:
+                            print_formatted_text(
+                                f"[warning]Branch {branch} not found in stack metadata[/warning]"
+                            )
+                        deleted_branches.append(branch)
+                    else:
+                        success = False
+
                 if delete_result is not None:
                     print_formatted_text(f"[success]Deleted branch {branch}[/success]")
-                    # Remove from stacks config
-                    stack_removal = remove_from_stack(branch)
-                    if not stack_removal:
-                        print_formatted_text(
-                            f"[warning]Branch {branch} not found in stack metadata[/warning]"
-                        )
-                    deleted_branches.append(branch)
                 else:
                     print_formatted_text(
                         f"[warning]Failed to delete branch {branch}[/warning]"
                     )
-                    success = False
 
     return success, deleted_branches
 
@@ -154,15 +160,11 @@ def sync_with_remote(main_branch="main", skip_push=False):
         sys.exit(1)
 
     # 2. Fetch & pull from remote
-    print_formatted_text("[info]Pulling main from remote...[/info]")
     if not fetch_latest_from_remote(main_branch, current_branch):
         checkout_branch(current_branch)
         sys.exit(1)
 
     # 3. Handle merged branches
-    print_formatted_text(
-        "[info]Checking if any branches have been merged/closed and can be deleted...[/info]"
-    )
     merged_success, deleted_branches = handle_merged_branches(main_branch)
 
     # 4. Update child branches with special conflict handling

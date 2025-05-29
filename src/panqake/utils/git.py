@@ -6,6 +6,7 @@ import sys
 from typing import Any, Dict, List
 
 from panqake.utils.questionary_prompt import print_formatted_text
+from panqake.utils.status import status
 from panqake.utils.types import BranchName, RepoId
 
 
@@ -117,8 +118,8 @@ def validate_branch(branch_name: BranchName | None = None) -> BranchName:
 
 def checkout_branch(branch_name: BranchName) -> None:
     """Checkout to the specified branch."""
-    print_formatted_text(f"[info]Switching to branch '{branch_name}'...[/info]")
-    result = run_git_command(["checkout", branch_name])
+    with status(f"Switching to branch '{branch_name}'..."):
+        result = run_git_command(["checkout", branch_name])
 
     if result is not None:
         print_formatted_text(
@@ -131,10 +132,8 @@ def checkout_branch(branch_name: BranchName) -> None:
 
 def create_branch(branch_name: BranchName, base_branch: BranchName) -> None:
     """Create a new branch based on the specified base branch and checkout to it."""
-    print_formatted_text(
-        f"[info]Creating new branch '{branch_name}' based on '{base_branch}'...[/info]"
-    )
-    result = run_git_command(["checkout", "-b", branch_name, base_branch])
+    with status(f"Creating new branch '{branch_name}' based on '{base_branch}'..."):
+        result = run_git_command(["checkout", "-b", branch_name, base_branch])
 
     if result is not None:
         print_formatted_text(
@@ -155,13 +154,13 @@ def push_branch_to_remote(branch: BranchName, force_with_lease: bool = False) ->
     Returns:
         True if the push was successful, False otherwise
     """
-    print_formatted_text(f"[info]Pushing [branch]{branch}[/branch] to origin...[/info]")
 
-    push_cmd = ["push", "-u", "origin", branch]
-    if force_with_lease:
-        push_cmd.insert(1, "--force-with-lease")
+    with status(f"Pushing {branch} to origin..."):
+        push_cmd = ["push", "-u", "origin", branch]
+        if force_with_lease:
+            push_cmd.insert(1, "--force-with-lease")
 
-    result = run_git_command(push_cmd)
+        result = run_git_command(push_cmd)
 
     if result is not None:
         print_formatted_text(
@@ -179,11 +178,8 @@ def is_branch_pushed_to_remote(branch: BranchName) -> bool:
 
 def delete_remote_branch(branch: BranchName) -> bool:
     """Delete a branch on the remote repository."""
-    print_formatted_text(
-        f"[info]Deleting remote branch [branch]{branch}[/branch]...[/info]"
-    )
-
-    result = run_git_command(["push", "origin", "--delete", branch])
+    with status(f"Deleting remote branch {branch}..."):
+        result = run_git_command(["push", "origin", "--delete", branch])
 
     if result is not None:
         print_formatted_text(
@@ -325,45 +321,37 @@ def rename_branch(old_name: BranchName, new_name: BranchName) -> bool:
     current_branch = get_current_branch()
     on_target_branch = current_branch == old_name
 
-    # If we're not on the branch to rename, checkout the branch first
-    if not on_target_branch:
-        try:
-            checkout_branch(old_name)
-        except SystemExit:
+    with status(f"Renaming branch '{old_name}' to '{new_name}'...") as s:
+        # If we're not on the branch to rename, checkout the branch first
+        if not on_target_branch:
+            s.update(f"Checking out {old_name}...")
+            try:
+                checkout_branch(old_name)
+            except SystemExit:
+                return False
+
+        # Rename the branch
+        s.update(f"Renaming {old_name} to {new_name}...")
+        rename_cmd = ["branch", "-m", new_name]
+        result = run_git_command(rename_cmd)
+
+        if result is None:
+            print_formatted_text(
+                f"[danger]Failed to rename branch '{old_name}' to '{new_name}'[/danger]"
+            )
             return False
 
-    # Rename the branch
-    print_formatted_text(
-        f"[info]Renaming branch '{old_name}' to '{new_name}'...[/info]"
-    )
-
-    # Git command to rename a branch: git branch -m <old-name> <new-name>
-    rename_cmd = ["branch", "-m", new_name]
-    result = run_git_command(rename_cmd)
-
-    if result is None:
-        print_formatted_text(
-            f"[danger]Failed to rename branch '{old_name}' to '{new_name}'[/danger]"
-        )
-        return False
+        # If the renamed branch was pushed to the remote, update remote references
+        if is_branch_pushed_to_remote(old_name):
+            s.update("Updating remote references...")
+            # Delete the old remote branch
+            delete_remote_branch(old_name)
+            # Push the new branch to remote
+            push_branch_to_remote(new_name)
 
     print_formatted_text(
         f"[success]Successfully renamed branch '{old_name}' to '{new_name}'[/success]"
     )
-
-    # If the renamed branch was pushed to the remote, we'll need to:
-    # 1. Delete the old remote branch
-    # 2. Push the new branch
-    if is_branch_pushed_to_remote(old_name):
-        print_formatted_text(
-            f"[info]Branch '{old_name}' exists on remote. Updating remote references...[/info]"
-        )
-
-        # Delete the old remote branch
-        delete_remote_branch(old_name)
-
-        # Push the new branch to remote
-        push_branch_to_remote(new_name)
 
     return True
 

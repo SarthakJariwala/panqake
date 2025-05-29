@@ -21,6 +21,7 @@ from panqake.utils.questionary_prompt import (
     prompt_confirm,
     prompt_input,
 )
+from panqake.utils.status import status
 
 
 def validate_branch_for_deletion(branch_name):
@@ -86,35 +87,32 @@ def relink_child_branches(child_branches, parent_branch, current_branch, branch_
     if not child_branches:
         return True
 
-    print_formatted_text(
-        f"[info]Relinking child branches to parent '{parent_branch}'...[/info]"
-    )
+    with status(f"Relinking child branches to parent '{parent_branch}'...") as s:
+        for child in child_branches:
+            s.update(f"Processing child branch {child}...")
 
-    for child in child_branches:
-        print_formatted_text(
-            f"[info]Processing child branch:[/info] {format_branch(child)}"
-        )
+            checkout_branch(child)
 
-        # Checkout the child branch
-        checkout_branch(child)
-
-        # Rebase onto the grandparent branch
-        if parent_branch:
-            rebase_result = run_git_command(["rebase", "--autostash", parent_branch])
-            if rebase_result is None:
-                print_formatted_text(
-                    f"[warning]Error: Rebase conflict detected in branch '{child}'[/warning]"
+            # Rebase onto the grandparent branch
+            if parent_branch:
+                s.update(f"Rebasing {child} onto {parent_branch}...")
+                rebase_result = run_git_command(
+                    ["rebase", "--autostash", parent_branch]
                 )
-                print_formatted_text(
-                    "[warning]Please resolve conflicts and run 'git rebase --continue'[/warning]"
-                )
-                print_formatted_text(
-                    f"[warning]Then run 'panqake delete {branch_name}' again to retry[/warning]"
-                )
-                sys.exit(1)
+                if rebase_result is None:
+                    print_formatted_text(
+                        f"[warning]Error: Rebase conflict detected in branch '{child}'[/warning]"
+                    )
+                    print_formatted_text(
+                        "[warning]Please resolve conflicts and run 'git rebase --continue'[/warning]"
+                    )
+                    print_formatted_text(
+                        f"[warning]Then run 'panqake delete {branch_name}' again to retry[/warning]"
+                    )
+                    sys.exit(1)
 
-            # Update stack metadata
-            add_to_stack(child, parent_branch)
+                # Update stack metadata
+                add_to_stack(child, parent_branch)
 
     return True
 
@@ -145,27 +143,30 @@ def delete_branch(branch_name=None):
     if not display_deletion_info(branch_name, parent_branch, child_branches):
         return
 
-    print_formatted_text(
-        f"[info]Deleting branch '{branch_name}' from the stack...[/info]"
-    )
+    with status(f"Deleting branch '{branch_name}' from the stack...") as s:
+        # Process child branches
+        if child_branches:
+            s.update("Processing child branches...")
+            relink_child_branches(
+                child_branches, parent_branch, current_branch, branch_name
+            )
 
-    # Process child branches
-    relink_child_branches(child_branches, parent_branch, current_branch, branch_name)
+        # Return to original branch if it's not the one being deleted
+        if branch_name != current_branch:
+            s.update(f"Returning to {current_branch}...")
+            checkout_branch(current_branch)
 
-    # Return to original branch if it's not the one being deleted
-    if branch_name != current_branch:
-        checkout_branch(current_branch)
+        # Delete the branch
+        s.update(f"Deleting branch {branch_name}...")
+        delete_result = run_git_command(["branch", "-D", branch_name])
+        if delete_result is None:
+            print_formatted_text(
+                f"[warning]Error: Failed to delete branch '{branch_name}'[/warning]"
+            )
+            sys.exit(1)
 
-    # Delete the branch
-    delete_result = run_git_command(["branch", "-D", branch_name])
-    if delete_result is None:
-        print_formatted_text(
-            f"[warning]Error: Failed to delete branch '{branch_name}'[/warning]"
-        )
-        sys.exit(1)
-
-    # Remove from stack metadata
-    stack_removal = remove_from_stack(branch_name)
+        # Remove from stack metadata
+        stack_removal = remove_from_stack(branch_name)
 
     if stack_removal:
         print_formatted_text(

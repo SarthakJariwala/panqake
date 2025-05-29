@@ -15,6 +15,7 @@ from panqake.utils.questionary_prompt import (
     print_formatted_text,
 )
 from panqake.utils.stack import Stacks
+from panqake.utils.status import status
 from panqake.utils.types import BranchName
 
 
@@ -69,37 +70,39 @@ def fetch_latest_from_remote(
     Returns:
         True if successful, False otherwise
     """
-    print_formatted_text("[info]Fetching latest changes from remote...[/info]")
+    with status(f"Pulling {branch_name} from remote...") as s:
+        # Fetch from remote
+        s.update("Fetching from remote...")
+        fetch_result = run_git_command(["fetch", "origin"])
+        if fetch_result is None:
+            s.pause_and_print("[warning]Error: Failed to fetch from remote[/warning]")
+            return False
 
-    # Fetch from remote
-    fetch_result = run_git_command(["fetch", "origin"])
-    if fetch_result is None:
-        print_formatted_text("[warning]Error: Failed to fetch from remote[/warning]")
-        return False
+        # Checkout the branch if it's not already checked out
+        s.update(f"Checking out {branch_name}...")
+        try:
+            checkout_branch(branch_name)
+        except SystemExit:
+            return False
 
-    # Checkout the branch if it's not already checked out
-    try:
-        checkout_branch(branch_name)
-    except SystemExit:
-        return False
+        # Pull latest changes
+        s.update(f"Pulling latest changes for {branch_name}...")
+        pull_result = run_git_command(["pull", "origin", branch_name])
+        if pull_result is None:
+            s.pause_and_print(
+                f"[warning]Error: Failed to pull from origin/{branch_name}[/warning]"
+            )
+            if current_branch:
+                checkout_branch(current_branch)
+            return False
 
-    # Pull latest changes
-    pull_result = run_git_command(["pull", "origin", branch_name])
-    if pull_result is None:
-        print_formatted_text(
-            f"[warning]Error: Failed to pull from origin/{branch_name}[/warning]"
-        )
-        if current_branch:
-            checkout_branch(current_branch)
-        return False
-
-    # Get the commit hash to show in the output
-    commit_hash = run_git_command(["rev-parse", "HEAD"])
-    if commit_hash:
-        commit_hash = commit_hash.strip()
-        print_formatted_text(
-            f"[success]{branch_name} fast-forwarded to {commit_hash}.[/success]"
-        )
+        # Get the commit hash to show in the output
+        commit_hash = run_git_command(["rev-parse", "HEAD"])
+        if commit_hash:
+            commit_hash = commit_hash.strip()
+            s.pause_and_print(
+                f"[success]{branch_name} fast-forwarded to {commit_hash}.[/success]"
+            )
 
     return True
 
@@ -123,31 +126,27 @@ def return_to_branch(
 
     # Check if the target branch still exists and wasn't deleted
     if branch_exists(target_branch) and target_branch not in deleted_branches:
-        print_formatted_text(
-            f"[info]Returning to {format_branch(target_branch)}...[/info]"
-        )
-        try:
-            checkout_branch(target_branch)
-            return True
-        except SystemExit:
-            return False
-        return True
+        with status(f"Returning to {target_branch}..."):
+            try:
+                checkout_branch(target_branch)
+                return True
+            except SystemExit:
+                return False
     elif fallback_branch and branch_exists(fallback_branch):
         # If target branch no longer exists, go to fallback branch
-        msg = (
+        print_formatted_text(
             f"[info]Branch {format_branch(target_branch)} no longer exists, "
-            f"returning to {format_branch(fallback_branch)}...[/info]"
+            f"returning to {format_branch(fallback_branch)}[/info]"
         )
-        print_formatted_text(msg)
-        try:
-            checkout_branch(fallback_branch)
-            return True
-        except SystemExit:
-            print_formatted_text(
-                f"[warning]Error: Failed to checkout {fallback_branch}[/warning]"
-            )
-            return False
-        return True
+        with status(f"Checking out {fallback_branch}..."):
+            try:
+                checkout_branch(fallback_branch)
+                return True
+            except SystemExit:
+                print_formatted_text(
+                    f"[warning]Error: Failed to checkout {fallback_branch}[/warning]"
+                )
+                return False
     else:
         print_formatted_text(
             "[warning]Error: Unable to find a valid branch to return to[/warning]"
@@ -192,11 +191,6 @@ def update_branches_and_handle_conflicts(
 
         # Process all branches in order
         for child, parent in all_branches_to_update:
-            print_formatted_text(
-                f"[info]Updating branch[/info] {format_branch(child)} "
-                f"[info]based on changes to[/info] {format_branch(parent)}..."
-            )
-
             # Skip branches whose parents had conflicts
             if parent in conflict_branches:
                 print_formatted_text(
@@ -205,10 +199,11 @@ def update_branches_and_handle_conflicts(
                 conflict_branches.append(child)
                 continue
 
-            # Use utility function to update the branch with conflict detection
-            success, error_msg = update_branch_with_conflict_detection(
-                child, parent, abort_on_conflict=True
-            )
+            with status(f"Updating {child} based on changes to {parent}..."):
+                # Use utility function to update the branch with conflict detection
+                success, error_msg = update_branch_with_conflict_detection(
+                    child, parent, abort_on_conflict=True
+                )
 
             if not success:
                 print_formatted_text(f"[warning]{error_msg}[/warning]")
@@ -234,45 +229,47 @@ def push_updated_branches(updated_branches: List[BranchName]) -> List[BranchName
     if not updated_branches:
         return []
 
-    print_formatted_text("[info]Pushing updated branches to remote...[/info]")
+    with status("Pushing updated branches to remote...") as s:
+        # Push each branch that was successfully updated
+        successfully_pushed = []
+        for branch in updated_branches:
+            s.update(f"Checking {branch} for push...")
 
-    # Push each branch that was successfully updated
-    successfully_pushed = []
-    for branch in updated_branches:
-        # Skip branches that don't exist on remote yet
-        if not is_branch_pushed_to_remote(branch):
-            print_formatted_text(
-                f"[info]Skipping push for {format_branch(branch)} as it doesn't exist on remote yet[/info]"
-            )
-            continue
+            # Skip branches that don't exist on remote yet
+            if not is_branch_pushed_to_remote(branch):
+                s.pause_and_print(
+                    f"[info]Skipping push for {format_branch(branch)} as it doesn't exist on remote yet[/info]"
+                )
+                continue
 
-        # Check if the branch has unpushed changes
-        if not has_unpushed_changes(branch):
-            print_formatted_text(
-                f"[info]Skipping push for {format_branch(branch)} as it's already in sync with remote[/info]"
-            )
-            continue
+            # Check if the branch has unpushed changes
+            if not has_unpushed_changes(branch):
+                s.pause_and_print(
+                    f"[info]Skipping push for {format_branch(branch)} as it's already in sync with remote[/info]"
+                )
+                continue
 
-        try:
-            checkout_branch(branch)
-        except SystemExit:
-            print_formatted_text(
-                f"[warning]Failed to checkout branch '{branch}' for pushing[/warning]"
-            )
-            continue
+            s.update(f"Pushing {branch}...")
+            try:
+                checkout_branch(branch)
+            except SystemExit:
+                s.pause_and_print(
+                    f"[warning]Failed to checkout branch '{branch}' for pushing[/warning]"
+                )
+                continue
 
-        # Always use force-with-lease for safety since we've rebased
-        success = push_branch_to_remote(branch, force_with_lease=True)
+            # Always use force-with-lease for safety since we've rebased
+            success = push_branch_to_remote(branch, force_with_lease=True)
 
-        if not success:
-            print_formatted_text(
-                f"[warning]Failed to push branch '{branch}' to remote[/warning]"
-            )
-        else:
-            successfully_pushed.append(branch)
-            print_formatted_text(
-                f"[success]Branch {format_branch(branch)} pushed to remote[/success]"
-            )
+            if not success:
+                s.pause_and_print(
+                    f"[warning]Failed to push branch '{branch}' to remote[/warning]"
+                )
+            else:
+                successfully_pushed.append(branch)
+                s.pause_and_print(
+                    f"[success]Branch {format_branch(branch)} pushed to remote[/success]"
+                )
 
     return successfully_pushed
 

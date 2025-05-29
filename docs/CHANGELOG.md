@@ -8,6 +8,7 @@
   - Commands like `pq sync`, `pq update`, and `pq merge` now show clean progressive status updates
   - Only final status messages remain after command completion
   - Implemented nested status context handling to prevent spinner conflicts
+  - Added status spinners to GitHub operations (PR creation, reviewer fetching, status checks, etc.)
 
 ## v0.17.0 - 2025-05-28
 

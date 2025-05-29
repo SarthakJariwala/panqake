@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.18.0 - 2025-05-29
+
 ### Changed
 
 - Reduced terminal verbosity by replacing intermediate status messages with Rich Status spinners

@@ -95,7 +95,7 @@ def mock_prompt():
         patch("panqake.commands.merge.format_branch") as mock_format,
         patch("panqake.commands.merge.print_formatted_text") as mock_print,
         patch("panqake.commands.merge.prompt_confirm") as mock_confirm,
-        patch("panqake.commands.merge.prompt_select") as mock_select,
+        patch("panqake.commands.merge.select_from_options") as mock_select,
     ):
         mock_format.return_value = "formatted_branch"
         yield {

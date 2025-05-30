@@ -29,7 +29,7 @@ def mock_prompt():
     """Mock questionary prompt functions."""
     with (
         patch("panqake.commands.switch.print_formatted_text") as mock_print,
-        patch("panqake.commands.switch.prompt_select") as mock_select,
+        patch("panqake.commands.switch.select_branch_excluding_current") as mock_select,
     ):
         yield {
             "print": mock_print,
@@ -90,11 +90,8 @@ def test_switch_branch_interactive(mock_git_utils, mock_prompt, mock_list_comman
 
     # Should show branch list before and after
     assert mock_list_command.call_count == 2
-    # Should call select with choices excluding current branch
+    # Should call select with the exclusion utility
     mock_prompt["select"].assert_called_once()
-    choices = mock_prompt["select"].call_args.args[1]
-    assert len(choices) == 2  # main excluded
-    assert all(c["value"] != "main" for c in choices)
     # Should checkout selected branch
     mock_git_utils["checkout"].assert_called_once_with("feature")
 
@@ -116,6 +113,7 @@ def test_switch_branch_no_other_branches(
 ):
     """Test when no other branches available to switch to."""
     mock_git_utils["list"].return_value = ["main"]
+    mock_prompt["select"].return_value = None  # No branch selected
 
     switch_branch()
 

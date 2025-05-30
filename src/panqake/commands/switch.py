@@ -4,7 +4,8 @@ import sys
 
 from panqake.commands.list import list_branches
 from panqake.utils.git import checkout_branch, get_current_branch, list_all_branches
-from panqake.utils.questionary_prompt import print_formatted_text, prompt_select
+from panqake.utils.questionary_prompt import print_formatted_text
+from panqake.utils.selection import select_branch_excluding_current
 from panqake.utils.status import status
 
 
@@ -44,25 +45,17 @@ def switch_branch(branch_name=None):
     list_branches()
     print_formatted_text("")  # Add a blank line for better readability
 
-    # Format branches for display, excluding the current branch
-    choices = []
-    for branch in branches:
-        if branch != current:  # Skip the current branch
-            branch_item = {"display": branch, "value": branch}
-            choices.append(branch_item)
+    # Use shared utility for branch selection
+    selected = select_branch_excluding_current(
+        "Select a branch to switch to:", exclude_protected=False, enable_search=True
+    )
 
-    # If no branches left after excluding current branch
-    if not choices:
+    # If no selection made or no branches available
+    if not selected:
         print_formatted_text(
             "[warning]No other branches available to switch to[/warning]"
         )
         return
-
-    # Show interactive branch selection using the prompt_select function
-    # Always enable search for branch selection
-    selected = prompt_select(
-        "Select a branch to switch to:", choices, enable_search=True
-    )
 
     if selected:
         with status(f"Switching to branch '{selected}'..."):

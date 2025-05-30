@@ -34,8 +34,8 @@ from panqake.utils.questionary_prompt import (
     format_branch,
     print_formatted_text,
     prompt_confirm,
-    prompt_select,
 )
+from panqake.utils.selection import select_from_options
 from panqake.utils.status import status
 
 
@@ -178,9 +178,7 @@ def cleanup_local_branch(branch_name):
 def get_merge_method():
     """Get the merge method from user selection."""
     merge_methods = ["squash", "rebase", "merge"]
-    return prompt_select(
-        "Select merge method:", choices=merge_methods, default="squash"
-    )
+    return select_from_options(merge_methods, "Select merge method:", default="squash")
 
 
 def handle_pr_base_updates(branch_name, parent_branch, update_children):

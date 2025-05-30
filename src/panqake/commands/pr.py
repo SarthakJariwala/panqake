@@ -25,10 +25,10 @@ from panqake.utils.questionary_prompt import (
     console,
     format_branch,
     print_formatted_text,
-    prompt_checkbox,
     prompt_confirm,
     prompt_input,
 )
+from panqake.utils.selection import select_reviewers
 from panqake.utils.status import status
 from panqake.utils.types import BranchName
 
@@ -42,20 +42,7 @@ def prompt_for_reviewers(potential_reviewers: list[str]) -> list[str]:
     Returns:
         List of selected reviewer usernames
     """
-    if not potential_reviewers:
-        return []
-
-    # Add option to skip reviewer selection
-    choices = [{"name": "(Skip - no reviewers)", "value": ""}] + [
-        {"name": reviewer, "value": reviewer} for reviewer in potential_reviewers
-    ]
-
-    selected = prompt_checkbox(
-        "Select reviewers (optional):", choices, default=[], enable_search=True
-    )
-
-    # Filter out empty selections (skip option)
-    return [reviewer for reviewer in selected if reviewer]
+    return select_reviewers(potential_reviewers, include_skip_option=True)
 
 
 def find_oldest_branch_without_pr(branch: BranchName) -> BranchName | None:

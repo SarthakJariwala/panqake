@@ -47,12 +47,12 @@ def mock_prompt():
     """Mock questionary prompt functions."""
     with (
         patch("panqake.commands.modify.print_formatted_text") as mock_print,
-        patch("panqake.commands.modify.prompt_checkbox") as mock_checkbox,
+        patch("panqake.commands.modify.select_files_for_staging") as mock_select_files,
         patch("panqake.commands.modify.prompt_input") as mock_input,
     ):
         yield {
             "print": mock_print,
-            "checkbox": mock_checkbox,
+            "select_files": mock_select_files,
             "input": mock_input,
         }
 
@@ -264,7 +264,7 @@ def test_modify_commit_stage_unstaged(mock_git_utils, mock_config_utils, mock_pr
     ]
     mock_git_utils["has_commits"].return_value = True
     mock_git_utils["run"].return_value = "success"
-    mock_prompt["checkbox"].return_value = ["unstaged.py"]
+    mock_prompt["select_files"].return_value = ["unstaged.py"]
 
     # Execute
     modify_commit()

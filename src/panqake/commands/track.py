@@ -5,6 +5,7 @@ import sys
 from panqake.utils.config import add_to_stack
 from panqake.utils.git import get_current_branch, get_potential_parents
 from panqake.utils.questionary_prompt import print_formatted_text, prompt_for_parent
+from panqake.utils.status import status
 
 
 def track(branch_name=None):
@@ -31,17 +32,19 @@ def track(branch_name=None):
         f"[info]Tracking branch: [branch]{branch_name}[/branch][/info]"
     )
 
-    # Get potential parent branches from Git history
-    potential_parents = get_potential_parents(branch_name)
+    with status("Analyzing branch history for potential parents...") as s:
+        # Get potential parent branches from Git history
+        s.update("Searching Git history for parent candidates...")
+        potential_parents = get_potential_parents(branch_name)
 
-    if not potential_parents:
-        print_formatted_text(
-            f"[warning]No potential parent branches found in the history of '{branch_name}'.[/warning]"
-        )
-        print_formatted_text(
-            "[warning]Please ensure the branch you want to track has a suitable parent in its history.[/warning]"
-        )
-        sys.exit(1)
+        if not potential_parents:
+            s.pause_and_print(
+                f"[warning]No potential parent branches found in the history of '{branch_name}'.[/warning]"
+            )
+            s.pause_and_print(
+                "[warning]Please ensure the branch you want to track has a suitable parent in its history.[/warning]"
+            )
+            sys.exit(1)
 
     # Prompt user to select a parent branch
     selected_parent = prompt_for_parent(potential_parents)
@@ -51,7 +54,8 @@ def track(branch_name=None):
         sys.exit(1)
 
     # Add the branch to the stack with the selected parent
-    add_to_stack(branch_name, selected_parent)
+    with status("Adding branch to stack metadata..."):
+        add_to_stack(branch_name, selected_parent)
 
     print_formatted_text(
         f"[success]Successfully added branch '{branch_name}' to the stack "

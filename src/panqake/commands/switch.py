@@ -5,6 +5,7 @@ import sys
 from panqake.commands.list import list_branches
 from panqake.utils.git import checkout_branch, get_current_branch, list_all_branches
 from panqake.utils.questionary_prompt import print_formatted_text, prompt_select
+from panqake.utils.status import status
 
 
 def switch_branch(branch_name=None):
@@ -35,7 +36,8 @@ def switch_branch(branch_name=None):
             print_formatted_text(f"[info]Already on branch '{branch_name}'[/info]")
             return
 
-        checkout_branch(branch_name)
+        with status(f"Switching to branch '{branch_name}'..."):
+            checkout_branch(branch_name)
         return
 
     # First show the branch hierarchy
@@ -63,7 +65,8 @@ def switch_branch(branch_name=None):
     )
 
     if selected:
-        checkout_branch(selected)
+        with status(f"Switching to branch '{selected}'..."):
+            checkout_branch(selected)
         print_formatted_text("")
         # Show the branch hierarchy again
         list_branches()

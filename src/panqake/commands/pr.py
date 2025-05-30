@@ -29,6 +29,7 @@ from panqake.utils.questionary_prompt import (
     prompt_confirm,
     prompt_input,
 )
+from panqake.utils.status import status
 from panqake.utils.types import BranchName
 
 
@@ -143,22 +144,25 @@ def create_pull_requests(branch_name: BranchName | None = None) -> None:
             )
             sys.exit(1)
 
-    # Check if target branch exists
-    if not branch_exists(branch_name):
-        print_formatted_text(
-            f"[warning]Error: Branch '{branch_name}' does not exist[/warning]"
+    with status("Analyzing branch stack for PR creation...") as s:
+        # Check if target branch exists
+        s.update("Validating target branch...")
+        if not branch_exists(branch_name):
+            s.pause_and_print(
+                f"[warning]Error: Branch '{branch_name}' does not exist[/warning]"
+            )
+            sys.exit(1)
+
+        # Find the oldest branch in the stack that needs a PR
+        s.update("Finding branches that need PRs...")
+        oldest_branch = find_oldest_branch_without_pr(branch_name)
+        if not oldest_branch:
+            print_formatted_text("[info]No branches found that need PRs[/info]")
+            return
+
+        s.pause_and_print(
+            f"[info]Creating PRs from the bottom of the stack up to: {format_branch(branch_name)}[/info]"
         )
-        sys.exit(1)
-
-    # Find the oldest branch in the stack that needs a PR
-    oldest_branch = find_oldest_branch_without_pr(branch_name)
-    if not oldest_branch:
-        print_formatted_text("[info]No branches found that need PRs[/info]")
-        return
-
-    print_formatted_text(
-        f"[info]Creating PRs from the bottom of the stack up to: {format_branch(branch_name)}[/info]"
-    )
 
     process_branch_for_pr(oldest_branch, branch_name)
 
@@ -172,7 +176,8 @@ def ensure_branch_pushed(branch: BranchName) -> bool:
             f"[warning]Branch {format_branch(branch)} has not been pushed to remote yet[/warning]"
         )
         if prompt_confirm("Would you like to push it now?"):
-            return push_branch_to_remote(branch)
+            with status(f"Pushing {branch} to remote..."):
+                return push_branch_to_remote(branch)
         else:
             print_formatted_text("[info]PR creation skipped[/info]")
             return False
@@ -185,21 +190,26 @@ def create_pr_for_branch(branch: BranchName, parent: BranchName) -> bool:
     if not ensure_branch_pushed(branch) or not ensure_branch_pushed(parent):
         return False
 
-    # Check if there are commits between branches
-    diff_command = ["log", f"{parent}..{branch}", "--oneline"]
-    diff_output = run_git_command(diff_command)
+    with status("Validating PR requirements...") as s:
+        # Check if there are commits between branches
+        s.update("Checking for commits between branches...")
+        diff_command = ["log", f"{parent}..{branch}", "--oneline"]
+        diff_output = run_git_command(diff_command)
 
-    if not diff_output or not diff_output.strip():
-        print_formatted_text(
-            f"[warning]Error: No commits found between {format_branch(parent)} and {format_branch(branch)}[/warning]"
+        if not diff_output or not diff_output.strip():
+            s.pause_and_print(
+                f"[warning]Error: No commits found between {format_branch(parent)} and {format_branch(branch)}[/warning]"
+            )
+            return False
+
+        # Get commit message for default PR title
+        s.update("Generating default PR title...")
+        commit_message = run_git_command(["log", "-1", "--pretty=%s", branch])
+        default_title = (
+            f"[{branch}] {commit_message}"
+            if commit_message
+            else f"[{branch}] Stacked PR"
         )
-        return False
-
-    # Get commit message for default PR title
-    commit_message = run_git_command(["log", "-1", "--pretty=%s", branch])
-    default_title = (
-        f"[{branch}] {commit_message}" if commit_message else f"[{branch}] Stacked PR"
-    )
 
     # Prompt for PR details
     title = prompt_input(
@@ -211,7 +221,8 @@ def create_pr_for_branch(branch: BranchName, parent: BranchName) -> bool:
     )
 
     # Get potential reviewers and prompt for selection
-    potential_reviewers = get_potential_reviewers()
+    with status("Fetching potential reviewers..."):
+        potential_reviewers = get_potential_reviewers()
     selected_reviewers = prompt_for_reviewers(potential_reviewers)
 
     # Show summary and confirm
@@ -251,7 +262,11 @@ def create_pr_for_branch(branch: BranchName, parent: BranchName) -> bool:
         return False
 
     # Create the PR
-    success, pr_url = create_pr(parent, branch, title, description, selected_reviewers)
+    with status(f"Creating pull request for {branch}..."):
+        success, pr_url = create_pr(
+            parent, branch, title, description, selected_reviewers
+        )
+
     if success:
         print_formatted_text(
             f"[success]PR created successfully for {format_branch(branch)}[/success]"

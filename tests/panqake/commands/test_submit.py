@@ -1,6 +1,6 @@
 """Tests for submit.py command module."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -204,8 +204,22 @@ def test_update_pull_request_with_non_fast_forward(
     mock_git_utils["is_amended"].return_value = False  # No amended commit
     mock_git_utils["force_needed"].return_value = True  # Force push is needed
 
-    # Execute
-    update_pull_request("feature-branch")
+    # Mock the status context manager
+    mock_status_manager = MagicMock()
+    mock_status_instance = MagicMock()
+
+    # Make pause_and_print actually call print_formatted_text
+    def mock_pause_and_print(message):
+        mock_prompt["print"](message)
+
+    mock_status_instance.pause_and_print = mock_pause_and_print
+    mock_status_manager.return_value.__enter__.return_value = mock_status_instance
+    mock_status_manager.return_value.__exit__.return_value = None
+
+    # Mock the status context
+    with patch("panqake.commands.submit.status", mock_status_manager):
+        # Execute
+        update_pull_request("feature-branch")
 
     # Verify
     mock_git_utils["force_needed"].assert_called_once_with("feature-branch")

@@ -1,6 +1,6 @@
 """Tests for rename.py command module."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -109,8 +109,23 @@ def test_rename_untracked_branch(mock_git_utils, mock_stack_utils, mock_prompt):
     mock_stack_utils.branch_exists.return_value = False
     mock_git_utils["rename"].return_value = True
 
+    # Mock the status context manager
+    mock_status_manager = MagicMock()
+    mock_status_instance = MagicMock()
+
+    # Make pause_and_print actually call print_formatted_text
+    def mock_pause_and_print(message):
+        mock_prompt["print"](message)
+
+    mock_status_instance.pause_and_print = mock_pause_and_print
+    mock_status_manager.return_value.__enter__.return_value = mock_status_instance
+    mock_status_manager.return_value.__exit__.return_value = None
+
     # Mock sys.exit to prevent the test from exiting
-    with patch("panqake.commands.rename.sys.exit"):
+    with (
+        patch("panqake.commands.rename.sys.exit"),
+        patch("panqake.commands.rename.status", mock_status_manager),
+    ):
         # Execute
         rename("test-branch", "new-test-branch")
 
@@ -142,8 +157,21 @@ def test_rename_stack_failure(mock_git_utils, mock_stack_utils, mock_prompt):
     # Setup
     mock_stack_utils.rename_branch.return_value = False
 
-    # Execute
-    rename("test-branch", "new-test-branch")
+    # Mock the status context manager
+    mock_status_manager = MagicMock()
+    mock_status_instance = MagicMock()
+
+    # Make pause_and_print actually call print_formatted_text
+    def mock_pause_and_print(message):
+        mock_prompt["print"](message)
+
+    mock_status_instance.pause_and_print = mock_pause_and_print
+    mock_status_manager.return_value.__enter__.return_value = mock_status_instance
+    mock_status_manager.return_value.__exit__.return_value = None
+
+    with patch("panqake.commands.rename.status", mock_status_manager):
+        # Execute
+        rename("test-branch", "new-test-branch")
 
     # Verify appropriate warning was printed
     warning_calls = [

@@ -10,6 +10,7 @@ from panqake.utils.questionary_prompt import (
     prompt_input,
 )
 from panqake.utils.stack import Stacks
+from panqake.utils.status import status
 
 
 def rename(old_name: Optional[str] = None, new_name: Optional[str] = None):
@@ -39,44 +40,45 @@ def rename(old_name: Optional[str] = None, new_name: Optional[str] = None):
             f"Enter new name for branch '{old_name}': ", validator=validator
         )
 
-    # First, check if the branch is tracked by panqake
-    stacks = Stacks()
-    is_tracked = stacks.branch_exists(old_name)
+    with status("Analyzing branch for rename...") as s:
+        # First, check if the branch is tracked by panqake
+        s.update("Checking if branch is tracked by panqake...")
+        stacks = Stacks()
+        is_tracked = stacks.branch_exists(old_name)
 
-    if not is_tracked:
-        print_formatted_text(
-            f"[warning]Warning: Branch '{old_name}' is not tracked by panqake.[/warning]"
-        )
-        print_formatted_text(
-            "[info]Only renaming the Git branch, no stack relationships to update.[/info]"
-        )
+        if not is_tracked:
+            s.pause_and_print(
+                f"[warning]Warning: Branch '{old_name}' is not tracked by panqake.[/warning]"
+            )
+            s.pause_and_print(
+                "[info]Only renaming the Git branch, no stack relationships to update.[/info]"
+            )
 
-        # Just rename the Git branch
-        if rename_branch(old_name, new_name):
-            sys.exit(0)
-        else:
+            # Just rename the Git branch and exit
+            if rename_branch(old_name, new_name):
+                sys.exit(0)
+            else:
+                sys.exit(1)
+
+        # Rename the Git branch first
+        s.update("Renaming Git branch...")
+        if not rename_branch(old_name, new_name):
+            s.pause_and_print(
+                f"[error]Failed to rename Git branch from '{old_name}' to '{new_name}'.[/error]"
+            )
             sys.exit(1)
 
-    # Rename in Git first
-    if not rename_branch(old_name, new_name):
-        print_formatted_text(
-            f"[danger]Failed to rename branch '{old_name}' to '{new_name}'.[/danger]"
-        )
-        sys.exit(1)
+        # Update stack references
+        s.update("Updating stack references...")
 
-    # Update stack references
-    print_formatted_text(
-        "[info]Updating branch references in stack configuration...[/info]"
-    )
-
-    if stacks.rename_branch(old_name, new_name):
-        print_formatted_text(
-            f"[success]Successfully updated stack references for '{new_name}'.[/success]"
-        )
-    else:
-        print_formatted_text(
-            f"[warning]Warning: Failed to update stack references for '{new_name}'.[/warning]"
-        )
-        print_formatted_text(
-            f"[warning]Stack references may be inconsistent. Consider running 'pq untrack {new_name}' and 'pq track {new_name}' to fix.[/warning]"
-        )
+        if stacks.rename_branch(old_name, new_name):
+            s.pause_and_print(
+                f"[success]Successfully updated stack references for '{new_name}'.[/success]"
+            )
+        else:
+            s.pause_and_print(
+                f"[warning]Warning: Failed to update stack references for '{new_name}'.[/warning]"
+            )
+            s.pause_and_print(
+                f"[warning]Stack references may be inconsistent. Consider running 'pq untrack {new_name}' and 'pq track {new_name}' to fix.[/warning]"
+            )

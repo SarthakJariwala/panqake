@@ -1,3 +1,3 @@
 """Utility functions for panqake git-stacking."""
 
-__all__ = ["git", "github", "prompt", "config", "questionary_prompt"]
+__all__ = ["git", "github", "prompt", "config", "questionary_prompt", "error_handling"]

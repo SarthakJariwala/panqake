@@ -22,7 +22,7 @@ def untrack(branch_name=None):
     )
     if remove_from_stack(branch_name):
         print_formatted_text(
-            f"Successfully removed branch '{branch_name}' from the stack."
+            f"[success]Successfully removed branch '{branch_name}' from the stack.[/success]"
         )
     else:
         print_formatted_text(

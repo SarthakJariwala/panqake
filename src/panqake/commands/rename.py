@@ -53,7 +53,7 @@ def rename(old_name: Optional[str] = None, new_name: Optional[str] = None):
 
         # Just rename the Git branch
         if rename_branch(old_name, new_name):
-            sys.exit(0)
+            return
         else:
             sys.exit(1)
 

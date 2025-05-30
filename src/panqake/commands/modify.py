@@ -192,7 +192,7 @@ def modify_commit(commit_flag=False, message=None, no_amend=False):
         print_formatted_text("[warning]No changes staged. Exiting.[/warning]")
         # This covers the case where there were only unstaged changes,
         # and the user chose not to stage any, or staging failed.
-        sys.exit(0)
+        return
 
     # Determine if we should create a new commit or amend
     # Create new commit if:

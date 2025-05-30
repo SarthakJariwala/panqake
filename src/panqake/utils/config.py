@@ -1,7 +1,6 @@
 """Configuration utilities for panqake git-stacking."""
 
 import json
-from typing import List
 
 from panqake.utils.stack import PANQAKE_DIR, STACK_FILE, Stacks
 from panqake.utils.types import BranchName, ParentBranchName
@@ -25,7 +24,7 @@ def get_parent_branch(branch: BranchName) -> ParentBranchName:
     return stacks.get_parent(branch)
 
 
-def get_child_branches(branch: BranchName) -> List[BranchName]:
+def get_child_branches(branch: BranchName) -> list[BranchName]:
     """Get all child branches of the given branch."""
     stacks = Stacks()
     return stacks.get_children(branch)

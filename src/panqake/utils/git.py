@@ -3,7 +3,7 @@
 import os
 import subprocess
 import sys
-from typing import Any, Dict, List
+from typing import Any
 
 from panqake.utils.questionary_prompt import print_formatted_text
 from panqake.utils.status import status
@@ -17,7 +17,7 @@ def is_git_repo() -> bool:
 
 
 def run_git_command(
-    command: List[str],
+    command: list[str],
     silent_fail: bool = False,
     return_stderr_on_error: bool = False,
 ) -> str | None:
@@ -65,7 +65,7 @@ def get_current_branch() -> BranchName | None:
     return run_git_command(["symbolic-ref", "--short", "HEAD"])
 
 
-def list_all_branches() -> List[BranchName]:
+def list_all_branches() -> list[BranchName]:
     """Get a list of all branches."""
     result = run_git_command(["branch", "--format=%(refname:short)"])
     if result:
@@ -193,7 +193,7 @@ def delete_remote_branch(branch: BranchName) -> bool:
     return False
 
 
-def get_potential_parents(branch: BranchName) -> List[BranchName]:
+def get_potential_parents(branch: BranchName) -> list[BranchName]:
     """Get a list of potential parent branches from the Git history.
 
     This function analyzes the Git history of the specified branch and
@@ -356,7 +356,7 @@ def rename_branch(old_name: BranchName, new_name: BranchName) -> bool:
     return True
 
 
-def get_staged_files() -> List[Dict[str, Any]]:
+def get_staged_files() -> list[dict[str, Any]]:
     """Get a list of staged files using git diff --staged.
 
     Returns:
@@ -423,7 +423,7 @@ def get_staged_files() -> List[Dict[str, Any]]:
     return files
 
 
-def get_unstaged_files() -> List[Dict[str, Any]]:
+def get_unstaged_files() -> list[dict[str, Any]]:
     """Get a list of unstaged files using git ls-files and git status.
 
     Returns:

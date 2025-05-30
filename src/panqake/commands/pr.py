@@ -29,9 +29,10 @@ from panqake.utils.questionary_prompt import (
     prompt_confirm,
     prompt_input,
 )
+from panqake.utils.types import BranchName
 
 
-def prompt_for_reviewers(potential_reviewers):
+def prompt_for_reviewers(potential_reviewers: list[str]) -> list[str]:
     """Prompt the user to select reviewers from a list of potential reviewers.
 
     Args:
@@ -56,7 +57,7 @@ def prompt_for_reviewers(potential_reviewers):
     return [reviewer for reviewer in selected if reviewer]
 
 
-def find_oldest_branch_without_pr(branch):
+def find_oldest_branch_without_pr(branch: BranchName) -> BranchName | None:
     """Find the bottom-most branch without a PR."""
     parent = get_parent_branch(branch)
 
@@ -73,7 +74,9 @@ def find_oldest_branch_without_pr(branch):
         return find_oldest_branch_without_pr(parent)
 
 
-def is_branch_in_path_to_target(child, branch_name, parent_branch):
+def is_branch_in_path_to_target(
+    child: BranchName, branch_name: BranchName, parent_branch: BranchName | None
+) -> bool:
     """Check if a child branch is in the path to the target branch."""
     current = branch_name
     while current and current != parent_branch:
@@ -84,7 +87,7 @@ def is_branch_in_path_to_target(child, branch_name, parent_branch):
     return False
 
 
-def process_branch_for_pr(branch, target_branch):
+def process_branch_for_pr(branch: BranchName, target_branch: BranchName) -> bool:
     """Process a branch to create PR and handle its children."""
     if branch_has_pr(branch):
         print_formatted_text(
@@ -116,8 +119,10 @@ def process_branch_for_pr(branch, target_branch):
             f"[warning]Skipping child branches of {format_branch(branch)} due to PR creation failure[/warning]"
         )
 
+    return pr_created
 
-def create_pull_requests(branch_name=None):
+
+def create_pull_requests(branch_name: BranchName | None = None) -> None:
     """Create pull requests for branches in the stack."""
     # Check for GitHub CLI
     if not check_github_cli_installed():
@@ -132,6 +137,11 @@ def create_pull_requests(branch_name=None):
     # If no branch specified, use current branch
     if not branch_name:
         branch_name = get_current_branch()
+        if not branch_name:
+            print_formatted_text(
+                "[danger]Error: Could not determine current branch[/danger]"
+            )
+            sys.exit(1)
 
     # Check if target branch exists
     if not branch_exists(branch_name):
@@ -142,6 +152,9 @@ def create_pull_requests(branch_name=None):
 
     # Find the oldest branch in the stack that needs a PR
     oldest_branch = find_oldest_branch_without_pr(branch_name)
+    if not oldest_branch:
+        print_formatted_text("[info]No branches found that need PRs[/info]")
+        return
 
     print_formatted_text(
         f"[info]Creating PRs from the bottom of the stack up to: {format_branch(branch_name)}[/info]"
@@ -152,7 +165,7 @@ def create_pull_requests(branch_name=None):
     print_formatted_text("[success]Pull request creation complete[/success]")
 
 
-def ensure_branch_pushed(branch):
+def ensure_branch_pushed(branch: BranchName) -> bool:
     """Ensure a branch is pushed to remote."""
     if not is_branch_pushed_to_remote(branch):
         print_formatted_text(
@@ -166,7 +179,7 @@ def ensure_branch_pushed(branch):
     return True
 
 
-def create_pr_for_branch(branch, parent):
+def create_pr_for_branch(branch: BranchName, parent: BranchName) -> bool:
     """Create a PR for a specific branch."""
     # Check if both branches are pushed to remote
     if not ensure_branch_pushed(branch) or not ensure_branch_pushed(parent):
@@ -176,7 +189,7 @@ def create_pr_for_branch(branch, parent):
     diff_command = ["log", f"{parent}..{branch}", "--oneline"]
     diff_output = run_git_command(diff_command)
 
-    if not diff_output.strip():
+    if not diff_output or not diff_output.strip():
         print_formatted_text(
             f"[warning]Error: No commits found between {format_branch(parent)} and {format_branch(branch)}[/warning]"
         )

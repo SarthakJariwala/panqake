@@ -8,6 +8,7 @@ from panqake.utils.git import (
     create_branch,
     get_current_branch,
     list_all_branches,
+    validate_branch,
 )
 from panqake.utils.questionary_prompt import (
     BranchNameValidator,
@@ -44,11 +45,8 @@ def create_new_branch(branch_name=None, base_branch=None):
         sys.exit(1)
 
     # Check if the base branch exists
-    if base_branch and not branch_exists(base_branch):
-        print_formatted_text(
-            f"[warning]Error: Base branch '{base_branch}' does not exist[/warning]"
-        )
-        sys.exit(1)
+    if base_branch:
+        validate_branch(base_branch)
 
     # Create the new branch
     create_branch(branch_name, base_branch)

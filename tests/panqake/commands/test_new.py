@@ -12,14 +12,17 @@ def mock_git_utils():
     """Mock all git utility functions."""
     with (
         patch("panqake.commands.new.branch_exists") as mock_exists,
+        patch("panqake.commands.new.validate_branch") as mock_validate,
         patch("panqake.commands.new.create_branch") as mock_create,
         patch("panqake.commands.new.get_current_branch") as mock_current,
         patch("panqake.commands.new.list_all_branches") as mock_list,
     ):
         mock_current.return_value = "main"
         mock_list.return_value = ["main", "develop", "feature"]
+        mock_validate.side_effect = lambda x: x  # Just return the input
         yield {
             "exists": mock_exists,
+            "validate": mock_validate,
             "create": mock_create,
             "current": mock_current,
             "list": mock_list,
@@ -98,10 +101,12 @@ def test_create_new_branch_nonexistent_base(
 ):
     """Test error when base branch doesn't exist."""
     # Setup
-    mock_git_utils["exists"].side_effect = [
-        False,
-        False,
-    ]  # new branch doesn't exist, base doesn't either
+    mock_git_utils[
+        "exists"
+    ].return_value = False  # new branch doesn't exist (should pass)
+    mock_git_utils["validate"].side_effect = SystemExit(
+        1
+    )  # base branch validation fails
 
     # Execute and verify
     with pytest.raises(SystemExit):

@@ -1,7 +1,5 @@
 """Command for updating branches in the stack."""
 
-import sys
-
 from panqake.utils.branch_operations import (
     push_updated_branches,
     report_update_conflicts,
@@ -10,6 +8,7 @@ from panqake.utils.branch_operations import (
 )
 from panqake.utils.git import (
     get_current_branch,
+    validate_branch,
 )
 from panqake.utils.questionary_prompt import (
     format_branch,
@@ -20,21 +19,11 @@ from panqake.utils.stack import Stacks
 from panqake.utils.status import status
 
 
-def validate_branch(branch_name):
-    """Validate branch exists and get current branch using Stack utility."""
-    # If no branch specified, use current branch
-    if not branch_name:
-        branch_name = get_current_branch()
-
-    # Check if target branch exists using Stacks utility
-    with Stacks() as stacks:
-        if not stacks.branch_exists(branch_name):
-            print_formatted_text(
-                f"[warning]Error: Branch '{branch_name}' does not exist[/warning]"
-            )
-            sys.exit(1)
-
-    return branch_name, get_current_branch()
+def validate_branch_for_update(branch_name):
+    """Validate branch exists and get current branch for update operation."""
+    # Validate branch exists and get current branch if none specified
+    validated_branch = validate_branch(branch_name)
+    return validated_branch, get_current_branch()
 
 
 def get_affected_branches(branch_name):
@@ -84,7 +73,7 @@ def update_branches(branch_name=None, skip_push=False):
     Returns:
         Tuple of (success_flag, error_message) or None
     """
-    branch_name, current_branch = validate_branch(branch_name)
+    branch_name, current_branch = validate_branch_for_update(branch_name)
 
     affected_branches = get_affected_branches(branch_name)
     if affected_branches is None:

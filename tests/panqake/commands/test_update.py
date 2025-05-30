@@ -8,7 +8,7 @@ from panqake.commands.update import (
     get_affected_branches,
     update_branch_and_children,
     update_branches,
-    validate_branch,
+    validate_branch_for_update,
 )
 
 
@@ -17,10 +17,13 @@ def mock_git_utils():
     """Mock git utility functions."""
     with (
         patch("panqake.commands.update.get_current_branch") as mock_current,
+        patch("panqake.commands.update.validate_branch") as mock_validate,
     ):
         mock_current.return_value = "feature-1"
+        mock_validate.side_effect = lambda x: x if x else "feature-1"
         yield {
             "current": mock_current,
+            "validate": mock_validate,
         }
 
 
@@ -71,10 +74,10 @@ def mock_prompt():
 def test_validate_branch_exists(mock_git_utils, mock_stack_utils):
     """Test validating an existing branch."""
     # Execute
-    branch_name, current = validate_branch("test-branch")
+    branch_name, current = validate_branch_for_update("test-branch")
 
     # Verify
-    mock_stack_utils.branch_exists.assert_called_once_with("test-branch")
+    mock_git_utils["validate"].assert_called_once_with("test-branch")
     assert branch_name == "test-branch"
     assert current == "feature-1"
 
@@ -82,29 +85,28 @@ def test_validate_branch_exists(mock_git_utils, mock_stack_utils):
 def test_validate_branch_not_exists(mock_git_utils, mock_stack_utils):
     """Test validating a non-existent branch."""
     # Setup
-    mock_stack_utils.branch_exists.return_value = False
+    mock_git_utils["validate"].side_effect = SystemExit(1)
 
     # Execute and verify
     with pytest.raises(SystemExit):
-        validate_branch("non-existent")
+        validate_branch_for_update("non-existent")
 
 
 def test_validate_branch_no_name(mock_git_utils, mock_stack_utils):
     """Test validating with no branch name provided."""
-    # Setup: Return 'main' when get_current_branch is called
+    # Setup: Return 'main' when validate_branch is called with None
+    mock_git_utils["validate"].side_effect = lambda x: "main" if x is None else x
     mock_git_utils["current"].return_value = "main"
 
     # Execute
-    branch_name, current = validate_branch(None)
+    branch_name, current = validate_branch_for_update(None)
 
-    # Verify: get_current_branch is called twice
-    # 1. To determine the branch_name when None is passed
-    # 2. To return the current_branch at the end
-    assert mock_git_utils["current"].call_count == 2
+    # Verify
+    mock_git_utils["validate"].assert_called_once_with(None)
+    mock_git_utils["current"].assert_called_once()
     assert branch_name == "main"  # Should be the resolved current branch
+    assert current == "main"
     assert current == "main"  # Should be the final current branch call
-    # Check branch_exists was called with the resolved branch name
-    mock_stack_utils.branch_exists.assert_called_once_with("main")
 
 
 def test_get_affected_branches_with_children(mock_stack_utils, mock_prompt):

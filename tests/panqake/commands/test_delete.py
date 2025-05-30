@@ -15,6 +15,7 @@ def mock_git_utils():
     """Mock all git utility functions."""
     with (
         patch("panqake.commands.delete.branch_exists") as mock_exists,
+        patch("panqake.commands.delete.validate_branch") as mock_validate,
         patch("panqake.commands.delete.checkout_branch") as mock_checkout,
         patch("panqake.commands.delete.get_current_branch") as mock_current,
         patch("panqake.commands.delete.run_git_command") as mock_run,
@@ -22,8 +23,10 @@ def mock_git_utils():
     ):
         mock_current.return_value = "main"
         mock_list.return_value = MOCK_BRANCHES
+        mock_validate.side_effect = lambda x: x  # Just return the input
         yield {
             "exists": mock_exists,
+            "validate": mock_validate,
             "checkout": mock_checkout,
             "current": mock_current,
             "run": mock_run,
@@ -145,12 +148,9 @@ def test_delete_branch_nonexistent_parent(
     mock_git_utils, mock_config_utils, mock_prompt
 ):
     """Test error when parent branch doesn't exist."""
-    # Setup
-    mock_git_utils["exists"].side_effect = [
-        True,
-        False,
-    ]  # Branch exists, parent doesn't
+    # Setup: the validation call will succeed, but the parent check will fail
     mock_config_utils["get_parent"].return_value = "nonexistent-parent"
+    mock_git_utils["exists"].side_effect = lambda branch: branch != "nonexistent-parent"
 
     # Execute and verify
     with pytest.raises(SystemExit):

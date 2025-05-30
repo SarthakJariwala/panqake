@@ -13,6 +13,7 @@ from panqake.utils.git import (
     checkout_branch,
     get_current_branch,
     list_all_branches,
+    validate_branch,
     run_git_command,
 )
 from panqake.utils.questionary_prompt import (
@@ -29,11 +30,7 @@ def validate_branch_for_deletion(branch_name):
     current_branch = get_current_branch()
 
     # Check if target branch exists
-    if not branch_exists(branch_name):
-        print_formatted_text(
-            f"[warning]Error: Branch '{branch_name}' does not exist[/warning]"
-        )
-        sys.exit(1)
+    validate_branch(branch_name)
 
     # Check if target branch is the current branch
     if branch_name == current_branch:

@@ -1,9 +1,7 @@
 """Command for listing branches in the stack."""
 
-import sys
-
 from panqake.utils.config import get_parent_branch
-from panqake.utils.git import branch_exists, get_current_branch
+from panqake.utils.git import get_current_branch, validate_branch
 from panqake.utils.questionary_prompt import format_branch, print_formatted_text
 from panqake.utils.stack import Stacks
 
@@ -20,16 +18,8 @@ def find_stack_root(branch):
 
 def list_branches(branch_name=None):
     """List the branch stack."""
-    # If no branch specified, use current branch
-    if not branch_name:
-        branch_name = get_current_branch()
-
-    # Check if target branch exists
-    if not branch_exists(branch_name):
-        print_formatted_text(
-            f"[warning]Error: Branch '{branch_name}' does not exist[/warning]"
-        )
-        sys.exit(1)
+    # Validate branch exists and get current branch if none specified
+    branch_name = validate_branch(branch_name)
 
     # Find the root of the stack for the target branch
     root_branch = find_stack_root(branch_name)

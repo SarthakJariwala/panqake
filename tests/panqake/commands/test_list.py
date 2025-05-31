@@ -11,12 +11,13 @@ from panqake.commands.list import find_stack_root, list_branches
 def mock_git_utils():
     """Mock git utility functions."""
     with (
-        patch("panqake.commands.list.branch_exists") as mock_exists,
+        patch("panqake.commands.list.validate_branch") as mock_validate,
         patch("panqake.commands.list.get_current_branch") as mock_current,
     ):
         mock_current.return_value = "main"
+        mock_validate.side_effect = lambda x: x if x else "main"
         yield {
-            "exists": mock_exists,
+            "validate": mock_validate,
             "current": mock_current,
         }
 
@@ -70,13 +71,12 @@ def test_list_branches_nonexistent_branch(
     mock_git_utils, mock_config_utils, mock_prompt, mock_stacks
 ):
     """Test listing branches with nonexistent branch."""
-    mock_git_utils["exists"].return_value = False
+    mock_git_utils["validate"].side_effect = SystemExit(1)
 
     with pytest.raises(SystemExit):
         list_branches("nonexistent")
 
-    mock_prompt["print"].assert_called_once()
-    assert "Error" in mock_prompt["print"].call_args.args[0]
+    mock_git_utils["validate"].assert_called_once_with("nonexistent")
     # Stacks instance should not be created
     mock_stacks.visualize_tree.assert_not_called()
 
@@ -85,11 +85,12 @@ def test_list_branches_current_branch(
     mock_git_utils, mock_config_utils, mock_prompt, mock_stacks
 ):
     """Test listing branches from current branch."""
-    mock_git_utils["exists"].return_value = True
     mock_config_utils["parent"].return_value = ""
 
     list_branches()
 
+    # Should validate with None (current branch)
+    mock_git_utils["validate"].assert_called_once_with(None)
     # Should use current branch (called for header and passed to visualize_tree)
     assert mock_git_utils["current"].call_count >= 1
     # Should call visualize_tree once
@@ -102,10 +103,12 @@ def test_list_branches_specific_branch(
     mock_git_utils, mock_config_utils, mock_prompt, mock_stacks
 ):
     """Test listing branches from specified branch."""
-    mock_git_utils["exists"].return_value = True
     mock_config_utils["parent"].return_value = ""
 
     list_branches("feature")
+
+    # Should validate the specific branch
+    mock_git_utils["validate"].assert_called_once_with("feature")
 
     # Current branch is still called for header
     assert mock_git_utils["current"].call_count >= 1
@@ -120,7 +123,6 @@ def test_list_branches_with_stack(
     mock_git_utils, mock_config_utils, mock_prompt, mock_stacks
 ):
     """Test listing a complete branch stack."""
-    mock_git_utils["exists"].return_value = True
     # Setup stack: main -> feature -> subfeature
     mock_config_utils["parent"].side_effect = [
         "main",

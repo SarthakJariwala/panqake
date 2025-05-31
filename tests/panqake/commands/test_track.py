@@ -33,7 +33,7 @@ def mock_config_utils():
 def mock_prompt():
     """Mock questionary prompt functions."""
     with (
-        patch("panqake.commands.track.prompt_for_parent") as mock_parent_prompt,
+        patch("panqake.commands.track.select_parent_branch") as mock_parent_prompt,
         patch("panqake.commands.track.print_formatted_text") as mock_print,
     ):
         mock_parent_prompt.return_value = "main"

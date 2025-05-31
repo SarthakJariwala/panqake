@@ -301,29 +301,34 @@ def test_create_pr_for_branch_user_cancelled(
 
 def test_prompt_for_reviewers():
     """Test prompt_for_reviewers functionality."""
-    with patch("panqake.commands.pr.prompt_checkbox") as mock_checkbox:
-        mock_checkbox.return_value = ["user1", "user2"]
+    with patch("panqake.commands.pr.select_reviewers") as mock_select_reviewers:
+        mock_select_reviewers.return_value = ["user1", "user2"]
 
         result = prompt_for_reviewers(["user1", "user2", "user3"])
 
         assert result == ["user1", "user2"]
-        mock_checkbox.assert_called_once()
+        mock_select_reviewers.assert_called_once_with(
+            ["user1", "user2", "user3"], include_skip_option=True
+        )
 
 
 def test_prompt_for_reviewers_empty_list():
     """Test prompt_for_reviewers with empty list."""
-    with patch("panqake.commands.pr.prompt_checkbox") as mock_checkbox:
+    with patch("panqake.commands.pr.select_reviewers") as mock_select_reviewers:
+        mock_select_reviewers.return_value = []
         result = prompt_for_reviewers([])
         assert result == []
-        mock_checkbox.assert_not_called()
+        mock_select_reviewers.assert_called_once_with([], include_skip_option=True)
 
 
 def test_prompt_for_reviewers_skip_selection():
     """Test prompt_for_reviewers when skip option is selected."""
-    with patch("panqake.commands.pr.prompt_checkbox") as mock_checkbox:
-        mock_checkbox.return_value = [""]
+    with patch("panqake.commands.pr.select_reviewers") as mock_select_reviewers:
+        mock_select_reviewers.return_value = []
 
         result = prompt_for_reviewers(["user1", "user2"])
 
         assert result == []
-        mock_checkbox.assert_called_once()
+        mock_select_reviewers.assert_called_once_with(
+            ["user1", "user2"], include_skip_option=True
+        )

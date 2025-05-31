@@ -4,7 +4,8 @@ import sys
 
 from panqake.utils.config import add_to_stack
 from panqake.utils.git import get_current_branch, get_potential_parents
-from panqake.utils.questionary_prompt import print_formatted_text, prompt_for_parent
+from panqake.utils.questionary_prompt import print_formatted_text
+from panqake.utils.selection import select_parent_branch
 from panqake.utils.status import status
 
 
@@ -47,7 +48,7 @@ def track(branch_name=None):
             sys.exit(1)
 
     # Prompt user to select a parent branch
-    selected_parent = prompt_for_parent(potential_parents)
+    selected_parent = select_parent_branch(potential_parents)
 
     if not selected_parent:
         print_formatted_text("[warning]No parent branch selected. Aborting.[/warning]")

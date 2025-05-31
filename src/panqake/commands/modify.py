@@ -12,9 +12,9 @@ from panqake.utils.git import (
 )
 from panqake.utils.questionary_prompt import (
     print_formatted_text,
-    prompt_checkbox,
     prompt_input,
 )
+from panqake.utils.selection import select_files_for_staging
 from panqake.utils.status import status
 
 
@@ -161,14 +161,12 @@ def modify_commit(
     if unstaged_files:
         print_formatted_text("[info]The following files have unstaged changes:[/info]")
 
-        # Prompt user to select files to stage
-        # Enable search if there are many files
-        enable_search = len(unstaged_files) > 10
-        selected_items = prompt_checkbox(
-            "Select files to stage (optional):",
+        # Prompt user to select files to stage using shared utility
+        selected_items = select_files_for_staging(
             unstaged_files,
-            default=unstaged_files,
-            enable_search=enable_search,
+            "Select files to stage (optional):",
+            default_all=True,
+            search_threshold=10,
         )
 
         # selected_items will be a list of the selected files' paths

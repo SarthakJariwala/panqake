@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- Improved type hints across the codebase
+
+- Centralized selection utilities and refactored all commands to use new selection utilities
+
+- Status feedback for all long-running operations
+  - Real-time progress spinners for Git operations
+  - Clear feedback during branch operations and GitHub API calls
+
+### Changed
+
+- Consolidated branch validation logic into single function
+
 ## v0.18.0 - 2025-05-29
 
 ### Changed

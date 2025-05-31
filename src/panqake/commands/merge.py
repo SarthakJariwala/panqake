@@ -86,10 +86,9 @@ def merge_pr(branch_name, merge_method="squash"):
         )
         return False
 
-    print_formatted_text("[info]Merging PR for branch...[/info]")
-    print_formatted_text(f"[branch]{branch_name}[/branch]")
-    print("")
-    print_formatted_text(f"[info]Using merge method: {merge_method}[/info]")
+    print_formatted_text(
+        f"[info]Merging PR for branch {branch_name} using merge method: {merge_method}[/info]"
+    )
 
     # Execute GitHub CLI to merge the PR - do NOT delete the branch yet
     # We'll need to update child PR references first
@@ -285,12 +284,10 @@ def merge_branch(branch_name=None, delete_branch=True, update_children=True):
         parent_branch = "main"  # Default to main if no parent
 
     # Show summary of what we're about to do
-    print_formatted_text("[info]Preparing to merge PR for branch:[/info]")
-    print_formatted_text(f"[branch]{branch_name}[/branch]")
-    print("")
-    print_formatted_text("[info]Parent branch:[/info]")
-    print_formatted_text(f"[branch]{parent_branch}[/branch]")
-    print("")
+    print_formatted_text(
+        f"[info]Preparing to merge PR for branch: {branch_name}[/info]"
+    )
+    print_formatted_text(f"[info]Parent branch:{parent_branch}[/info]")
 
     # Ask for merge method
     merge_method = get_merge_method()

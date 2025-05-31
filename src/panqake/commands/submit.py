@@ -20,6 +20,7 @@ from panqake.utils.questionary_prompt import (
     print_formatted_text,
     prompt_confirm,
 )
+from panqake.utils.status import status
 
 
 def update_pull_request(branch_name=None):
@@ -36,22 +37,27 @@ def update_pull_request(branch_name=None):
 
     branch_name = validate_branch(branch_name)
 
-    # Check if the last commit was amended
-    is_amended = is_last_commit_amended()
+    with status("Analyzing branch status...") as s:
+        # Check if the last commit was amended
+        s.update("Checking for amended commits...")
+        is_amended = is_last_commit_amended()
 
-    # Determine if force push is needed
-    needs_force = is_amended
+        # Determine if force push is needed
+        needs_force = is_amended
 
-    # If we didn't detect an amended commit, check if a non-fast-forward issue would occur
-    if not needs_force:
-        needs_force = is_force_push_needed(branch_name)
-        if needs_force:
-            print_formatted_text(
-                "[info]Detected non-fast-forward update. Force push with lease will be used.[/info]"
-            )
+        # If we didn't detect an amended commit, check if a non-fast-forward issue would occur
+        if not needs_force:
+            s.update("Checking if force push is needed...")
+            needs_force = is_force_push_needed(branch_name)
+            if needs_force:
+                s.pause_and_print(
+                    "[info]Detected non-fast-forward update. Force push with lease will be used.[/info]"
+                )
 
-    # Push the branch to remote
-    success = push_branch_to_remote(branch_name, force_with_lease=needs_force)
+        # Push the branch to remote
+        push_type = "force push with lease" if needs_force else "push"
+        s.update(f"Performing {push_type} to remote...")
+        success = push_branch_to_remote(branch_name, force_with_lease=needs_force)
 
     if success:
         if branch_has_pr(branch_name):

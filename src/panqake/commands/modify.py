@@ -15,6 +15,7 @@ from panqake.utils.questionary_prompt import (
     prompt_checkbox,
     prompt_input,
 )
+from panqake.utils.status import status
 
 
 def has_staged_changes() -> bool:
@@ -44,37 +45,39 @@ def stage_selected_files(files: list[dict]) -> bool:
         print_formatted_text("[warning]No files selected to stage[/warning]")
         return False
 
-    print_formatted_text("[info]Staging selected files...[/info]")
-    all_success = True
+    with status("Staging selected files...") as s:
+        all_success = True
 
-    for file_info in files:
-        file_path = file_info["path"]  # Main path (new path for rename/copy)
-        original_path = file_info.get("original_path")  # Old path for rename/copy
+        for file_info in files:
+            file_path = file_info["path"]  # Main path (new path for rename/copy)
+            original_path = file_info.get("original_path")  # Old path for rename/copy
 
-        # Handle renamed/copied files
-        if original_path:
-            print_formatted_text(
-                f"[muted]  Adding renamed/copied file: {original_path} → {file_path}[/muted]"
-            )
-            # For renamed/copied files, add both the old and new path
-            result_old = run_git_command(["add", "--", original_path])
-            result_new = run_git_command(["add", "--", file_path])
-
-            if result_old is None or result_new is None:
-                print_formatted_text(
-                    f"[warning]Error: Failed to stage rename/copy {original_path} → {file_path}[/warning]"
+            # Handle renamed/copied files
+            if original_path:
+                s.update(f"Staging rename/copy: {original_path} → {file_path}")
+                s.pause_and_print(
+                    f"[muted]  Adding renamed/copied file: {original_path} → {file_path}[/muted]"
                 )
-                all_success = False
-        else:
-            # Handle regular added/modified/deleted files
-            print_formatted_text(f"[muted]  Adding {file_path}[/muted]")
-            result = run_git_command(["add", "--", file_path])
+                # For renamed/copied files, add both the old and new path
+                result_old = run_git_command(["add", "--", original_path])
+                result_new = run_git_command(["add", "--", file_path])
 
-            if result is None:
-                print_formatted_text(
-                    f"[warning]Error: Failed to stage {file_path}[/warning]"
-                )
-                all_success = False
+                if result_old is None or result_new is None:
+                    s.pause_and_print(
+                        f"[warning]Error: Failed to stage rename/copy {original_path} → {file_path}[/warning]"
+                    )
+                    all_success = False
+            else:
+                # Handle regular added/modified/deleted files
+                s.update(f"Staging {file_path}")
+                s.pause_and_print(f"[muted]  Adding {file_path}[/muted]")
+                result = run_git_command(["add", "--", file_path])
+
+                if result is None:
+                    s.pause_and_print(
+                        f"[warning]Error: Failed to stage {file_path}[/warning]"
+                    )
+                    all_success = False
 
     return all_success
 
@@ -89,11 +92,11 @@ def create_new_commit(message: str | None = None) -> None:
             )
             sys.exit(1)
 
-    print_formatted_text("[info]Creating new commit...[/info]")
-    commit_result = run_git_command(["commit", "-m", message])
-    if commit_result is None:
-        print_formatted_text("[warning]Error: Failed to create commit[/warning]")
-        sys.exit(1)
+    with status("Creating new commit...") as s:
+        commit_result = run_git_command(["commit", "-m", message])
+        if commit_result is None:
+            s.pause_and_print("[warning]Error: Failed to create commit[/warning]")
+            sys.exit(1)
     print_formatted_text("[success]New commit created successfully[/success]")
 
 
@@ -102,16 +105,17 @@ def amend_existing_commit(message: str | None = None) -> None:
     commit_cmd = ["commit", "--amend"]
     if message:
         commit_cmd.extend(["-m", message])
-        print_formatted_text("[info]Amending commit with new message...[/info]")
+        status_msg = "Amending commit with new message..."
     else:
-        print_formatted_text("[info]Amending commit...[/info]")
+        status_msg = "Amending commit..."
         # If no message specified, use the existing commit message
         commit_cmd.append("--no-edit")
 
-    commit_result = run_git_command(commit_cmd)
-    if commit_result is None:
-        print_formatted_text("[warning]Error: Failed to amend commit[/warning]")
-        sys.exit(1)
+    with status(status_msg) as s:
+        commit_result = run_git_command(commit_cmd)
+        if commit_result is None:
+            s.pause_and_print("[warning]Error: Failed to amend commit[/warning]")
+            sys.exit(1)
     print_formatted_text("[success]Commit amended successfully[/success]")
 
 

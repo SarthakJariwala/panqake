@@ -27,7 +27,7 @@ Usage example:
     console.print("[success]Operation successful![/success]")
 """
 
-from typing import Any, Dict, List, Union
+from typing import Any
 
 import questionary
 from questionary import Choice, ValidationError, Validator
@@ -108,7 +108,7 @@ def rich_prompt(message: str, style_name: str = "prompt") -> None:
 def prompt_input(
     message: str,
     validator: Validator | None = None,
-    completer: Union[List[str], Any] | None = None,
+    completer: list[str] | Any | None = None,
     default: str = "",
     multiline: bool = False,
 ) -> str:
@@ -148,10 +148,10 @@ def prompt_confirm(message: str) -> bool:
 
 def prompt_checkbox(
     message: str,
-    choices: List[Union[str, Dict[str, Any]]],
-    default: List[Union[str, Dict[str, Any]]] | None = None,
+    choices: list[str | dict[str, Any]],
+    default: list[str | dict[str, Any]] | None = None,
     enable_search: bool = False,
-) -> List[str]:
+) -> list[str]:
     """Prompt user to select multiple items from a list, using Rich for the prompt.
 
     Args:
@@ -210,7 +210,7 @@ def prompt_checkbox(
 
 def prompt_select(
     message: str,
-    choices: List[Union[str, Dict[str, Any]]],
+    choices: list[str | dict[str, Any]],
     default: str | None = None,
     enable_search: bool = False,
 ) -> str:
@@ -291,7 +291,7 @@ class PRTitleValidator(Validator):
             raise ValidationError(message="PR title should be at least 10 characters")
 
 
-def prompt_for_parent(potential_parents: List[str]) -> str | None:
+def prompt_for_parent(potential_parents: list[str]) -> str | None:
     """Prompt the user to select a parent branch from a list of potential parents.
 
     Args:

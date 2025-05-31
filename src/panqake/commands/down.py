@@ -7,7 +7,7 @@ from panqake.utils.questionary_prompt import print_formatted_text, prompt_select
 from panqake.utils.stack import Stacks
 
 
-def down():
+def down() -> None:
     """Navigate to a child branch in the stack.
 
     If the current branch has:
@@ -16,6 +16,11 @@ def down():
     - Multiple children: Prompts user to select which child to navigate to
     """
     current_branch = get_current_branch()
+    if not current_branch:
+        print_formatted_text(
+            "[danger]Error: Could not determine current branch[/danger]"
+        )
+        sys.exit(1)
 
     # Get the child branches using the Stacks utility
     with Stacks() as stacks:

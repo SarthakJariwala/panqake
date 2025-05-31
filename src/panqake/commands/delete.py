@@ -23,11 +23,17 @@ from panqake.utils.questionary_prompt import (
     prompt_input,
 )
 from panqake.utils.status import status
+from panqake.utils.types import BranchName
 
 
-def validate_branch_for_deletion(branch_name):
+def validate_branch_for_deletion(branch_name: BranchName) -> BranchName:
     """Validate that a branch can be deleted."""
     current_branch = get_current_branch()
+    if not current_branch:
+        print_formatted_text(
+            "[danger]Error: Could not determine current branch[/danger]"
+        )
+        sys.exit(1)
 
     # Check if target branch exists
     validate_branch(branch_name)
@@ -42,7 +48,9 @@ def validate_branch_for_deletion(branch_name):
     return current_branch
 
 
-def get_branch_relationships(branch_name):
+def get_branch_relationships(
+    branch_name: BranchName,
+) -> tuple[BranchName | None, list[BranchName]]:
     """Get parent and child branches and validate parent exists."""
     parent_branch = get_parent_branch(branch_name)
     child_branches = get_child_branches(branch_name)
@@ -57,7 +65,11 @@ def get_branch_relationships(branch_name):
     return parent_branch, child_branches
 
 
-def display_deletion_info(branch_name, parent_branch, child_branches):
+def display_deletion_info(
+    branch_name: BranchName,
+    parent_branch: BranchName | None,
+    child_branches: list[BranchName],
+) -> bool:
     """Display deletion information and ask for confirmation."""
     print_formatted_text(
         f"[info]Branch to delete:[/info] {format_branch(branch_name, danger=True)}"
@@ -79,7 +91,12 @@ def display_deletion_info(branch_name, parent_branch, child_branches):
     return True
 
 
-def relink_child_branches(child_branches, parent_branch, current_branch, branch_name):
+def relink_child_branches(
+    child_branches: list[BranchName],
+    parent_branch: BranchName | None,
+    current_branch: BranchName,
+    branch_name: BranchName,
+) -> bool:
     """Relink child branches to the parent branch."""
     if not child_branches:
         return True
@@ -114,7 +131,7 @@ def relink_child_branches(child_branches, parent_branch, current_branch, branch_
     return True
 
 
-def delete_branch(branch_name=None):
+def delete_branch(branch_name: BranchName | None = None) -> None:
     """Delete a branch and relink the stack."""
     # If no branch name specified, prompt for it
     if not branch_name:

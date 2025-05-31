@@ -1,7 +1,6 @@
 """Command for modifying/amending commits in the stack."""
 
 import sys
-from typing import List
 
 from panqake.utils.config import get_parent_branch
 from panqake.utils.git import (
@@ -18,19 +17,19 @@ from panqake.utils.questionary_prompt import (
 )
 
 
-def has_staged_changes():
+def has_staged_changes() -> bool:
     """Check if there are any staged changes."""
     result = run_git_command(["diff", "--staged", "--name-only"])
     return bool(result and result.strip())
 
 
-def has_unstaged_changes():
+def has_unstaged_changes() -> bool:
     """Check if there are any unstaged changes."""
     result = run_git_command(["diff", "--name-only"])
     return bool(result and result.strip())
 
 
-def stage_selected_files(files: List[dict]) -> bool:
+def stage_selected_files(files: list[dict]) -> bool:
     """Stage selected files.
 
     Args:
@@ -80,7 +79,7 @@ def stage_selected_files(files: List[dict]) -> bool:
     return all_success
 
 
-def create_new_commit(message=None):
+def create_new_commit(message: str | None = None) -> None:
     """Create a new commit with the staged changes."""
     if not message:
         message = prompt_input("Enter commit message: ")
@@ -98,7 +97,7 @@ def create_new_commit(message=None):
     print_formatted_text("[success]New commit created successfully[/success]")
 
 
-def amend_existing_commit(message=None):
+def amend_existing_commit(message: str | None = None) -> None:
     """Amend the existing commit with staged changes."""
     commit_cmd = ["commit", "--amend"]
     if message:
@@ -116,7 +115,9 @@ def amend_existing_commit(message=None):
     print_formatted_text("[success]Commit amended successfully[/success]")
 
 
-def modify_commit(commit_flag=False, message=None, no_amend=False):
+def modify_commit(
+    commit_flag: bool = False, message: str | None = None, no_amend: bool = False
+) -> None:
     """Modify/amend the current commit or create a new one.
 
     Args:

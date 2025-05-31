@@ -16,9 +16,12 @@ from panqake.utils.questionary_prompt import (
     print_formatted_text,
     prompt_input,
 )
+from panqake.utils.types import BranchName
 
 
-def create_new_branch(branch_name=None, base_branch=None):
+def create_new_branch(
+    branch_name: BranchName | None = None, base_branch: BranchName | None = None
+) -> None:
     """Create a new branch in the stack."""
     # If no branch name specified, prompt for it
     if not branch_name:
@@ -32,9 +35,9 @@ def create_new_branch(branch_name=None, base_branch=None):
         branches = list_all_branches()
         if branches:
             base_branch = prompt_input(
-                f"Enter base branch [default: {current}]: ",
+                f"Enter base branch [default: {current or ''}]: ",
                 completer=branches,
-                default=current,
+                default=current or "",
             )
 
     # Check if the new branch already exists
@@ -47,6 +50,9 @@ def create_new_branch(branch_name=None, base_branch=None):
     # Check if the base branch exists
     if base_branch:
         validate_branch(base_branch)
+    else:
+        print_formatted_text("[danger]Error: Base branch is required[/danger]")
+        sys.exit(1)
 
     # Create the new branch
     create_branch(branch_name, base_branch)

@@ -1,5 +1,7 @@
 """Command for listing branches in the stack."""
 
+import sys
+
 from panqake.utils.config import get_parent_branch
 from panqake.utils.git import get_current_branch, validate_branch
 from panqake.utils.questionary_prompt import format_branch, print_formatted_text
@@ -25,6 +27,12 @@ def list_branches(branch_name=None):
     root_branch = find_stack_root(branch_name)
 
     current = get_current_branch()
+    if not current:
+        print_formatted_text(
+            "[danger]Error: Could not determine current branch[/danger]"
+        )
+        sys.exit(1)
+
     print_formatted_text(
         f"[info]Branch stack (current: {format_branch(current, current=True)})[/info]"
     )

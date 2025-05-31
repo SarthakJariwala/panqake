@@ -126,7 +126,7 @@ def test_create_new_branch_default_base(mock_git_utils, mock_config_utils, mock_
     ]
     mock_prompt["input"].side_effect = [
         "feature-branch",  # User enters branch name
-        "",  # User accepts default base branch by entering empty string
+        "main",  # User accepts default base branch (questionary returns default)
     ]
     # Mock current branch which should be used as default base
     mock_git_utils["current"].return_value = "main"
@@ -143,10 +143,10 @@ def test_create_new_branch_default_base(mock_git_utils, mock_config_utils, mock_
     mock_git_utils["list"].assert_called_once()
     # prompt_input called twice (name, base)
     assert mock_prompt["input"].call_count == 2
-    # create_branch called with the value returned by prompt ("")
-    mock_git_utils["create"].assert_called_once_with("feature-branch", "")
-    # add_to_stack also called with the value returned by prompt ("")
-    mock_config_utils.assert_called_once_with("feature-branch", "")
+    # create_branch called with the value returned by prompt ("main")
+    mock_git_utils["create"].assert_called_once_with("feature-branch", "main")
+    # add_to_stack also called with the value returned by prompt ("main")
+    mock_config_utils.assert_called_once_with("feature-branch", "main")
 
 
 def test_create_new_branch_with_validation(

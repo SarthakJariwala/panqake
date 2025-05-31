@@ -1,6 +1,6 @@
 """Type aliases for git stacking concepts used across the panqake utils module."""
 
-from typing import TYPE_CHECKING, Dict, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
 
 # Forward declaration for Branch class (defined in stack.py)
 if TYPE_CHECKING:
@@ -12,8 +12,8 @@ BranchName: TypeAlias = str
 # Empty string indicates root branch (no parent)
 ParentBranchName: TypeAlias = str
 # Contains "parent" key mapping to parent branch name
-BranchMetadata: TypeAlias = Dict[str, ParentBranchName]
+BranchMetadata: TypeAlias = dict[str, ParentBranchName]
 BranchObject: TypeAlias = "Branch"
-RepoBranches: TypeAlias = Dict[BranchName, BranchObject]
-StacksData: TypeAlias = Dict[RepoId, RepoBranches]
-SerializedStacksData: TypeAlias = Dict[RepoId, Dict[BranchName, BranchMetadata]]
+RepoBranches: TypeAlias = dict[BranchName, BranchObject]
+StacksData: TypeAlias = dict[RepoId, RepoBranches]
+SerializedStacksData: TypeAlias = dict[RepoId, dict[BranchName, BranchMetadata]]

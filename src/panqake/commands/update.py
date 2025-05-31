@@ -17,16 +17,19 @@ from panqake.utils.questionary_prompt import (
 )
 from panqake.utils.stack import Stacks
 from panqake.utils.status import status
+from panqake.utils.types import BranchName
 
 
-def validate_branch_for_update(branch_name):
+def validate_branch_for_update(
+    branch_name: BranchName | None,
+) -> tuple[BranchName, BranchName | None]:
     """Validate branch exists and get current branch for update operation."""
     # Validate branch exists and get current branch if none specified
     validated_branch = validate_branch(branch_name)
     return validated_branch, get_current_branch()
 
 
-def get_affected_branches(branch_name):
+def get_affected_branches(branch_name: BranchName) -> list[BranchName] | None:
     """Get affected branches and ask for confirmation."""
     with Stacks() as stacks:
         affected_branches = stacks.get_all_descendants(branch_name)
@@ -49,7 +52,9 @@ def get_affected_branches(branch_name):
     return affected_branches
 
 
-def update_branch_and_children(branch, current_branch):
+def update_branch_and_children(
+    branch: BranchName, current_branch: BranchName | None
+) -> tuple[list[BranchName], list[BranchName]]:
     """Update all child branches using a non-recursive approach.
 
     Args:
@@ -60,10 +65,17 @@ def update_branch_and_children(branch, current_branch):
         Tuple of (list of successfully updated branches, list of branches with conflicts)
     """
 
+    if not current_branch:
+        print_formatted_text(
+            "[danger]Error: Could not determine current branch[/danger]"
+        )
+        return [], []
     return update_branches_and_handle_conflicts(branch, current_branch)
 
 
-def update_branches(branch_name=None, skip_push=False):
+def update_branches(
+    branch_name: BranchName | None = None, skip_push: bool = False
+) -> tuple[bool, str | None]:
     """Update branches in the stack after changes and optionally push to remote.
 
     Args:
@@ -90,7 +102,7 @@ def update_branches(branch_name=None, skip_push=False):
         push_updated_branches(updated_branches)
 
     # Return to the original branch using our utility function
-    if not return_to_branch(current_branch):
+    if current_branch and not return_to_branch(current_branch):
         return False, f"Failed to return to branch '{current_branch}'"
 
     # Report success

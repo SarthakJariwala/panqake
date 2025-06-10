@@ -21,7 +21,9 @@ def mock_git_utils():
         patch("panqake.commands.merge.checkout_branch") as mock_checkout,
         patch("panqake.commands.merge.get_current_branch") as mock_current,
         patch("panqake.commands.merge.run_git_command") as mock_run,
-        patch("panqake.commands.merge.delete_remote_branch") as mock_delete_remote,
+        patch(
+            "panqake.commands.merge.delete_remote_branch"
+        ) as mock_delete_remote,
         patch("panqake.commands.merge.validate_branch") as mock_validate,
     ):
         mock_current.return_value = "main"
@@ -58,7 +60,9 @@ def mock_github_utils():
     """Mock GitHub utility functions."""
     with (
         patch("panqake.commands.merge.branch_has_pr") as mock_has_pr,
-        patch("panqake.commands.merge.check_github_cli_installed") as mock_check_cli,
+        patch(
+            "panqake.commands.merge.check_github_cli_installed"
+        ) as mock_check_cli,
         patch("panqake.commands.merge.update_pr_base") as mock_update_base,
         patch("panqake.commands.merge.github_merge_pr") as mock_merge_pr,
     ):
@@ -117,7 +121,9 @@ def test_merge_pr_success(mock_github_utils, mock_prompt):
 
     # Verify
     assert result is True
-    mock_github_utils["merge_pr"].assert_called_once_with("feature-branch", "squash")
+    mock_github_utils["merge_pr"].assert_called_once_with(
+        "feature-branch", "squash"
+    )
 
 
 def test_merge_pr_no_pr(mock_github_utils, mock_prompt):
@@ -186,7 +192,9 @@ def test_update_pr_base_for_children_no_children(mock_config_utils):
     assert result is True
 
 
-def test_cleanup_local_branch_success(mock_git_utils, mock_config_utils, mock_prompt):
+def test_cleanup_local_branch_success(
+    mock_git_utils, mock_config_utils, mock_prompt
+):
     """Test successful local branch cleanup."""
     # Setup
     mock_git_utils["exists"].return_value = True
@@ -328,9 +336,15 @@ def test_merge_branch_with_children(
     mock_github_utils["update_base"].assert_any_call("child1", "main")
     mock_github_utils["update_base"].assert_any_call("child2", "main")
     # Verify branch updates were attempted
-    assert mock_branch_ops["update"].call_count == 2  # Called for child1, child2
-    mock_branch_ops["update"].assert_any_call("child1", "main", abort_on_conflict=False)
-    mock_branch_ops["update"].assert_any_call("child2", "main", abort_on_conflict=False)
+    assert (
+        mock_branch_ops["update"].call_count == 2
+    )  # Called for child1, child2
+    mock_branch_ops["update"].assert_any_call(
+        "child1", "main", abort_on_conflict=True
+    )
+    mock_branch_ops["update"].assert_any_call(
+        "child2", "main", abort_on_conflict=True
+    )
     mock_git_utils["delete_remote"].assert_called_once_with("feature-branch")
     mock_config_utils["remove"].assert_called_once_with("feature-branch")
 
@@ -356,10 +370,15 @@ def test_merge_with_checks_status(
 ):
     """Test that merge warns about failed checks and respects user confirmation."""
     with (
-        patch("panqake.utils.github.get_pr_checks_status", return_value=checks_passed),
+        patch(
+            "panqake.utils.github.get_pr_checks_status",
+            return_value=checks_passed,
+        ),
         patch("panqake.commands.merge.fetch_latest_base_branch"),
         patch("panqake.commands.merge.handle_pr_base_updates"),
-        patch("panqake.commands.merge.prompt_confirm", return_value=user_confirm),
+        patch(
+            "panqake.commands.merge.prompt_confirm", return_value=user_confirm
+        ),
         patch("panqake.commands.merge.merge_pr", return_value=True),
         patch("panqake.commands.merge.delete_remote_branch"),
         patch("panqake.commands.merge.handle_branch_updates"),

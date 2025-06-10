@@ -124,7 +124,7 @@ def update_child_branches(branch_name, parent_branch, current_branch):
 
             # Use the utility function for rebasing with conflict detection
             rebase_success, error_msg = update_branch_with_conflict_detection(
-                child, parent_branch, abort_on_conflict=False
+                child, parent_branch, abort_on_conflict=True
             )
 
             if not rebase_success:

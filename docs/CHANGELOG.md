@@ -2,7 +2,15 @@
 
 ## [Unreleased]
 
+## v0.19.0 - 2025-06-10
+
 ### Added
+
+- Draft PR support for all PR creation commands
+
+  - Added `--draft` flag to `pq pr` command to create all PRs as drafts
+  - Interactive prompt for draft status when creating individual PRs
+  - Support for draft PRs in both `pq pr` and `pq submit` workflows
 
 - Improved type hints across the codebase
 

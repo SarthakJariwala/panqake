@@ -28,6 +28,10 @@ pq submit
 pq submit feature-auth
 ```
 
+## Creating New PRs
+
+When a branch doesn't have an existing PR, `submit` will prompt you to create one. During the PR creation process, you'll be asked whether to create it as a draft PR, giving you the option to share work-in-progress changes.
+
 ::: info
 Use `submit` as your primary command for sharing changes for review.
 :::

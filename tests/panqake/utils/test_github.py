@@ -174,6 +174,81 @@ def test_create_pr_with_reviewers(mock_subprocess_run):
     )
 
 
+def test_create_pr_as_draft(mock_subprocess_run):
+    """Test successful draft PR creation."""
+    mock_subprocess_run.return_value.stdout = (
+        "Draft PR created\nhttps://github.com/user/repo/pull/123"
+    )
+    success, url = create_pr(
+        base="main",
+        head="feature",
+        title="Test Draft PR",
+        body="Draft PR description",
+        draft=True,
+    )
+    assert success is True
+    assert url == "https://github.com/user/repo/pull/123"
+    mock_subprocess_run.assert_called_once_with(
+        [
+            "gh",
+            "pr",
+            "create",
+            "--base",
+            "main",
+            "--head",
+            "feature",
+            "--title",
+            "Test Draft PR",
+            "--body",
+            "Draft PR description",
+            "--draft",
+        ],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+def test_create_pr_draft_with_reviewers(mock_subprocess_run):
+    """Test successful draft PR creation with reviewers."""
+    mock_subprocess_run.return_value.stdout = (
+        "Draft PR created\nhttps://github.com/user/repo/pull/123"
+    )
+    success, url = create_pr(
+        base="main",
+        head="feature",
+        title="Test Draft PR",
+        body="Draft PR description",
+        reviewers=["reviewer1"],
+        draft=True,
+    )
+    assert success is True
+    assert url == "https://github.com/user/repo/pull/123"
+    mock_subprocess_run.assert_called_once_with(
+        [
+            "gh",
+            "pr",
+            "create",
+            "--base",
+            "main",
+            "--head",
+            "feature",
+            "--title",
+            "Test Draft PR",
+            "--body",
+            "Draft PR description",
+            "--draft",
+            "--reviewer",
+            "reviewer1",
+        ],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
 def test_get_potential_reviewers_success(mock_subprocess_run):
     """Test successful retrieval of potential reviewers."""
     mock_subprocess_run.return_value.stdout = """{

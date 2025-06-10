@@ -75,7 +75,9 @@ def is_branch_in_path_to_target(
     return False
 
 
-def process_branch_for_pr(branch: BranchName, target_branch: BranchName) -> bool:
+def process_branch_for_pr(
+    branch: BranchName, target_branch: BranchName, draft: bool = False
+) -> bool:
     """Process a branch to create PR and handle its children."""
     if branch_has_pr(branch):
         print_formatted_text(
@@ -91,7 +93,7 @@ def process_branch_for_pr(branch: BranchName, target_branch: BranchName) -> bool
         if not parent:
             parent = "main"  # Default to main if no parent
 
-        pr_created = create_pr_for_branch(branch, parent)
+        pr_created = create_pr_for_branch(branch, parent, draft)
 
     # Only process children if PR was created successfully or already existed
     if pr_created:
@@ -101,7 +103,7 @@ def process_branch_for_pr(branch: BranchName, target_branch: BranchName) -> bool
                 is_branch_in_path_to_target(child, target_branch, branch)
                 or child == target_branch
             ):
-                process_branch_for_pr(child, target_branch)
+                process_branch_for_pr(child, target_branch, draft)
     else:
         print_formatted_text(
             f"[warning]Skipping child branches of {format_branch(branch)} due to PR creation failure[/warning]"
@@ -110,7 +112,9 @@ def process_branch_for_pr(branch: BranchName, target_branch: BranchName) -> bool
     return pr_created
 
 
-def create_pull_requests(branch_name: BranchName | None = None) -> None:
+def create_pull_requests(
+    branch_name: BranchName | None = None, draft: bool = False
+) -> None:
     """Create pull requests for branches in the stack."""
     # Check for GitHub CLI
     if not check_github_cli_installed():
@@ -151,7 +155,7 @@ def create_pull_requests(branch_name: BranchName | None = None) -> None:
             f"[info]Creating PRs from the bottom of the stack up to: {format_branch(branch_name)}[/info]"
         )
 
-    process_branch_for_pr(oldest_branch, branch_name)
+    process_branch_for_pr(oldest_branch, branch_name, draft)
 
     print_formatted_text("[success]Pull request creation complete[/success]")
 
@@ -171,7 +175,9 @@ def ensure_branch_pushed(branch: BranchName) -> bool:
     return True
 
 
-def create_pr_for_branch(branch: BranchName, parent: BranchName) -> bool:
+def create_pr_for_branch(
+    branch: BranchName, parent: BranchName, draft: bool = False
+) -> bool:
     """Create a PR for a specific branch."""
     # Check if both branches are pushed to remote
     if not ensure_branch_pushed(branch) or not ensure_branch_pushed(parent):
@@ -206,6 +212,10 @@ def create_pr_for_branch(branch: BranchName, parent: BranchName) -> bool:
     description = prompt_input(
         "Enter PR description (optional): ", default="", multiline=True
     )
+
+    # Prompt for draft status if not already specified
+    if not draft:
+        draft = prompt_confirm("Is this a draft PR?")
 
     # Get potential reviewers and prompt for selection
     with status("Fetching potential reviewers..."):
@@ -251,7 +261,7 @@ def create_pr_for_branch(branch: BranchName, parent: BranchName) -> bool:
     # Create the PR
     with status(f"Creating pull request for {branch}..."):
         success, pr_url = create_pr(
-            parent, branch, title, description, selected_reviewers
+            parent, branch, title, description, selected_reviewers, draft
         )
 
     if success:

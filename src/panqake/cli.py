@@ -127,9 +127,10 @@ def pr(
     branch_name: str | None = typer.Argument(
         None, help="Optional branch to start from"
     ),
+    draft: bool = typer.Option(False, "--draft", help="Create PRs as drafts"),
 ):
     """Create PRs for the branch stack."""
-    create_pull_requests(branch_name)
+    create_pull_requests(branch_name, draft=draft)
 
 
 @app.command()

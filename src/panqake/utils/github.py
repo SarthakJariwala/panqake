@@ -85,6 +85,7 @@ def create_pr(
     title: str,
     body: str = "",
     reviewers: Optional[List[str]] = None,
+    draft: bool = False,
 ) -> Tuple[bool, Optional[str]]:
     """Create a pull request using GitHub CLI.
 
@@ -94,6 +95,7 @@ def create_pr(
         title: PR title
         body: PR description
         reviewers: Optional list of reviewer usernames
+        draft: Whether to create as a draft PR
 
     Returns:
         Tuple[bool, Optional[str]]: (success, url) where success indicates if
@@ -112,6 +114,10 @@ def create_pr(
             "--body",
             body,
         ]
+
+        # Add draft flag if requested
+        if draft:
+            cmd.append("--draft")
 
         # Add reviewers if provided
         if reviewers:

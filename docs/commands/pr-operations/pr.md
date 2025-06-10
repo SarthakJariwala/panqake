@@ -5,14 +5,20 @@ The `pr` command creates or updates pull requests for branches in your stack. It
 ## Usage
 
 ```bash
-pq pr [BRANCH_NAME]
+pq pr [BRANCH_NAME] [OPTIONS]
 ```
 
 ## Arguments
 
-| Argument | Description |
-|----------|-------------|
+| Argument      | Description                   |
+| ------------- | ----------------------------- |
 | `BRANCH_NAME` | Optional branch to start from |
+
+## Options
+
+| Option    | Description          |
+| --------- | -------------------- |
+| `--draft` | Create PRs as drafts |
 
 ## Examples
 
@@ -26,6 +32,27 @@ pq pr
 
 ```bash
 pq pr feature-auth-ui
+```
+
+### Creating Draft PRs
+
+When you want to create PRs as drafts (useful for work-in-progress):
+
+```bash
+# Create all PRs in the stack as drafts
+pq pr --draft
+
+# Create drafts for a specific branch and its dependencies
+pq pr feature-auth-ui --draft
+```
+
+### Interactive Draft Selection
+
+When running without the `--draft` flag, you'll be prompted for each PR whether to create it as a draft:
+
+```bash
+pq pr
+# You'll be asked: "Is this a draft PR? (y/N)"
 ```
 
 ::: info

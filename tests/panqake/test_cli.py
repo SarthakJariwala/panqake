@@ -187,3 +187,30 @@ def test_command_registration(runner):
 
     for cmd in expected_commands:
         assert cmd in output, f"Command '{cmd}' not found in help output"
+
+
+def test_pr_command_with_draft_flag(runner):
+    """Test PR command with draft flag."""
+    with patch("panqake.cli.create_pull_requests") as mock_create_prs:
+        result = runner.invoke(app, ["pr", "--draft"])
+
+        assert result.exit_code == 0
+        mock_create_prs.assert_called_once_with(None, draft=True)
+
+
+def test_pr_command_with_branch_and_draft(runner):
+    """Test PR command with branch name and draft flag."""
+    with patch("panqake.cli.create_pull_requests") as mock_create_prs:
+        result = runner.invoke(app, ["pr", "feature-branch", "--draft"])
+
+        assert result.exit_code == 0
+        mock_create_prs.assert_called_once_with("feature-branch", draft=True)
+
+
+def test_pr_command_without_draft_flag(runner):
+    """Test PR command without draft flag."""
+    with patch("panqake.cli.create_pull_requests") as mock_create_prs:
+        result = runner.invoke(app, ["pr"])
+
+        assert result.exit_code == 0
+        mock_create_prs.assert_called_once_with(None, draft=False)

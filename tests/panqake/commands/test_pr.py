@@ -55,14 +55,21 @@ def mock_config_utils():
 def mock_github_utils():
     """Mock GitHub utility functions."""
     with (
-        patch("panqake.commands.pr.check_github_cli_installed") as mock_check_cli,
+        patch(
+            "panqake.commands.pr.check_github_cli_installed"
+        ) as mock_check_cli,
         patch("panqake.commands.pr.branch_has_pr") as mock_has_pr,
         patch("panqake.commands.pr.create_pr") as mock_create_pr,
-        patch("panqake.commands.pr.get_potential_reviewers") as mock_get_reviewers,
+        patch(
+            "panqake.commands.pr.get_potential_reviewers"
+        ) as mock_get_reviewers,
     ):
         mock_check_cli.return_value = True
         mock_has_pr.return_value = False
-        mock_create_pr.return_value = (True, "https://github.com/user/repo/pull/123")
+        mock_create_pr.return_value = (
+            True,
+            "https://github.com/user/repo/pull/123",
+        )
         mock_get_reviewers.return_value = ["reviewer1", "reviewer2"]
         yield {
             "check_cli": mock_check_cli,
@@ -79,7 +86,9 @@ def mock_prompt():
         patch("panqake.commands.pr.print_formatted_text") as mock_print,
         patch("panqake.commands.pr.prompt_confirm") as mock_confirm,
         patch("panqake.commands.pr.prompt_input") as mock_input,
-        patch("panqake.commands.pr.prompt_for_reviewers") as mock_prompt_reviewers,
+        patch(
+            "panqake.commands.pr.prompt_for_reviewers"
+        ) as mock_prompt_reviewers,
         patch("panqake.commands.pr.console.print") as mock_console_print,
     ):
         mock_confirm.return_value = True
@@ -94,7 +103,9 @@ def mock_prompt():
         }
 
 
-def test_find_oldest_branch_without_pr_no_parent(mock_config_utils, mock_github_utils):
+def test_find_oldest_branch_without_pr_no_parent(
+    mock_config_utils, mock_github_utils
+):
     """Test finding oldest branch when there's no parent."""
     # Setup
     mock_config_utils["get_parent"].return_value = None
@@ -121,7 +132,9 @@ def test_find_oldest_branch_without_pr_parent_has_pr(
     assert result == "feature-branch"
 
 
-def test_find_oldest_branch_without_pr_recursive(mock_config_utils, mock_github_utils):
+def test_find_oldest_branch_without_pr_recursive(
+    mock_config_utils, mock_github_utils
+):
     """Test finding oldest branch recursively."""
     # Setup
     mock_config_utils["get_parent"].side_effect = [
@@ -144,7 +157,9 @@ def test_is_branch_in_path_to_target_direct_path(mock_config_utils):
     mock_config_utils["get_parent"].side_effect = ["parent-branch", "main"]
 
     # Execute
-    result = is_branch_in_path_to_target("parent-branch", "feature-branch", "main")
+    result = is_branch_in_path_to_target(
+        "parent-branch", "feature-branch", "main"
+    )
 
     # Verify
     assert result is True
@@ -156,7 +171,9 @@ def test_is_branch_in_path_to_target_not_in_path(mock_config_utils):
     mock_config_utils["get_parent"].side_effect = ["other-branch", "main"]
 
     # Execute
-    result = is_branch_in_path_to_target("unrelated-branch", "feature-branch", "main")
+    result = is_branch_in_path_to_target(
+        "unrelated-branch", "feature-branch", "main"
+    )
 
     # Verify
     assert result is False
@@ -318,7 +335,9 @@ def test_prompt_for_reviewers_empty_list():
         mock_select_reviewers.return_value = []
         result = prompt_for_reviewers([])
         assert result == []
-        mock_select_reviewers.assert_called_once_with([], include_skip_option=True)
+        mock_select_reviewers.assert_called_once_with(
+            [], include_skip_option=True
+        )
 
 
 def test_prompt_for_reviewers_skip_selection():
@@ -332,3 +351,113 @@ def test_prompt_for_reviewers_skip_selection():
         mock_select_reviewers.assert_called_once_with(
             ["user1", "user2"], include_skip_option=True
         )
+
+
+def test_create_pr_for_branch_as_draft(
+    mock_git_utils, mock_github_utils, mock_prompt
+):
+    """Test creating a PR as draft."""
+    # Setup
+    mock_git_utils["pushed"].return_value = True
+    mock_git_utils["run"].return_value = "commit1\ncommit2"
+    mock_prompt["confirm"].side_effect = [
+        True,
+        True,
+    ]  # First for draft, second for creation
+    mock_prompt["input"].return_value = "Test PR"
+    mock_github_utils["create_pr"].return_value = (
+        True,
+        "https://github.com/user/repo/pull/123",
+    )
+
+    # Execute
+    result = create_pr_for_branch("feature-branch", "main", draft=True)
+
+    # Verify
+    assert result is True
+    # Verify create_pr was called with draft=True (it's the 6th positional argument)
+    mock_github_utils["create_pr"].assert_called_once()
+    call_args = mock_github_utils["create_pr"].call_args
+    assert (
+        call_args[0][5] is True
+    )  # The draft parameter is the 6th positional argument (index 5)
+
+
+def test_create_pr_for_branch_prompt_for_draft(
+    mock_git_utils, mock_github_utils, mock_prompt
+):
+    """Test prompting for draft status when not specified."""
+    # Setup
+    mock_git_utils["pushed"].return_value = True
+    mock_git_utils["run"].return_value = "commit1"
+    mock_prompt["confirm"].side_effect = [
+        True,
+        True,
+    ]  # First for draft prompt, second for creation
+    mock_prompt["input"].return_value = "Test PR"
+    mock_github_utils["create_pr"].return_value = (
+        True,
+        "https://github.com/user/repo/pull/123",
+    )
+
+    # Execute
+    result = create_pr_for_branch("feature-branch", "main")
+
+    # Verify
+    assert result is True
+    # Verify draft prompt was called
+    mock_prompt["confirm"].assert_any_call("Is this a draft PR?")
+    # Verify create_pr was called with draft=True (based on prompt response)
+    mock_github_utils["create_pr"].assert_called_once()
+    call_args = mock_github_utils["create_pr"].call_args
+    assert (
+        call_args[0][5] is True
+    )  # The draft parameter is the 6th positional argument (index 5)
+
+
+def test_process_branch_for_pr_with_draft(
+    mock_config_utils, mock_github_utils, mock_prompt
+):
+    """Test processing branch for PR with draft flag."""
+    # Setup
+    mock_config_utils["get_parent"].return_value = "main"
+    mock_config_utils["get_children"].return_value = []
+    mock_github_utils["has_pr"].return_value = False
+
+    with patch(
+        "panqake.commands.pr.create_pr_for_branch"
+    ) as mock_create_pr_for_branch:
+        mock_create_pr_for_branch.return_value = True
+
+        # Execute
+        process_branch_for_pr("feature-branch", "feature-branch", draft=True)
+
+        # Verify
+        mock_create_pr_for_branch.assert_called_once_with(
+            "feature-branch", "main", True
+        )
+
+
+def test_create_pull_requests_with_draft_flag(
+    mock_git_utils, mock_config_utils, mock_github_utils, mock_prompt
+):
+    """Test create_pull_requests with draft flag."""
+    # Setup
+    mock_git_utils["current"].return_value = "feature-branch"
+    mock_git_utils["exists"].return_value = True
+    mock_config_utils["get_parent"].return_value = "main"
+    mock_config_utils["get_children"].return_value = []
+    mock_github_utils["has_pr"].return_value = False
+
+    with patch(
+        "panqake.commands.pr.find_oldest_branch_without_pr"
+    ) as mock_find_oldest:
+        mock_find_oldest.return_value = "feature-branch"
+        with patch("panqake.commands.pr.process_branch_for_pr") as mock_process:
+            # Execute
+            create_pull_requests("feature-branch", draft=True)
+
+            # Verify
+            mock_process.assert_called_once_with(
+                "feature-branch", "feature-branch", True
+            )

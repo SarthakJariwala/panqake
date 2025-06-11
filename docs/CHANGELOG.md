@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.19.1 - 2025-06-10
+
 ### Fixed
 
 - Fixed inconsistent conflict handling behavior between operations - merge command now aborts rebase on conflicts (same as sync and update) instead of leaving conflicts for manual resolution

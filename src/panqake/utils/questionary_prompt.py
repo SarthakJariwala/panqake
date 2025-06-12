@@ -34,6 +34,8 @@ from questionary import Choice, ValidationError, Validator
 from rich.console import Console
 from rich.theme import Theme
 
+from panqake.utils.exit import clean_exit
+
 # Create a Rich theme that will be used across the application
 rich_theme = Theme(
     {
@@ -60,16 +62,25 @@ style = questionary.Style(
         ("qmark", "white bold"),  # token in front of the question
         ("question", "bold"),  # question text
         ("answer", "orange bold"),  # submitted answer text
-        ("pointer", "orange bold"),  # pointer used in select and checkbox prompts
+        (
+            "pointer",
+            "orange bold",
+        ),  # pointer used in select and checkbox prompts
         (
             "highlighted",
             "orange bold",
         ),  # pointed-at choice in select and checkbox prompts
         ("selected", "orange bold"),  # style for a selected item of a checkbox
         ("separator", "red"),  # separator in lists
-        ("instruction", ""),  # user instructions for select, rawselect, checkbox
+        (
+            "instruction",
+            "",
+        ),  # user instructions for select, rawselect, checkbox
         ("text", ""),  # plain text
-        ("disabled", "gray italic"),  # disabled choices for select and checkbox prompts
+        (
+            "disabled",
+            "gray italic",
+        ),  # disabled choices for select and checkbox prompts
     ]
 )
 
@@ -123,27 +134,50 @@ def prompt_input(
         elif hasattr(completer, "words"):
             choices = completer.words
 
-    if choices:
-        # Pass empty message to questionary as Rich handled it
-        return questionary.autocomplete(
-            "", choices=choices, default=default, validate=validator, style=style
-        ).ask()
-    else:
-        # Pass empty message to questionary
-        return questionary.text(
-            "",
-            default=default,
-            validate=validator,
-            style=style,
-            multiline=multiline,
-        ).ask()
+    try:
+        if choices:
+            # Pass empty message to questionary as Rich handled it
+            result = questionary.autocomplete(
+                "",
+                choices=choices,
+                default=default,
+                validate=validator,
+                style=style,
+            ).ask()
+        else:
+            # Pass empty message to questionary
+            result = questionary.text(
+                "",
+                default=default,
+                validate=validator,
+                style=style,
+                multiline=multiline,
+            ).ask()
+
+        # Handle None return from questionary (user interrupted)
+        if result is None:
+            clean_exit()
+
+        return result
+    except KeyboardInterrupt:
+        clean_exit()
 
 
 def prompt_confirm(message: str) -> bool:
     """Prompt for confirmation with yes/no options, using Rich for the prompt."""
     rich_prompt(f"{message}", "prompt")  # Display prompt using Rich
-    # Pass empty message to questionary
-    return questionary.confirm("", default=False, style=style).ask()
+
+    try:
+        # Pass empty message to questionary
+        result = questionary.confirm("", default=False, style=style).ask()
+
+        # Handle None return from questionary (user interrupted)
+        if result is None:
+            clean_exit()
+
+        return result
+    except KeyboardInterrupt:
+        clean_exit()
 
 
 def prompt_checkbox(
@@ -196,16 +230,23 @@ def prompt_checkbox(
             checked = default is None or value in default_values
             processed_choices.append(Choice(name, value=value, checked=checked))
 
-    # Use the Choice objects with checked state (no default parameter needed)
-    result = questionary.checkbox(
-        "",
-        choices=processed_choices,
-        style=style,
-        use_search_filter=enable_search,
-        use_jk_keys=False if enable_search else True,
-    ).ask()
+    try:
+        # Use the Choice objects with checked state (no default parameter needed)
+        result = questionary.checkbox(
+            "",
+            choices=processed_choices,
+            style=style,
+            use_search_filter=enable_search,
+            use_jk_keys=False if enable_search else True,
+        ).ask()
 
-    return result
+        # Handle None return from questionary (user interrupted)
+        if result is None:
+            clean_exit()
+
+        return result
+    except KeyboardInterrupt:
+        clean_exit()
 
 
 def prompt_select(
@@ -253,16 +294,23 @@ def prompt_select(
         display_message = f"{message} (type to search)"
     rich_prompt(display_message, "prompt")
 
-    # Use questionary's select with empty message since we displayed it with rich_prompt
-    result = questionary.select(
-        "",
-        choices=questionary_choices,
-        style=style,
-        use_search_filter=enable_search,
-        use_jk_keys=False if enable_search else True,
-    ).ask()
+    try:
+        # Use questionary's select with empty message since we displayed it with rich_prompt
+        result = questionary.select(
+            "",
+            choices=questionary_choices,
+            style=style,
+            use_search_filter=enable_search,
+            use_jk_keys=False if enable_search else True,
+        ).ask()
 
-    return result
+        # Handle None return from questionary (user interrupted)
+        if result is None:
+            clean_exit()
+
+        return result
+    except KeyboardInterrupt:
+        clean_exit()
 
 
 class BranchNameValidator(Validator):
@@ -308,13 +356,20 @@ def prompt_for_parent(potential_parents: list[str]) -> str | None:
     message = "Select a parent branch (type to search)"
     rich_prompt(message, "prompt")
 
-    # Use questionary with empty message since we've already displayed it
-    selected = questionary.select(
-        "",
-        choices=potential_parents,
-        style=style,
-        use_search_filter=True,
-        use_jk_keys=False,
-    ).ask()
+    try:
+        # Use questionary with empty message since we've already displayed it
+        selected = questionary.select(
+            "",
+            choices=potential_parents,
+            style=style,
+            use_search_filter=True,
+            use_jk_keys=False,
+        ).ask()
 
-    return selected
+        # Handle None return from questionary (user interrupted)
+        if selected is None:
+            clean_exit()
+
+        return selected
+    except KeyboardInterrupt:
+        clean_exit()

@@ -54,10 +54,8 @@ def update_pull_request(branch_name=None):
                     "[info]Detected non-fast-forward update. Force push with lease will be used.[/info]"
                 )
 
-        # Push the branch to remote
-        push_type = "force push with lease" if needs_force else "push"
-        s.update(f"Performing {push_type} to remote...")
-        success = push_branch_to_remote(branch_name, force_with_lease=needs_force)
+    # Push the branch to remote
+    success = push_branch_to_remote(branch_name, force_with_lease=needs_force)
 
     if success:
         if branch_has_pr(branch_name):

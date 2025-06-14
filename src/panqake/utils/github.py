@@ -143,9 +143,8 @@ def create_pr(
 
 def update_pr_base(branch: str, new_base: str) -> bool:
     """Update the base branch of a PR."""
-    with status(f"Updating PR base to {new_base}..."):
-        result = run_gh_command(["pr", "edit", branch, "--base", new_base])
-        return result is not None
+    result = run_gh_command(["pr", "edit", branch, "--base", new_base])
+    return result is not None
 
 
 def get_pr_checks_status(branch: str) -> Tuple[bool, List[str]]:

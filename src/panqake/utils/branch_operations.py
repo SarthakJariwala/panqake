@@ -136,12 +136,12 @@ def return_to_branch(
             f"[info]Branch {format_branch(target_branch)} no longer exists, "
             f"returning to {format_branch(fallback_branch)}[/info]"
         )
-        with status(f"Checking out {fallback_branch}..."):
+        with status(f"Checking out {fallback_branch}...") as s:
             try:
                 checkout_branch(fallback_branch)
                 return True
             except SystemExit:
-                print_formatted_text(
+                s.pause_and_print(
                     f"[warning]Error: Failed to checkout {fallback_branch}[/warning]"
                 )
                 return False
@@ -247,7 +247,6 @@ def push_updated_branches(updated_branches: list[BranchName]) -> list[BranchName
                 )
                 continue
 
-            s.update(f"Pushing {branch}...")
             try:
                 checkout_branch(branch)
             except SystemExit:

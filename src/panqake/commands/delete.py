@@ -113,13 +113,13 @@ def relink_child_branches(
                     ["rebase", "--autostash", parent_branch]
                 )
                 if rebase_result is None:
-                    print_formatted_text(
+                    s.pause_and_print(
                         f"[warning]Error: Rebase conflict detected in branch '{child}'[/warning]"
                     )
-                    print_formatted_text(
+                    s.pause_and_print(
                         "[warning]Please resolve conflicts and run 'git rebase --continue'[/warning]"
                     )
-                    print_formatted_text(
+                    s.pause_and_print(
                         f"[warning]Then run 'panqake delete {branch_name}' again to retry[/warning]"
                     )
                     sys.exit(1)
@@ -169,7 +169,7 @@ def delete_branch(branch_name: BranchName | None = None) -> None:
         s.update(f"Deleting branch {branch_name}...")
         delete_result = run_git_command(["branch", "-D", branch_name])
         if delete_result is None:
-            print_formatted_text(
+            s.pause_and_print(
                 f"[warning]Error: Failed to delete branch '{branch_name}'[/warning]"
             )
             sys.exit(1)

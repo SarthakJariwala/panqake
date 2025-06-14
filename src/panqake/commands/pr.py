@@ -167,8 +167,7 @@ def ensure_branch_pushed(branch: BranchName) -> bool:
             f"[warning]Branch {format_branch(branch)} has not been pushed to remote yet[/warning]"
         )
         if prompt_confirm("Would you like to push it now?"):
-            with status(f"Pushing {branch} to remote..."):
-                return push_branch_to_remote(branch)
+            return push_branch_to_remote(branch)
         else:
             print_formatted_text("[info]PR creation skipped[/info]")
             return False
@@ -259,10 +258,9 @@ def create_pr_for_branch(
         return False
 
     # Create the PR
-    with status(f"Creating pull request for {branch}..."):
-        success, pr_url = create_pr(
-            parent, branch, title, description, selected_reviewers, draft
-        )
+    success, pr_url = create_pr(
+        parent, branch, title, description, selected_reviewers, draft
+    )
 
     if success:
         print_formatted_text(

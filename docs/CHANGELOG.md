@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.19.2 - 2025-06-14
+
 ### Added
 
 - Enhanced keyboard interrupt handling in all prompt functions with proper cleanup and exit

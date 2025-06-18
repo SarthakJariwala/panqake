@@ -148,6 +148,57 @@ def test_stage_selected_files_failure(mock_git_utils, mock_prompt):
     assert result is False
 
 
+def test_stage_selected_files_deleted(mock_git_utils, mock_prompt):
+    """Test successful staging of deleted files."""
+    # Setup
+    files = [
+        {"path": "deleted.py", "display": "Deleted: deleted.py"},
+        {"path": "also_deleted.py", "display": "Deleted: also_deleted.py"},
+    ]
+    mock_git_utils["run"].return_value = "success"
+
+    # Execute
+    result = stage_selected_files(files)
+
+    # Verify
+    assert result is True
+    assert mock_git_utils["run"].call_count == 2
+    # Verify that git add -A was used for deleted files
+    mock_git_utils["run"].assert_any_call(["add", "-A", "--", "deleted.py"])
+    mock_git_utils["run"].assert_any_call(["add", "-A", "--", "also_deleted.py"])
+
+
+def test_stage_selected_files_mixed(mock_git_utils, mock_prompt):
+    """Test staging a mix of modified, new, and deleted files."""
+    # Setup
+    files = [
+        {"path": "modified.py", "display": "Modified: modified.py"},
+        {"path": "deleted.py", "display": "Deleted: deleted.py"},
+        {"path": "new.py", "display": "Untracked: new.py"},
+        {
+            "path": "renamed.py",
+            "original_path": "old.py",
+            "display": "Renamed: old.py → renamed.py",
+        },
+    ]
+    mock_git_utils["run"].return_value = "success"
+
+    # Execute
+    result = stage_selected_files(files)
+
+    # Verify
+    assert result is True
+    # 3 regular files (using add -A) + 2 for the rename (old and new paths)
+    assert mock_git_utils["run"].call_count == 5
+    # Verify git add -A was used for regular files
+    mock_git_utils["run"].assert_any_call(["add", "-A", "--", "modified.py"])
+    mock_git_utils["run"].assert_any_call(["add", "-A", "--", "deleted.py"])
+    mock_git_utils["run"].assert_any_call(["add", "-A", "--", "new.py"])
+    # Verify rename handling
+    mock_git_utils["run"].assert_any_call(["add", "--", "old.py"])
+    mock_git_utils["run"].assert_any_call(["add", "--", "renamed.py"])
+
+
 def test_create_new_commit_success(mock_git_utils, mock_prompt):
     """Test successful creation of new commit."""
     # Setup

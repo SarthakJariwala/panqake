@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed error when staging deleted files in `pq modify` command - now uses `git add -A` to properly handle file deletions
+
 ## v0.19.2 - 2025-06-14
 
 ### Added

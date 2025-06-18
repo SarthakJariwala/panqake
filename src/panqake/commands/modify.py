@@ -71,7 +71,8 @@ def stage_selected_files(files: list[dict]) -> bool:
                 # Handle regular added/modified/deleted files
                 s.update(f"Staging {file_path}")
                 s.pause_and_print(f"[muted]  Adding {file_path}[/muted]")
-                result = run_git_command(["add", "--", file_path])
+                # Use 'git add -A' to handle all changes including deletions
+                result = run_git_command(["add", "-A", "--", file_path])
 
                 if result is None:
                     s.pause_and_print(

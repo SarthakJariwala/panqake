@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## v0.20.0 - 2025-07-02
+
+### Changed
+
+- Updated branch merge info display to show parent and child branches in a single line format (e.g., "Preparing to merge PR: main ← feature-branch")
+
 ## v0.19.3 - 2025-06-18
 
 ### Fixed

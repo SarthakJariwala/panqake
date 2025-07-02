@@ -285,9 +285,8 @@ def merge_branch(branch_name=None, delete_branch=True, update_children=True):
 
     # Show summary of what we're about to do
     print_formatted_text(
-        f"[info]Preparing to merge PR for branch: {branch_name}[/info]"
+        f"[info]Preparing to merge PR: {parent_branch} ← {branch_name}[/info]"
     )
-    print_formatted_text(f"[info]Parent branch:{parent_branch}[/info]")
 
     # Ask for merge method
     merge_method = get_merge_method()

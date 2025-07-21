@@ -11,6 +11,7 @@ from panqake.utils.config import (
     add_to_stack,
     get_child_branches,
     get_parent_branch,
+    get_worktree_path,
     remove_from_stack,
 )
 from panqake.utils.git import (
@@ -141,6 +142,19 @@ def update_child_branches(branch_name, parent_branch, current_branch):
 def cleanup_local_branch(branch_name):
     """Delete the local branch after successful merge."""
     if branch_exists(branch_name):
+        # Check if branch has a worktree that needs cleanup
+        worktree_path = get_worktree_path(branch_name)
+
+        # If branch has a worktree, inform user to manually delete it
+        if worktree_path:
+            print_formatted_text(
+                f"\n[warning]Branch '{branch_name}' has a worktree at: {worktree_path}[/warning]"
+            )
+            print_formatted_text("[info]To complete cleanup, please:[/info]")
+            print_formatted_text("[info]1. cd out of the worktree directory[/info]")
+            print_formatted_text(f"[info]2. Run: pq delete {branch_name}[/info]")
+            return False
+
         with status(f"Deleting local branch {branch_name}...") as s:
             # Make sure we're not on the branch we're trying to delete
             current = get_current_branch()

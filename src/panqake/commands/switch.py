@@ -3,10 +3,13 @@
 import sys
 
 from panqake.commands.list import list_branches
-from panqake.utils.git import checkout_branch, get_current_branch, list_all_branches
+from panqake.utils.git import (
+    get_current_branch,
+    list_all_branches,
+    switch_to_branch_or_worktree,
+)
 from panqake.utils.questionary_prompt import print_formatted_text
 from panqake.utils.selection import select_branch_excluding_current
-from panqake.utils.status import status
 
 
 def switch_branch(branch_name=None):
@@ -37,8 +40,7 @@ def switch_branch(branch_name=None):
             print_formatted_text(f"[info]Already on branch '{branch_name}'[/info]")
             return
 
-        with status(f"Switching to branch '{branch_name}'..."):
-            checkout_branch(branch_name)
+        switch_to_branch_or_worktree(branch_name)
         return
 
     # First show the branch hierarchy
@@ -58,8 +60,7 @@ def switch_branch(branch_name=None):
         return
 
     if selected:
-        with status(f"Switching to branch '{selected}'..."):
-            checkout_branch(selected)
+        switch_to_branch_or_worktree(selected)
         print_formatted_text("")
         # Show the branch hierarchy again
         list_branches()

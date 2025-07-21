@@ -1,8 +1,10 @@
 """Git operations for panqake git-stacking utility."""
 
 import os
+import shutil
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 from panqake.utils.questionary_prompt import print_formatted_text
@@ -54,7 +56,19 @@ def run_git_command(
 
 def get_repo_id() -> RepoId | None:
     """Get the current repository identifier."""
-    repo_path = run_git_command(["rev-parse", "--show-toplevel"])
+    # First try to get the common git directory (works in worktrees and main repo)
+    git_dir = run_git_command(["rev-parse", "--git-common-dir"])
+    if git_dir == ".git":
+        # this is top-level git repo
+        repo_path = run_git_command(["rev-parse", "--show-toplevel"])
+    elif git_dir and git_dir.endswith(".git"):
+        # For worktrees, this gives us the main repo's .git directory
+        # We need to go up one level to get the repo root
+        repo_path = os.path.dirname(git_dir)
+    else:
+        # Fallback to the old method
+        repo_path = run_git_command(["rev-parse", "--show-toplevel"])
+
     if repo_path:
         return os.path.basename(repo_path)
     return None
@@ -554,3 +568,183 @@ def has_unpushed_changes(branch: BranchName) -> bool:
         return ahead > 0  # If we have local commits not in origin
     except (ValueError, TypeError):
         return False  # Parse error, safer to assume no differences
+
+
+def list_worktrees() -> dict[BranchName, str]:
+    """Get a dictionary of all worktrees with their branch names and paths.
+
+    Returns:
+        Dict mapping branch names to their worktree paths
+    """
+    result = run_git_command(["worktree", "list", "--porcelain"], silent_fail=True)
+    if not result:
+        return {}
+
+    worktrees = {}
+    current_path = None
+    current_branch = None
+
+    for line in result.splitlines():
+        line = line.strip()
+        if line.startswith("worktree "):
+            current_path = line[9:]  # Remove "worktree " prefix
+        elif line.startswith("branch "):
+            current_branch = line[7:]  # Remove "branch " prefix
+            if current_path and current_branch:
+                # Remove refs/heads/ prefix if present
+                if current_branch.startswith("refs/heads/"):
+                    current_branch = current_branch[11:]
+                worktrees[current_branch] = current_path
+                current_path = None
+                current_branch = None
+
+    return worktrees
+
+
+def is_branch_worktree(branch: BranchName) -> bool:
+    """Check if a branch is associated with a worktree.
+
+    Args:
+        branch: The branch name to check
+
+    Returns:
+        True if the branch has a worktree, False otherwise
+    """
+    return branch in list_worktrees()
+
+
+def get_worktree_path(branch: BranchName) -> str | None:
+    """Get the worktree path for a branch.
+
+    Args:
+        branch: The branch name to get the worktree path for
+
+    Returns:
+        The absolute path to the worktree, or None if branch has no worktree
+    """
+    worktrees = list_worktrees()
+    return worktrees.get(branch)
+
+
+def add_worktree(branch_name: BranchName, path: str, base_branch: BranchName) -> bool:
+    """Create a new worktree with a new branch.
+
+    Args:
+        branch_name: Name of the new branch to create
+        path: Path where the worktree should be created
+        base_branch: Branch to base the new branch on
+
+    Returns:
+        True if worktree was created successfully, False otherwise
+    """
+    # Convert to absolute path
+    abs_path = str(Path(path).resolve())
+
+    # Check if path already exists
+    if os.path.exists(abs_path):
+        print_formatted_text(
+            f"[warning]Error: Path '{abs_path}' already exists[/warning]"
+        )
+        return False
+
+    with status(f"Creating worktree at {abs_path}...") as s:
+        # Create the worktree with new branch
+        s.update(f"Creating worktree with branch '{branch_name}'...")
+        result = run_git_command(
+            ["worktree", "add", "-b", branch_name, abs_path, base_branch]
+        )
+
+        if result is None:
+            s.pause_and_print(
+                f"[warning]Error: Failed to create worktree at '{abs_path}'[/warning]"
+            )
+            return False
+
+    print_formatted_text(
+        f"[success]Successfully created worktree at '{abs_path}'[/success]"
+    )
+    return True
+
+
+def remove_worktree(path: str, force: bool = False) -> bool:
+    """Remove a worktree at the specified path.
+
+    Args:
+        path: Path to the worktree to remove
+        force: Whether to force removal even if worktree has changes
+
+    Returns:
+        True if worktree was removed successfully, False otherwise
+    """
+    abs_path = str(Path(path).resolve())
+
+    # Check if path exists
+    if not os.path.exists(abs_path):
+        print_formatted_text(
+            f"[warning]Warning: Worktree path '{abs_path}' does not exist[/warning]"
+        )
+        return True  # Consider it success if already gone
+
+    with status(f"Removing worktree at {abs_path}...") as s:
+        # Try to remove via git first
+        cmd = ["worktree", "remove", abs_path]
+        if force:
+            cmd.append("--force")
+
+        s.update("Removing worktree via git...")
+        result = run_git_command(cmd, silent_fail=True)
+
+        if result is None:
+            # Git removal failed, try manual cleanup if force is enabled
+            if force:
+                s.update("Git removal failed, attempting manual cleanup...")
+                try:
+                    shutil.rmtree(abs_path)
+                    s.pause_and_print(
+                        "[success]Manually removed worktree directory[/success]"
+                    )
+                except Exception as e:
+                    s.pause_and_print(
+                        f"[warning]Error: Could not remove directory: {e}[/warning]"
+                    )
+                    return False
+            else:
+                s.pause_and_print(
+                    "[warning]Error: Failed to remove worktree (try with --force)[/warning]"
+                )
+                return False
+
+        # Prune worktrees to clean up git metadata
+        s.update("Pruning worktree metadata...")
+        run_git_command(["worktree", "prune"], silent_fail=True)
+
+    print_formatted_text(
+        f"[success]Successfully removed worktree at '{abs_path}'[/success]"
+    )
+    return True
+
+
+def switch_to_branch_or_worktree(
+    branch_name: BranchName, branch_type: str = "branch"
+) -> None:
+    """Handle switching to a branch, with special handling for worktrees.
+
+    If the branch has a worktree, inform the user to manually cd to it.
+    Otherwise, perform a regular checkout.
+
+    Args:
+        branch_name: The name of the branch to switch to
+        branch_type: The type of branch for display purposes (e.g., "branch", "parent branch", "child branch")
+    """
+    # Check if target branch has a worktree
+    worktree_path = get_worktree_path(branch_name)
+    if worktree_path:
+        # Branch is in a worktree, just inform user to cd
+        print_formatted_text(
+            f"[info]{branch_type} '{branch_name}' is in a worktree. To switch to it, run:[/info]"
+        )
+        print_formatted_text(f"[info]cd {worktree_path}[/info]")
+    else:
+        # Normal branch without worktree, do regular checkout
+        with status(f"Switching to {branch_type} '{branch_name}'..."):
+            checkout_branch(branch_name)

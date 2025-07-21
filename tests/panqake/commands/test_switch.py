@@ -13,7 +13,7 @@ def mock_git_utils():
     with (
         patch("panqake.commands.switch.list_all_branches") as mock_list,
         patch("panqake.commands.switch.get_current_branch") as mock_current,
-        patch("panqake.commands.switch.checkout_branch") as mock_checkout,
+        patch("panqake.commands.switch.switch_to_branch_or_worktree") as mock_checkout,
     ):
         mock_list.return_value = ["main", "feature", "develop"]
         mock_current.return_value = "main"

@@ -23,15 +23,19 @@ STACK_FILE: Path = PANQAKE_DIR / "stacks.json"
 class Branch:
     """Represents a branch in a stack with its relationships."""
 
-    def __init__(self, name: BranchName, parent: ParentBranchName = "") -> None:
-        """Initialize a branch with its name and parent.
+    def __init__(
+        self, name: BranchName, parent: ParentBranchName = "", worktree: str = ""
+    ) -> None:
+        """Initialize a branch with its name, parent, and optional worktree.
 
         Args:
             name: The name of the branch
             parent: The name of the parent branch (empty string for root branches)
+            worktree: The path to the worktree (empty string if no worktree)
         """
         self.name = name
         self.parent = parent
+        self.worktree = worktree
 
     def to_dict(self) -> BranchMetadata:
         """Convert branch to dictionary for serialization.
@@ -39,7 +43,10 @@ class Branch:
         Returns:
             Dict containing the branch data
         """
-        return {"parent": self.parent}
+        result = {"parent": self.parent}
+        if self.worktree:
+            result["worktree"] = self.worktree
+        return result
 
     @classmethod
     def from_dict(cls, name: BranchName, data: BranchMetadata) -> "Branch":
@@ -52,7 +59,7 @@ class Branch:
         Returns:
             A new Branch instance
         """
-        return cls(name, data.get("parent", ""))
+        return cls(name, data.get("parent", ""), data.get("worktree", ""))
 
 
 class Stacks:
@@ -204,12 +211,59 @@ class Stacks:
                     children.append(child_name)
         return children
 
-    def add_branch(self, branch: BranchName, parent: ParentBranchName) -> bool:
+    def get_worktree(self, branch: BranchName) -> str:
+        """Get the worktree path for the given branch.
+
+        Args:
+            branch: The name of the branch
+
+        Returns:
+            The worktree path, or empty string if not found or no worktree
+        """
+        if not self._ensure_loaded() or not self._ensure_repo_id():
+            return ""
+
+        if (
+            self._current_repo_id is not None
+            and self._current_repo_id in self._branches
+            and branch in self._branches[self._current_repo_id]
+        ):
+            return self._branches[self._current_repo_id][branch].worktree
+        return ""
+
+    def set_worktree(self, branch: BranchName, path: str) -> bool:
+        """Set the worktree path for a branch.
+
+        Args:
+            branch: The name of the branch
+            path: The worktree path (empty string to clear)
+
+        Returns:
+            bool: True if the worktree path was set successfully, False otherwise
+        """
+        if not self._ensure_loaded() or not self._ensure_repo_exists():
+            return False
+
+        repo_id: RepoId | None = self._current_repo_id
+        if (
+            repo_id is None
+            or repo_id not in self._branches
+            or branch not in self._branches[repo_id]
+        ):
+            return False
+
+        self._branches[repo_id][branch].worktree = path
+        return self.save()
+
+    def add_branch(
+        self, branch: BranchName, parent: ParentBranchName, worktree: str = ""
+    ) -> bool:
         """Add a branch to the stack.
 
         Args:
             branch: The name of the branch to add
             parent: The name of the parent branch
+            worktree: The path to the worktree (optional)
 
         Returns:
             bool: True if the branch was added successfully, False otherwise
@@ -218,7 +272,9 @@ class Stacks:
             return False
 
         if self._current_repo_id is not None:
-            self._branches[self._current_repo_id][branch] = Branch(branch, parent)
+            self._branches[self._current_repo_id][branch] = Branch(
+                branch, parent, worktree
+            )
         return self.save()
 
     def remove_branch(self, branch: BranchName) -> bool:
@@ -400,7 +456,7 @@ class Stacks:
     def _format_branch_display(
         self, branch: BranchName, current_branch: BranchName
     ) -> str:
-        """Format branch display with current branch indicator.
+        """Format branch display with current branch indicator and worktree info.
 
         Args:
             branch: Branch name to format
@@ -411,7 +467,16 @@ class Stacks:
         """
 
         is_current: bool = branch == current_branch
-        return format_branch(branch, current=is_current)
+        branch_display = format_branch(branch, current=is_current)
+
+        # Add worktree indicator if branch has a worktree
+        worktree_path = self.get_worktree(branch)
+        if worktree_path:
+            # Show just the directory name, not the full path
+            dir_name = Path(worktree_path).name
+            branch_display += f" @ 📂 {dir_name}"
+
+        return branch_display
 
     def _print_branch_tree(
         self, start_branch: BranchName, current_branch: BranchName
@@ -568,8 +633,10 @@ class Stacks:
         # Get the branch data
         branch_data: Branch = self._branches[repo_id][old_name]
 
-        # Create new branch entry with the same parent
-        self._branches[repo_id][new_name] = Branch(new_name, branch_data.parent)
+        # Create new branch entry with the same parent and worktree
+        self._branches[repo_id][new_name] = Branch(
+            new_name, branch_data.parent, branch_data.worktree
+        )
 
         # Remove the old branch entry
         del self._branches[repo_id][old_name]

@@ -30,10 +30,12 @@ def get_child_branches(branch: BranchName) -> list[BranchName]:
     return stacks.get_children(branch)
 
 
-def add_to_stack(branch: BranchName, parent: ParentBranchName) -> None:
+def add_to_stack(
+    branch: BranchName, parent: ParentBranchName, worktree: str = ""
+) -> None:
     """Add a branch to the stack."""
     stacks = Stacks()
-    stacks.add_branch(branch, parent)
+    stacks.add_branch(branch, parent, worktree)
 
 
 def remove_from_stack(branch: BranchName) -> bool:
@@ -50,3 +52,15 @@ def remove_from_stack(branch: BranchName) -> bool:
     """
     stacks = Stacks()
     return stacks.remove_branch(branch)
+
+
+def get_worktree_path(branch: BranchName) -> str:
+    """Get the worktree path for the given branch."""
+    stacks = Stacks()
+    return stacks.get_worktree(branch)
+
+
+def set_worktree_path(branch: BranchName, path: str) -> bool:
+    """Set the worktree path for a branch."""
+    stacks = Stacks()
+    return stacks.set_worktree(branch, path)

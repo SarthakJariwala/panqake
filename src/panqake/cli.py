@@ -76,9 +76,10 @@ app = typer.Typer(
 def new(
     branch_name: str | None = typer.Argument(None, help="Name of the new branch"),
     base_branch: str | None = typer.Argument(None, help="Parent branch"),
+    tree: bool = typer.Option(False, "--tree", help="Create branch in a new worktree"),
 ):
     """Create a new branch in the stack."""
-    create_new_branch(branch_name, base_branch)
+    create_new_branch(branch_name, base_branch, tree)
 
 
 @app.command(name="list")

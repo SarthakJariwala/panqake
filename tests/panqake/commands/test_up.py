@@ -11,7 +11,7 @@ from panqake.commands.up import up
 def mock_git_utils():
     """Mock git utility functions."""
     with (
-        patch("panqake.commands.up.checkout_branch") as mock_checkout,
+        patch("panqake.commands.up.switch_to_branch_or_worktree") as mock_checkout,
         patch("panqake.commands.up.get_current_branch") as mock_current,
     ):
         mock_current.return_value = "feature"
@@ -49,7 +49,7 @@ def test_up_with_parent(mock_git_utils, mock_stacks, mock_print):
     mock_stacks.get_parent.assert_called_once_with("feature")
 
     # Check that we checked out the parent branch
-    mock_git_utils["checkout"].assert_called_once_with("main")
+    mock_git_utils["checkout"].assert_called_once_with("main", "parent branch")
 
     # Check that we printed a message
     mock_print.assert_called_once()

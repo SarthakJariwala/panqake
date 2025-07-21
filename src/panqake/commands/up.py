@@ -2,10 +2,12 @@
 
 import sys
 
-from panqake.utils.git import checkout_branch, get_current_branch
+from panqake.utils.git import (
+    get_current_branch,
+    switch_to_branch_or_worktree,
+)
 from panqake.utils.questionary_prompt import print_formatted_text
 from panqake.utils.stack import Stacks
-from panqake.utils.status import status
 
 
 def up() -> None:
@@ -32,5 +34,4 @@ def up() -> None:
             sys.exit(1)
 
         print_formatted_text(f"[info]Moving up to parent branch: '{parent}'[/info]")
-        with status(f"Switching to parent branch '{parent}'..."):
-            checkout_branch(parent)
+        switch_to_branch_or_worktree(parent, "parent branch")

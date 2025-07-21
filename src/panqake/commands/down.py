@@ -2,10 +2,12 @@
 
 import sys
 
-from panqake.utils.git import checkout_branch, get_current_branch
+from panqake.utils.git import (
+    get_current_branch,
+    switch_to_branch_or_worktree,
+)
 from panqake.utils.questionary_prompt import print_formatted_text, prompt_select
 from panqake.utils.stack import Stacks
-from panqake.utils.status import status
 
 
 def down() -> None:
@@ -37,8 +39,7 @@ def down() -> None:
         if len(children) == 1:
             child = children[0]
             print_formatted_text(f"[info]Moving down to child branch: '{child}'[/info]")
-            with status(f"Switching to child branch '{child}'..."):
-                checkout_branch(child)
+            switch_to_branch_or_worktree(child, "child branch")
             return
 
         # Multiple children, prompt for selection
@@ -61,5 +62,4 @@ def down() -> None:
             print_formatted_text(
                 f"[info]Moving down to child branch: '{selected}'[/info]"
             )
-            with status(f"Switching to child branch '{selected}'..."):
-                checkout_branch(selected)
+            switch_to_branch_or_worktree(selected, "child branch")

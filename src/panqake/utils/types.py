@@ -11,8 +11,9 @@ RepoId: TypeAlias = str
 BranchName: TypeAlias = str
 # Empty string indicates root branch (no parent)
 ParentBranchName: TypeAlias = str
-# Contains "parent" key mapping to parent branch name
-BranchMetadata: TypeAlias = dict[str, ParentBranchName]
+WorktreePath: TypeAlias = str
+# Contains "parent" key mapping to parent branch name, and optional "worktree" key
+BranchMetadata: TypeAlias = dict[str, ParentBranchName | WorktreePath]
 BranchObject: TypeAlias = "Branch"
 RepoBranches: TypeAlias = dict[BranchName, BranchObject]
 StacksData: TypeAlias = dict[RepoId, RepoBranches]

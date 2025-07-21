@@ -11,7 +11,7 @@ from panqake.commands.down import down
 def mock_git_utils():
     """Mock git utility functions."""
     with (
-        patch("panqake.commands.down.checkout_branch") as mock_checkout,
+        patch("panqake.commands.down.switch_to_branch_or_worktree") as mock_checkout,
         patch("panqake.commands.down.get_current_branch") as mock_current,
     ):
         mock_current.return_value = "main"
@@ -55,7 +55,7 @@ def test_down_with_single_child(mock_git_utils, mock_stacks, mock_prompt):
     mock_stacks.get_children.assert_called_once_with("main")
 
     # Check that we checked out the child branch
-    mock_git_utils["checkout"].assert_called_once_with("feature")
+    mock_git_utils["checkout"].assert_called_once_with("feature", "child branch")
 
     # Check that we printed a message
     mock_prompt["print"].assert_called_once()
@@ -91,7 +91,7 @@ def test_down_with_multiple_children(mock_git_utils, mock_stacks, mock_prompt):
     assert [c["value"] for c in choices] == ["feature-a", "feature-b", "feature-c"]
 
     # Check that we checked out the selected branch
-    mock_git_utils["checkout"].assert_called_once_with("feature-b")
+    mock_git_utils["checkout"].assert_called_once_with("feature-b", "child branch")
 
 
 def test_down_with_multiple_children_cancel(mock_git_utils, mock_stacks, mock_prompt):

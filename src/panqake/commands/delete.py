@@ -1,17 +1,21 @@
 """Command for deleting a branch and relinking the stack."""
 
 import sys
+from pathlib import Path
 
 from panqake.utils.config import (
     add_to_stack,
     get_child_branches,
     get_parent_branch,
+    get_worktree_path,
     remove_from_stack,
+    set_worktree_path,
 )
 from panqake.utils.git import (
     branch_exists,
     checkout_branch,
     get_current_branch,
+    remove_worktree,
     run_git_command,
     validate_branch,
 )
@@ -152,7 +156,27 @@ def delete_branch(branch_name: BranchName | None = None) -> None:
     if not display_deletion_info(branch_name, parent_branch, child_branches):
         return
 
+    # Check if branch has a worktree that needs cleanup
+    worktree_path = get_worktree_path(branch_name)
+
     with status(f"Deleting branch '{branch_name}' from the stack...") as s:
+        # If we're currently in the worktree being deleted, inform user
+        if worktree_path:
+            current_dir = str(Path.cwd().resolve())
+            target_dir = str(Path(worktree_path).resolve())
+
+            if current_dir == target_dir:
+                # Find git repo root
+                repo_root = run_git_command(["rev-parse", "--show-toplevel"])
+                if repo_root:
+                    print_formatted_text(
+                        "You are currently in the worktree you are trying to delete. Switch to main worktree first."
+                    )
+                    print_formatted_text(f"[info]cd {repo_root}[/info]")
+
+                    # Update current_branch since we're now in main worktree
+                    current_branch = get_current_branch()
+
         # Process child branches
         if child_branches:
             s.update("Processing child branches...")
@@ -164,6 +188,16 @@ def delete_branch(branch_name: BranchName | None = None) -> None:
         if branch_name != current_branch:
             s.update(f"Returning to {current_branch}...")
             checkout_branch(current_branch)
+
+        # Clean up worktree if it exists
+        if worktree_path:
+            s.update(f"Removing worktree at {worktree_path}...")
+            if not remove_worktree(worktree_path, force=True):
+                s.pause_and_print(
+                    f"[warning]Warning: Failed to remove worktree at '{worktree_path}'[/warning]"
+                )
+            # Clear worktree path from metadata
+            set_worktree_path(branch_name, "")
 
         # Delete the branch
         s.update(f"Deleting branch {branch_name}...")

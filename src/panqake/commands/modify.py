@@ -69,14 +69,24 @@ def stage_selected_files(files: list[dict]) -> bool:
                     all_success = False
             else:
                 # Handle regular added/modified/deleted files
-                s.update(f"Staging {file_path}")
-                s.pause_and_print(f"[muted]  Adding {file_path}[/muted]")
-                # Use 'git add -A' to handle all changes including deletions
-                result = run_git_command(["add", "-A", "--", file_path])
+                # Check if the file is deleted by checking the display field
+                is_deleted = file_info.get("display", "").startswith("Deleted:")
+
+                if is_deleted:
+                    # For deleted files, use git rm --cached
+                    s.update(f"Staging deletion of {file_path}")
+                    s.pause_and_print(f"[muted]  Removing {file_path}[/muted]")
+                    result = run_git_command(["rm", "--cached", "--", file_path])
+                else:
+                    # For added/modified files, use git add -A
+                    s.update(f"Staging {file_path}")
+                    s.pause_and_print(f"[muted]  Adding {file_path}[/muted]")
+                    result = run_git_command(["add", "-A", "--", file_path])
 
                 if result is None:
+                    operation = "remove" if is_deleted else "stage"
                     s.pause_and_print(
-                        f"[warning]Error: Failed to stage {file_path}[/warning]"
+                        f"[warning]Error: Failed to {operation} {file_path}[/warning]"
                     )
                     all_success = False
 

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.21.1 - 2025-08-19
+
 ### Fixed
 
 - Fixed error when staging deleted files in `pq modify` command - now uses `git rm --cached` for deleted files instead of `git add -A`

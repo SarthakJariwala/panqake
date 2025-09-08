@@ -73,10 +73,10 @@ def stage_selected_files(files: list[dict]) -> bool:
                 is_deleted = file_info.get("display", "").startswith("Deleted:")
 
                 if is_deleted:
-                    # For deleted files, use git rm --cached
+                    # For deleted files, prefer git add -u to record tracked deletions reliably
                     s.update(f"Staging deletion of {file_path}")
                     s.pause_and_print(f"[muted]  Removing {file_path}[/muted]")
-                    result = run_git_command(["rm", "--cached", "--", file_path])
+                    result = run_git_command(["add", "-u", "--", file_path])
                 else:
                     # For added/modified files, use git add -A
                     s.update(f"Staging {file_path}")

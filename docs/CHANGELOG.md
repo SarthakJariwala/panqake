@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## v0.21.2 - 2025-09-08
+
+### Fixed
+
+- Fixed error when staging deleted files in `pq modify` command - now uses `git add -u` to stage tracked deletions reliably
+
 ## v0.21.1 - 2025-08-19
 
 ### Fixed

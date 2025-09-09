@@ -163,9 +163,9 @@ def test_stage_selected_files_deleted(mock_git_utils, mock_prompt):
     # Verify
     assert result is True
     assert mock_git_utils["run"].call_count == 2
-    # Verify that git rm --cached was used for deleted files
-    mock_git_utils["run"].assert_any_call(["rm", "--cached", "--", "deleted.py"])
-    mock_git_utils["run"].assert_any_call(["rm", "--cached", "--", "also_deleted.py"])
+    # Verify that git add -u was used for deleted files
+    mock_git_utils["run"].assert_any_call(["add", "-u", "--", "deleted.py"])
+    mock_git_utils["run"].assert_any_call(["add", "-u", "--", "also_deleted.py"])
 
 
 def test_stage_selected_files_mixed(mock_git_utils, mock_prompt):
@@ -193,8 +193,8 @@ def test_stage_selected_files_mixed(mock_git_utils, mock_prompt):
     # Verify git add -A was used for regular files
     mock_git_utils["run"].assert_any_call(["add", "-A", "--", "modified.py"])
     mock_git_utils["run"].assert_any_call(["add", "-A", "--", "new.py"])
-    # Verify git rm --cached was used for deleted files
-    mock_git_utils["run"].assert_any_call(["rm", "--cached", "--", "deleted.py"])
+    # Verify deletion handling uses git add -u
+    mock_git_utils["run"].assert_any_call(["add", "-u", "--", "deleted.py"])
     # Verify rename handling
     mock_git_utils["run"].assert_any_call(["add", "--", "old.py"])
     mock_git_utils["run"].assert_any_call(["add", "--", "renamed.py"])

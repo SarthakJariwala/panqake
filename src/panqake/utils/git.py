@@ -22,6 +22,7 @@ def run_git_command(
     command: list[str],
     silent_fail: bool = False,
     return_stderr_on_error: bool = False,
+    cwd: str | None = None,
 ) -> str | None:
     """Run a git command and return its output.
 
@@ -30,6 +31,7 @@ def run_git_command(
         silent_fail: If True, don't print error messages on failure
         return_stderr_on_error: If True, return stderr content on failure instead of None
             (only applies when silent_fail=True)
+        cwd: Working directory for the command (defaults to current directory)
     """
     try:
         result = subprocess.run(
@@ -38,6 +40,7 @@ def run_git_command(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            cwd=cwd,
         )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
@@ -174,7 +177,8 @@ def push_branch_to_remote(branch: BranchName, force_with_lease: bool = False) ->
         if force_with_lease:
             push_cmd.insert(1, "--force-with-lease")
 
-        result = run_git_command(push_cmd)
+        # Use the appropriate working directory for the branch
+        result = run_git_command_for_branch_context(branch, push_cmd)
 
     if result is not None:
         print_formatted_text(
@@ -624,6 +628,46 @@ def get_worktree_path(branch: BranchName) -> str | None:
     """
     worktrees = list_worktrees()
     return worktrees.get(branch)
+
+
+def get_branch_working_directory(branch: BranchName) -> str | None:
+    """Get the working directory for git operations on a branch.
+
+    Args:
+        branch: The branch name
+
+    Returns:
+        The worktree path if branch is in a worktree, None for normal branches
+    """
+    return get_worktree_path(branch)
+
+
+def run_git_command_for_branch_context(
+    branch: BranchName,
+    command: list[str],
+    silent_fail: bool = False,
+    return_stderr_on_error: bool = False,
+) -> str | None:
+    """Run a git command in the appropriate directory for a branch.
+
+    For worktree branches, runs the command in the worktree directory.
+    For normal branches, runs the command in the main repository directory.
+
+    Args:
+        branch: The branch name to determine the working directory
+        command: The git command to run
+        silent_fail: If True, don't print error messages on failure
+        return_stderr_on_error: If True, return stderr content on failure instead of None
+
+    Returns:
+        Command output or None on failure
+    """
+    return run_git_command(
+        command,
+        silent_fail=silent_fail,
+        return_stderr_on_error=return_stderr_on_error,
+        cwd=get_branch_working_directory(branch),
+    )
 
 
 def add_worktree(branch_name: BranchName, path: str, base_branch: BranchName) -> bool:

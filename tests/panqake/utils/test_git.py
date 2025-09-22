@@ -43,6 +43,7 @@ def test_run_git_command_success(mock_subprocess_run):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        cwd=None,
     )
 
 
@@ -65,6 +66,7 @@ def test_is_git_repo_true(mock_subprocess_run):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        cwd=None,
     )
 
 
@@ -196,6 +198,7 @@ def test_is_force_push_needed_true(mock_is_pushed, mock_subprocess_run):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        cwd=None,
     )
 
 
@@ -230,6 +233,7 @@ def test_has_unpushed_changes_with_changes(mock_is_pushed, mock_subprocess_run):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        cwd=None,
     )
 
 

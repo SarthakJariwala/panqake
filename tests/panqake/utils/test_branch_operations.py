@@ -19,11 +19,17 @@ def mock_git_utils():
         patch("panqake.utils.branch_operations.branch_exists") as mock_exists,
         patch("panqake.utils.branch_operations.checkout_branch") as mock_checkout,
         patch("panqake.utils.branch_operations.run_git_command") as mock_run,
+        patch(
+            "panqake.utils.branch_operations.run_git_command_for_branch_context"
+        ) as mock_run_git_for_context,
+        patch("panqake.utils.branch_operations.is_branch_worktree") as mock_is_worktree,
     ):
         yield {
             "exists": mock_exists,
             "checkout": mock_checkout,
             "run": mock_run,
+            "run_git_for_context": mock_run_git_for_context,
+            "is_worktree": mock_is_worktree,
         }
 
 
@@ -51,32 +57,37 @@ def mock_prompt():
 
 def test_update_branch_success(mock_git_utils, mock_prompt):
     """Test successful branch update."""
-    mock_git_utils["run"].return_value = "Success"
+    mock_git_utils["is_worktree"].return_value = False  # Normal branch
+    mock_git_utils["run_git_for_context"].return_value = "Success"
 
     success, error = update_branch_with_conflict_detection("feature", "main")
 
     assert success is True
     assert error is None
     mock_git_utils["checkout"].assert_called_once_with("feature")
-    mock_git_utils["run"].assert_called_with(["rebase", "--autostash", "main"])
+    mock_git_utils["run_git_for_context"].assert_called_with(
+        "feature", ["rebase", "--autostash", "main"]
+    )
     mock_prompt["print"].assert_called_once()
 
 
 def test_update_branch_checkout_failure(mock_git_utils, mock_prompt):
     """Test branch update with checkout failure."""
+    mock_git_utils["is_worktree"].return_value = False  # Normal branch
     mock_git_utils["checkout"].side_effect = SystemExit(1)
 
     success, error = update_branch_with_conflict_detection("feature", "main")
 
     assert success is False
     assert error is not None and "Failed to checkout" in error
-    mock_git_utils["run"].assert_not_called()
+    mock_git_utils["run_git_for_context"].assert_not_called()
 
 
 def test_update_branch_conflict_abort(mock_git_utils, mock_prompt):
     """Test branch update with conflict and abort."""
     # Simulate rebase failure (returns None), then abort success (returns string)
-    mock_git_utils["run"].side_effect = [None, "Rebase aborted"]
+    mock_git_utils["is_worktree"].return_value = False  # Normal branch
+    mock_git_utils["run_git_for_context"].side_effect = [None, "Rebase aborted"]
 
     success, error = update_branch_with_conflict_detection("feature", "main")
 
@@ -84,15 +95,16 @@ def test_update_branch_conflict_abort(mock_git_utils, mock_prompt):
     assert error is not None and "conflict detected" in error
     # Ensure checkout, rebase, and abort were called in order
     mock_git_utils["checkout"].assert_called_once_with("feature")
-    calls = mock_git_utils["run"].call_args_list
+    calls = mock_git_utils["run_git_for_context"].call_args_list
     assert len(calls) == 2
-    assert calls[0].args[0] == ["rebase", "--autostash", "main"]
-    assert calls[1].args[0] == ["rebase", "--abort"]
+    assert calls[0].args == ("feature", ["rebase", "--autostash", "main"])
+    assert calls[1].args == ("feature", ["rebase", "--abort"])
 
 
 def test_update_branch_conflict_no_abort(mock_git_utils, mock_prompt):
     """Test branch update with conflict without abort."""
-    mock_git_utils["run"].return_value = None  # Rebase fails
+    mock_git_utils["is_worktree"].return_value = False  # Normal branch
+    mock_git_utils["run_git_for_context"].return_value = None  # Rebase fails
 
     success, error = update_branch_with_conflict_detection(
         "feature", "main", abort_on_conflict=False
@@ -101,7 +113,50 @@ def test_update_branch_conflict_no_abort(mock_git_utils, mock_prompt):
     assert success is False
     assert error is not None and "resolve conflicts" in error
     # Should not abort the rebase
-    assert ["rebase", "--abort"] not in mock_git_utils["run"].call_args_list
+    calls = mock_git_utils["run_git_for_context"].call_args_list
+    assert len(calls) == 1  # Only the rebase call, no abort
+    assert calls[0].args == ("feature", ["rebase", "--autostash", "main"])
+
+
+def test_update_worktree_branch_success(mock_git_utils, mock_prompt):
+    """Test successful worktree branch update."""
+    mock_git_utils["is_worktree"].return_value = True  # Worktree branch
+    mock_git_utils["run_git_for_context"].side_effect = [
+        "feature",
+        "Success",
+    ]  # HEAD check, then rebase
+
+    success, error = update_branch_with_conflict_detection("feature", "main")
+
+    assert success is True
+    assert error is None
+    # Should not call checkout for worktree branches
+    mock_git_utils["checkout"].assert_not_called()
+    # Should verify HEAD and run rebase in worktree directory
+    calls = mock_git_utils["run_git_for_context"].call_args_list
+    assert len(calls) == 2
+    assert calls[0].args == ("feature", ["rev-parse", "--abbrev-ref", "HEAD"])
+    assert calls[1].args == ("feature", ["rebase", "--autostash", "main"])
+    mock_prompt["print"].assert_called_once()
+
+
+def test_update_worktree_branch_wrong_head(mock_git_utils, mock_prompt):
+    """Test worktree branch update when HEAD is on wrong branch."""
+    mock_git_utils["is_worktree"].return_value = True  # Worktree branch
+    mock_git_utils[
+        "run_git_for_context"
+    ].return_value = "main"  # HEAD is on main, not feature
+
+    success, error = update_branch_with_conflict_detection("feature", "main")
+
+    assert success is False
+    assert error is not None and "not on the correct branch" in error
+    # Should not call checkout or rebase
+    mock_git_utils["checkout"].assert_not_called()
+    # Should only check HEAD
+    calls = mock_git_utils["run_git_for_context"].call_args_list
+    assert len(calls) == 1
+    assert calls[0].args == ("feature", ["rev-parse", "--abbrev-ref", "HEAD"])
 
 
 def test_fetch_latest_success(mock_git_utils, mock_prompt):

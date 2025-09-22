@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## v0.22.0 - 2025-09-22
+
+### Added
+
+- Added comprehensive git worktree support for all branch operations
+  - `pq sync` now automatically handles branches managed by git worktrees
+  - Branch operations (rebase, push, etc.) run in the appropriate working directory for both worktree and normal branches
+  - Eliminates "already used by worktree" errors during sync operations
+  - Seamless integration - no user intervention required for worktree branches
+
 ## v0.21.2 - 2025-09-08
 
 ### Fixed

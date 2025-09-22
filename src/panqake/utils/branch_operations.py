@@ -5,8 +5,10 @@ from panqake.utils.git import (
     checkout_branch,
     has_unpushed_changes,
     is_branch_pushed_to_remote,
+    is_branch_worktree,
     push_branch_to_remote,
     run_git_command,
+    run_git_command_for_branch_context,
 )
 from panqake.utils.questionary_prompt import (
     format_branch,
@@ -30,18 +32,32 @@ def update_branch_with_conflict_detection(
     Returns:
         Tuple of (success_flag, error_message)
     """
-    # Checkout the branch
-    try:
-        checkout_branch(branch)
-    except SystemExit:
-        return False, f"Failed to checkout branch '{branch}'"
+    # For worktree branches, skip checkout and run rebase in worktree directory
+    if is_branch_worktree(branch):
+        # Verify the worktree is on the correct branch
+        current_head = run_git_command_for_branch_context(
+            branch, ["rev-parse", "--abbrev-ref", "HEAD"], silent_fail=True
+        )
+        if current_head != branch:
+            return (
+                False,
+                f"Worktree for branch '{branch}' is not on the correct branch (currently on '{current_head}')",
+            )
+    else:
+        # Checkout the branch (normal case)
+        try:
+            checkout_branch(branch)
+        except SystemExit:
+            return False, f"Failed to checkout branch '{branch}'"
 
-    # Rebase onto parent branch
-    rebase_result = run_git_command(["rebase", "--autostash", parent])
+    # Rebase onto parent branch (using appropriate working directory)
+    rebase_result = run_git_command_for_branch_context(
+        branch, ["rebase", "--autostash", parent]
+    )
     if rebase_result is None:
         # Conflict detected
         if abort_on_conflict:
-            run_git_command(["rebase", "--abort"])
+            run_git_command_for_branch_context(branch, ["rebase", "--abort"])
             return False, f"Rebase conflict detected in branch '{branch}'"
         else:
             error_msg = (

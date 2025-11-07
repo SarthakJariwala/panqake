@@ -246,15 +246,16 @@ def test_merge_branch_success(
     mock_github_utils["has_pr"].return_value = True
     mock_github_utils["merge_pr"].return_value = True
     mock_prompt["select"].return_value = "squash"
-    mock_prompt["confirm"].return_value = True
     mock_branch_ops["update"].return_value = (True, None)
 
-    # Execute
-    merge_branch("feature-branch")
+    # Mock successful checks
+    with patch("panqake.utils.github.get_pr_checks_status", return_value=(True, [])):
+        # Execute
+        merge_branch("feature-branch")
 
-    # Verify
-    mock_git_utils["delete_remote"].assert_called_once_with("feature-branch")
-    mock_branch_ops["return"].assert_called_once()
+        # Verify
+        mock_git_utils["delete_remote"].assert_called_once_with("feature-branch")
+        mock_branch_ops["return"].assert_called_once()
 
 
 def test_merge_branch_no_github_cli(mock_github_utils):
@@ -271,20 +272,31 @@ def test_merge_branch_user_cancellation(
     mock_git_utils,
     mock_config_utils,
     mock_github_utils,
+    mock_branch_ops,
     mock_prompt,
 ):
-    """Test merge cancellation by user."""
+    """Test merge cancellation by user after checks fail."""
     # Setup
     mock_config_utils["get_parent"].return_value = "main"
     mock_prompt["select"].return_value = "squash"
-    mock_prompt["confirm"].return_value = False
 
-    # Execute
-    merge_branch("feature-branch")
+    # Mock checks failure and user cancellation
+    with (
+        patch(
+            "panqake.utils.github.get_pr_checks_status",
+            return_value=(False, ["CI (FAILURE)"]),
+        ),
+    ):
+        mock_prompt["confirm"].return_value = False
 
-    # Verify no merge operations occurred
-    mock_github_utils["merge_pr"].assert_not_called()
-    mock_git_utils["delete_remote"].assert_not_called()
+        # Execute
+        merge_branch("feature-branch")
+
+        # Verify no merge operations occurred
+        mock_github_utils["merge_pr"].assert_not_called()
+        mock_git_utils["delete_remote"].assert_not_called()
+        # Verify PR base updates were NOT called since user cancelled
+        mock_github_utils["update_base"].assert_not_called()
 
 
 def test_merge_branch_with_children(
@@ -316,23 +328,28 @@ def test_merge_branch_with_children(
     mock_github_utils["merge_pr"].return_value = True
     mock_github_utils["update_base"].return_value = True
     mock_prompt["select"].return_value = "squash"
-    mock_prompt["confirm"].return_value = True
     mock_branch_ops["update"].return_value = (True, None)
 
-    # Execute
-    merge_branch("feature-branch", update_children=True)
+    # Mock successful checks
+    with patch("panqake.utils.github.get_pr_checks_status", return_value=(True, [])):
+        # Execute
+        merge_branch("feature-branch", update_children=True)
 
-    # Verify main actions
-    mock_github_utils["merge_pr"].assert_called_once()
-    assert mock_github_utils["update_base"].call_count == 2
-    mock_github_utils["update_base"].assert_any_call("child1", "main")
-    mock_github_utils["update_base"].assert_any_call("child2", "main")
-    # Verify branch updates were attempted
-    assert mock_branch_ops["update"].call_count == 2  # Called for child1, child2
-    mock_branch_ops["update"].assert_any_call("child1", "main", abort_on_conflict=True)
-    mock_branch_ops["update"].assert_any_call("child2", "main", abort_on_conflict=True)
-    mock_git_utils["delete_remote"].assert_called_once_with("feature-branch")
-    mock_config_utils["remove"].assert_called_once_with("feature-branch")
+        # Verify main actions
+        mock_github_utils["merge_pr"].assert_called_once()
+        assert mock_github_utils["update_base"].call_count == 2
+        mock_github_utils["update_base"].assert_any_call("child1", "main")
+        mock_github_utils["update_base"].assert_any_call("child2", "main")
+        # Verify branch updates were attempted
+        assert mock_branch_ops["update"].call_count == 2  # Called for child1, child2
+        mock_branch_ops["update"].assert_any_call(
+            "child1", "main", abort_on_conflict=True
+        )
+        mock_branch_ops["update"].assert_any_call(
+            "child2", "main", abort_on_conflict=True
+        )
+        mock_git_utils["delete_remote"].assert_called_once_with("feature-branch")
+        mock_config_utils["remove"].assert_called_once_with("feature-branch")
 
 
 @pytest.mark.parametrize(
@@ -361,9 +378,9 @@ def test_merge_with_checks_status(
             return_value=checks_passed,
         ),
         patch("panqake.commands.merge.fetch_latest_base_branch"),
-        patch("panqake.commands.merge.handle_pr_base_updates"),
+        patch("panqake.commands.merge.handle_pr_base_updates") as mock_pr_base_updates,
         patch("panqake.commands.merge.prompt_confirm", return_value=user_confirm),
-        patch("panqake.commands.merge.merge_pr", return_value=True),
+        patch("panqake.commands.merge.merge_pr", return_value=True) as mock_merge,
         patch("panqake.commands.merge.delete_remote_branch"),
         patch("panqake.commands.merge.handle_branch_updates"),
         patch("panqake.commands.merge.cleanup_local_branch"),
@@ -377,3 +394,12 @@ def test_merge_with_checks_status(
         )
 
         assert result == expected_result
+
+        # Verify PR base updates are NOT called if user cancels after seeing failed checks
+        if not expected_result:
+            mock_pr_base_updates.assert_not_called()
+            mock_merge.assert_not_called()
+        else:
+            # Verify PR base updates are called BEFORE merge when user confirms
+            mock_pr_base_updates.assert_called_once()
+            mock_merge.assert_called_once()

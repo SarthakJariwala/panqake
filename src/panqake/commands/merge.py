@@ -233,11 +233,7 @@ def perform_merge_operations(
     # Fetch latest from remote
     fetch_latest_base_branch(branch_name)
 
-    # IMPORTANT: First, update PR base references for all child branches
-    # This must be done before we delete the branch to avoid closing child PRs
-    handle_pr_base_updates(branch_name, parent_branch, update_children)
-
-    # Check if all required checks have passed
+    # Check if all required checks have passed FIRST (before updating base refs)
     checks_passed, failed_checks = get_pr_checks_status(branch_name)
     if not checks_passed:
         print_formatted_text(
@@ -250,6 +246,10 @@ def perform_merge_operations(
         if not prompt_confirm("Do you want to proceed with the merge anyway?"):
             print_formatted_text("[info]Merge cancelled.[/info]")
             return False
+
+    # IMPORTANT: Update PR base references for all child branches after confirmation
+    # This must be done before we delete the branch to avoid closing child PRs
+    handle_pr_base_updates(branch_name, parent_branch, update_children)
 
     # Merge the PR (without deleting the branch yet)
     merge_success = merge_pr(branch_name, merge_method)

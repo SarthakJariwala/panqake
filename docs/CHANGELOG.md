@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## v0.23.0 - 2025-11-06
+
+### Fixed
+
+- Fixed `pq merge` to check PR actions status before updating child PR base references - prevents unnecessary updates when user decides not to proceed with merge
+
 ## v0.22.0 - 2025-09-22
 
 ### Added

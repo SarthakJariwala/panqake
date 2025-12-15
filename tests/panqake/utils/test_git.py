@@ -80,7 +80,9 @@ def test_is_git_repo_false(mock_subprocess_run):
 
 def test_get_repo_id_success(mock_subprocess_run):
     """Test getting repository ID successfully."""
-    mock_subprocess_run.return_value.stdout = "/path/to/repo"
+    # Mock the git rev-parse --path-format=absolute --git-common-dir to return a .git path
+    # The function will resolve it and extract the parent directory basename
+    mock_subprocess_run.return_value.stdout = "/path/to/repo/.git"
     assert get_repo_id() == "repo"
 
 

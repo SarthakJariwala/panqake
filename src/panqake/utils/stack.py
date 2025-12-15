@@ -136,6 +136,20 @@ class Stacks:
                             )
 
                     self._current_repo_id = get_repo_id()
+
+                    # Migrate branches stored under bad relative repo IDs
+                    if (
+                        self._current_repo_id
+                        and self._current_repo_id not in self._branches
+                    ):
+                        for bad_id in (".", "..", "../.."):
+                            if bad_id in self._branches:
+                                self._branches[self._current_repo_id] = (
+                                    self._branches.pop(bad_id)
+                                )
+                                self.save()  # Persist migration
+                                break
+
                     self._loaded = True
                     return True
                 except json.JSONDecodeError:

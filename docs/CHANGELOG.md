@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## v0.23.1 - 2025-11-14
+
+### Fixed
+
+- Fixed branch tracking bug where branches created from subfolders weren't recognized when running `pq ls` from the top-level folder
+  - `get_repo_id()` now normalizes git directory paths to absolute paths to ensure consistent repository identification across different working directories
+  - Added automatic migration to recover branches previously stored under incorrect repo IDs (e.g., ".", "..", "../..")
+
 ## v0.23.0 - 2025-11-06
 
 ### Fixed

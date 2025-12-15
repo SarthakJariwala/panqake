@@ -58,19 +58,32 @@ def run_git_command(
 
 
 def get_repo_id() -> RepoId | None:
-    """Get the current repository identifier."""
-    # First try to get the common git directory (works in worktrees and main repo)
-    git_dir = run_git_command(["rev-parse", "--git-common-dir"])
-    if git_dir == ".git":
-        # this is top-level git repo
-        repo_path = run_git_command(["rev-parse", "--show-toplevel"])
-    elif git_dir and git_dir.endswith(".git"):
-        # For worktrees, this gives us the main repo's .git directory
-        # We need to go up one level to get the repo root
-        repo_path = os.path.dirname(git_dir)
+    """Get a stable repository identifier based on the absolute common .git dir.
+
+    Works consistently across top-level, subfolders, and worktrees.
+    """
+    # Try to force absolute path (supported on modern git); fall back gracefully
+    git_dir = run_git_command(
+        ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        silent_fail=True,
+    )
+    if not git_dir:
+        git_dir = run_git_command(["rev-parse", "--git-common-dir"], silent_fail=True)
+
+    repo_path = None
+    if git_dir:
+        # Normalize to absolute path even if Git returned a relative like ../../.git
+        try:
+            git_dir_abs = str(Path(git_dir).resolve())
+            # The repo root is the parent of the common .git dir
+            repo_path = str(Path(git_dir_abs).parent)
+        except Exception:
+            # Fallback if Path.resolve fails for any reason
+            repo_path = run_git_command(
+                ["rev-parse", "--show-toplevel"], silent_fail=True
+            )
     else:
-        # Fallback to the old method
-        repo_path = run_git_command(["rev-parse", "--show-toplevel"])
+        repo_path = run_git_command(["rev-parse", "--show-toplevel"], silent_fail=True)
 
     if repo_path:
         return os.path.basename(repo_path)

@@ -74,11 +74,13 @@ def test_check_github_cli_installed_false(mock_which):
 
 
 def test_branch_has_pr_true(mock_subprocess_run):
-    """Test checking if branch has PR when it does."""
-    mock_subprocess_run.return_value.stdout = "PR exists"
+    """Test checking if branch has an open PR."""
+    mock_subprocess_run.return_value.stdout = (
+        '{"state":"OPEN","url":"https://github.com/user/repo/pull/123"}'
+    )
     assert branch_has_pr("feature") is True
     mock_subprocess_run.assert_called_once_with(
-        ["gh", "pr", "view", "feature"],
+        ["gh", "pr", "view", "feature", "--json", "state,url"],
         check=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -86,10 +88,26 @@ def test_branch_has_pr_true(mock_subprocess_run):
     )
 
 
-def test_branch_has_pr_false(mock_subprocess_run):
-    """Test checking if branch has PR when it doesn't."""
+def test_branch_has_pr_false_no_pr(mock_subprocess_run):
+    """Test checking if branch has PR when it doesn't exist."""
     mock_subprocess_run.side_effect = subprocess.CalledProcessError(
         1, "gh", stderr="No PR found"
+    )
+    assert branch_has_pr("feature") is False
+
+
+def test_branch_has_pr_false_merged(mock_subprocess_run):
+    """Test checking if branch has PR returns False for merged PRs."""
+    mock_subprocess_run.return_value.stdout = (
+        '{"state":"MERGED","url":"https://github.com/user/repo/pull/123"}'
+    )
+    assert branch_has_pr("feature") is False
+
+
+def test_branch_has_pr_false_closed(mock_subprocess_run):
+    """Test checking if branch has PR returns False for closed PRs."""
+    mock_subprocess_run.return_value.stdout = (
+        '{"state":"CLOSED","url":"https://github.com/user/repo/pull/123"}'
     )
     assert branch_has_pr("feature") is False
 
@@ -287,18 +305,34 @@ def test_get_potential_reviewers_invalid_json(mock_subprocess_run):
 
 
 def test_get_pr_url(mock_subprocess_run):
-    """Test getting PR URL."""
+    """Test getting PR URL for an open PR."""
     mock_subprocess_run.return_value.stdout = (
-        '{"url":"https://github.com/user/repo/pull/123"}'
+        '{"state":"OPEN","url":"https://github.com/user/repo/pull/123"}'
     )
     assert get_pr_url("feature") == "https://github.com/user/repo/pull/123"
     mock_subprocess_run.assert_called_once_with(
-        ["gh", "pr", "view", "feature", "--json", "url"],
+        ["gh", "pr", "view", "feature", "--json", "state,url"],
         check=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
     )
+
+
+def test_get_pr_url_merged_returns_none(mock_subprocess_run):
+    """Test getting PR URL returns None for merged PRs."""
+    mock_subprocess_run.return_value.stdout = (
+        '{"state":"MERGED","url":"https://github.com/user/repo/pull/123"}'
+    )
+    assert get_pr_url("feature") is None
+
+
+def test_get_pr_url_closed_returns_none(mock_subprocess_run):
+    """Test getting PR URL returns None for closed PRs."""
+    mock_subprocess_run.return_value.stdout = (
+        '{"state":"CLOSED","url":"https://github.com/user/repo/pull/123"}'
+    )
+    assert get_pr_url("feature") is None
 
 
 def test_update_pr_base_success(mock_subprocess_run):

@@ -2,7 +2,15 @@
 
 ## [Unreleased]
 
-## v0.23.1 - 2025-11-14
+## v0.23.2 - 2025-12-15
+
+### Fixed
+
+- Fixed `pq submit` incorrectly linking to old merged/closed PRs when reusing a deleted branch name
+  - `branch_has_pr()` and `get_pr_url()` now only consider **open** PRs, preventing stale PR references
+  - New branches with previously-used names will correctly prompt "Do you want to create a PR?"
+
+## v0.23.1 - 2025-12-15
 
 ### Fixed
 

@@ -23,22 +23,35 @@ def run_gh_command(command: List[str]) -> Optional[str]:
         return None
 
 
+def get_open_pr_info(branch: str) -> Optional[dict]:
+    """Get PR info for a branch, only if the PR is open.
+
+    Returns:
+        Optional[dict]: PR info dict with 'state' and 'url' keys if an open PR exists,
+        None otherwise. This prevents linking to old merged/closed PRs when a branch
+        name is reused.
+    """
+    result = run_gh_command(["pr", "view", branch, "--json", "state,url"])
+    if not result:
+        return None
+    try:
+        data = json.loads(result)
+        if data.get("state") == "OPEN":
+            return data
+    except json.JSONDecodeError:
+        pass
+    return None
+
+
 def branch_has_pr(branch: str) -> bool:
-    """Check if a branch already has a PR."""
-    result = run_gh_command(["pr", "view", branch])
-    return result is not None
+    """Check if a branch already has an open PR."""
+    return get_open_pr_info(branch) is not None
 
 
 def get_pr_url(branch: str) -> Optional[str]:
-    """Get the URL of a pull request for a branch."""
-    result = run_gh_command(["pr", "view", branch, "--json", "url"])
-    if result:
-        try:
-            data = json.loads(result)
-            return data.get("url")
-        except json.JSONDecodeError:
-            pass
-    return None
+    """Get the URL of an open pull request for a branch."""
+    info = get_open_pr_info(branch)
+    return info.get("url") if info else None
 
 
 def check_github_cli_installed() -> bool:

@@ -6,6 +6,18 @@ export default defineConfig({
   description: "Stack Git Branches Without the Headache",
   cleanUrls: true,
 
+  head: [
+    [
+      "script",
+      {
+        defer: "",
+        src: "https://umami.sarthakjariwala.com/script.js",
+        "data-website-id": "54cbf9c7-49a6-4a3b-ba5c-e987e4b0f375",
+        "data-domains": "panqake.com",
+      },
+    ],
+  ],
+
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
     logo: "/panqake.svg",

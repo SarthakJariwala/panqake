@@ -77,9 +77,13 @@ def new(
     branch_name: str | None = typer.Argument(None, help="Name of the new branch"),
     base_branch: str | None = typer.Argument(None, help="Parent branch"),
     tree: bool = typer.Option(False, "--tree", help="Create branch in a new worktree"),
+    path: str | None = typer.Option(
+        None, "--path", "-p", help="Custom path for the worktree (implies --tree)"
+    ),
 ):
     """Create a new branch in the stack."""
-    create_new_branch(branch_name, base_branch, tree)
+    use_worktree = tree or path is not None
+    create_new_branch(branch_name, base_branch, use_worktree, path)
 
 
 @app.command(name="list")

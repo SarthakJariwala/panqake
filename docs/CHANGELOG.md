@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## v0.24.0 - 2026-01-03
+
+### Added
+
+- Added `--path` / `-p` option to `pq new --tree` for specifying custom worktree location
+  - Supports path autocomplete when prompting interactively
+  - Specifying `--path` implies `--tree`
+  - Paths ending with `/` or pointing to existing directories automatically append the branch name
+  - Default worktree location changed to parent directory (sibling to current repo)
+
 ## v0.23.2 - 2025-12-15
 
 ### Fixed

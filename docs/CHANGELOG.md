@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## v0.25.0 - 2026-01-06
+
+### Added
+
+- `pq merge` now automatically cleans up worktrees when run outside the worktree
+  - Still prompts for manual cleanup when the user is inside the worktree
+
 ## v0.24.0 - 2026-01-03
 
 ### Added

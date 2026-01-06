@@ -1,6 +1,7 @@
 """Command for merging PRs and managing branches after merge."""
 
 import sys
+from pathlib import Path
 
 from panqake.utils.branch_operations import (
     fetch_latest_from_remote,
@@ -13,12 +14,14 @@ from panqake.utils.config import (
     get_parent_branch,
     get_worktree_path,
     remove_from_stack,
+    set_worktree_path,
 )
 from panqake.utils.git import (
     branch_exists,
     checkout_branch,
     delete_remote_branch,
     get_current_branch,
+    remove_worktree,
     run_git_command,
     validate_branch,
 )
@@ -147,13 +150,25 @@ def cleanup_local_branch(branch_name):
 
         # If branch has a worktree, inform user to manually delete it
         if worktree_path:
-            print_formatted_text(
-                f"\n[warning]Branch '{branch_name}' has a worktree at: {worktree_path}[/warning]"
-            )
-            print_formatted_text("[info]To complete cleanup, please:[/info]")
-            print_formatted_text("[info]1. cd out of the worktree directory[/info]")
-            print_formatted_text(f"[info]2. Run: pq delete {branch_name}[/info]")
-            return False
+            current_dir = Path.cwd().resolve()
+            target_dir = Path(worktree_path).resolve()
+            in_worktree = current_dir == target_dir or target_dir in current_dir.parents
+
+            if in_worktree:
+                print_formatted_text(
+                    f"\n[warning]Branch '{branch_name}' has a worktree at: {worktree_path}[/warning]"
+                )
+                print_formatted_text("[info]To complete cleanup, please:[/info]")
+                print_formatted_text("[info]1. cd out of the worktree directory[/info]")
+                print_formatted_text(f"[info]2. Run: pq delete {branch_name}[/info]")
+                return False
+
+            if not remove_worktree(worktree_path, force=True):
+                print_formatted_text(
+                    f"[warning]Warning: Failed to remove worktree at '{worktree_path}'[/warning]"
+                )
+            else:
+                set_worktree_path(branch_name, "")
 
         with status(f"Deleting local branch {branch_name}...") as s:
             # Make sure we're not on the branch we're trying to delete

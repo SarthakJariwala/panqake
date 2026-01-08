@@ -263,13 +263,26 @@ def push_updated_branches(updated_branches: list[BranchName]) -> list[BranchName
                 )
                 continue
 
-            try:
-                checkout_branch(branch)
-            except SystemExit:
-                s.pause_and_print(
-                    f"[warning]Failed to checkout branch '{branch}' for pushing[/warning]"
+            if is_branch_worktree(branch):
+                current_head = run_git_command_for_branch_context(
+                    branch,
+                    ["rev-parse", "--abbrev-ref", "HEAD"],
+                    silent_fail=True,
                 )
-                continue
+                if current_head != branch:
+                    head_display = current_head or "unknown"
+                    s.pause_and_print(
+                        f"[warning]Skipping push for {format_branch(branch)} because its worktree is on '{head_display}'[/warning]"
+                    )
+                    continue
+            else:
+                try:
+                    checkout_branch(branch)
+                except SystemExit:
+                    s.pause_and_print(
+                        f"[warning]Failed to checkout branch '{branch}' for pushing[/warning]"
+                    )
+                    continue
 
             # Always use force-with-lease for safety since we've rebased
             success = push_branch_to_remote(branch, force_with_lease=True)

@@ -256,17 +256,24 @@ def test_return_to_branch_checkout_failure(mock_git_utils, mock_prompt):
     assert success is False
 
 
+@patch("panqake.utils.branch_operations.is_branch_worktree")
 @patch("panqake.utils.branch_operations.is_branch_pushed_to_remote")
 @patch("panqake.utils.branch_operations.has_unpushed_changes")
 @patch("panqake.utils.branch_operations.push_branch_to_remote")
 @patch("panqake.utils.branch_operations.checkout_branch")
 def test_push_updated_branches_with_changes(
-    mock_checkout, mock_push, mock_has_changes, mock_is_pushed, mock_prompt
+    mock_checkout,
+    mock_push,
+    mock_has_changes,
+    mock_is_pushed,
+    mock_is_worktree,
+    mock_prompt,
 ):
     """Test pushing branches with changes."""
     # Setup mocks for a branch that exists on remote and has changes
     mock_is_pushed.return_value = True
     mock_has_changes.return_value = True
+    mock_is_worktree.return_value = False
     mock_push.return_value = True
 
     branches = ["feature1", "feature2"]
@@ -280,17 +287,24 @@ def test_push_updated_branches_with_changes(
     mock_push.assert_any_call("feature2", force_with_lease=True)
 
 
+@patch("panqake.utils.branch_operations.is_branch_worktree")
 @patch("panqake.utils.branch_operations.is_branch_pushed_to_remote")
 @patch("panqake.utils.branch_operations.has_unpushed_changes")
 @patch("panqake.utils.branch_operations.push_branch_to_remote")
 @patch("panqake.utils.branch_operations.checkout_branch")
 def test_push_updated_branches_no_changes(
-    mock_checkout, mock_push, mock_has_changes, mock_is_pushed, mock_prompt
+    mock_checkout,
+    mock_push,
+    mock_has_changes,
+    mock_is_pushed,
+    mock_is_worktree,
+    mock_prompt,
 ):
     """Test skipping branches with no changes."""
     # Setup mocks for a branch that exists on remote but has no changes
     mock_is_pushed.return_value = True
     mock_has_changes.return_value = False
+    mock_is_worktree.return_value = False
 
     branches = ["feature1", "feature2"]
     result = push_updated_branches(branches)
@@ -301,12 +315,18 @@ def test_push_updated_branches_no_changes(
     mock_push.assert_not_called()
 
 
+@patch("panqake.utils.branch_operations.is_branch_worktree")
 @patch("panqake.utils.branch_operations.is_branch_pushed_to_remote")
 @patch("panqake.utils.branch_operations.has_unpushed_changes")
 @patch("panqake.utils.branch_operations.push_branch_to_remote")
 @patch("panqake.utils.branch_operations.checkout_branch")
 def test_push_updated_branches_mixed_status(
-    mock_checkout, mock_push, mock_has_changes, mock_is_pushed, mock_prompt
+    mock_checkout,
+    mock_push,
+    mock_has_changes,
+    mock_is_pushed,
+    mock_is_worktree,
+    mock_prompt,
 ):
     """Test pushing with mixed branch statuses."""
     # Branch 1: On remote, has changes
@@ -315,6 +335,7 @@ def test_push_updated_branches_mixed_status(
     # Branch 4: On remote, has changes but push fails
     mock_is_pushed.side_effect = [True, False, True, True]
     mock_has_changes.side_effect = [True, True, False, True]
+    mock_is_worktree.return_value = False
     mock_push.side_effect = [True, False]  # Branch 4 push fails
 
     branches = ["feature1", "feature2", "feature3", "feature4"]
@@ -324,3 +345,36 @@ def test_push_updated_branches_mixed_status(
     assert result == ["feature1"]
     assert mock_checkout.call_count == 2  # Only for feature1 and feature4
     assert mock_push.call_count == 2  # Only for feature1 and feature4
+
+
+@patch("panqake.utils.branch_operations.run_git_command_for_branch_context")
+@patch("panqake.utils.branch_operations.is_branch_worktree")
+@patch("panqake.utils.branch_operations.is_branch_pushed_to_remote")
+@patch("panqake.utils.branch_operations.has_unpushed_changes")
+@patch("panqake.utils.branch_operations.push_branch_to_remote")
+@patch("panqake.utils.branch_operations.checkout_branch")
+def test_push_updated_branches_worktree_branch(
+    mock_checkout,
+    mock_push,
+    mock_has_changes,
+    mock_is_pushed,
+    mock_is_worktree,
+    mock_run_for_context,
+    mock_prompt,
+):
+    """Test pushing a worktree branch without checkout."""
+    mock_is_pushed.return_value = True
+    mock_has_changes.return_value = True
+    mock_is_worktree.return_value = True
+    mock_run_for_context.return_value = "feature1"
+    mock_push.return_value = True
+
+    branches = ["feature1"]
+    result = push_updated_branches(branches)
+
+    assert result == ["feature1"]
+    mock_checkout.assert_not_called()
+    mock_run_for_context.assert_called_once_with(
+        "feature1", ["rev-parse", "--abbrev-ref", "HEAD"], silent_fail=True
+    )
+    mock_push.assert_called_once_with("feature1", force_with_lease=True)

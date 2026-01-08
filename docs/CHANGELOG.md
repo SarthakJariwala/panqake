@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## v0.25.1 - 2026-01-07
+
+### Fixed
+
+- Fixed `pq sync` failing to push branches that are checked out in separate worktrees
+
 ## v0.25.0 - 2026-01-06
 
 ### Added

@@ -1,136 +1,164 @@
-"""Tests for down.py command module."""
-
-from unittest.mock import patch
+"""Tests for down.py command module using dependency injection."""
 
 import pytest
 
-from panqake.commands.down import down
+from panqake.commands.down import down_core
+from panqake.ports import BranchNotFoundError, DownResult, UserCancelledError
+from panqake.testing import FakeConfig, FakeGit, FakeUI
 
 
-@pytest.fixture
-def mock_git_utils():
-    """Mock git utility functions."""
-    with (
-        patch("panqake.commands.down.switch_to_branch_or_worktree") as mock_checkout,
-        patch("panqake.commands.down.get_current_branch") as mock_current,
-    ):
-        mock_current.return_value = "main"
-        yield {
-            "checkout": mock_checkout,
-            "current": mock_current,
-        }
+class TestDownCore:
+    """Tests for down_core function."""
 
+    def test_moves_to_single_child(self):
+        """Test navigating down to single child branch."""
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
 
-@pytest.fixture
-def mock_stacks():
-    """Mock Stacks class."""
-    with patch("panqake.commands.down.Stacks") as mock_stacks_class:
-        mock_stacks_instance = mock_stacks_class.return_value
-        mock_stacks_instance.__enter__.return_value = mock_stacks_instance
-        yield mock_stacks_instance
+        result = down_core(git=git, config=config, ui=ui)
 
+        assert result == DownResult(
+            target_branch="feature",
+            previous_branch="main",
+            switched=True,
+        )
+        assert git.current_branch == "feature"
+        assert git.checkout_calls == ["feature"]
 
-@pytest.fixture
-def mock_prompt():
-    """Mock questionary_prompt functions."""
-    with (
-        patch("panqake.commands.down.print_formatted_text") as mock_print,
-        patch("panqake.commands.down.prompt_select") as mock_select,
-    ):
-        yield {
-            "print": mock_print,
-            "select": mock_select,
-        }
+    def test_prompts_for_multiple_children(self):
+        """Test selection prompt when multiple children exist."""
+        git = FakeGit(
+            branches=["main", "feature-a", "feature-b", "feature-c"],
+            current_branch="main",
+        )
+        config = FakeConfig(
+            stack={
+                "feature-a": {"parent": "main"},
+                "feature-b": {"parent": "main"},
+                "feature-c": {"parent": "main"},
+            }
+        )
+        ui = FakeUI(select_branch_responses=["feature-b"])
 
+        result = down_core(git=git, config=config, ui=ui)
 
-def test_down_with_single_child(mock_git_utils, mock_stacks, mock_prompt):
-    """Test navigating down to single child branch."""
-    # Set up mock to return a single child branch
-    mock_stacks.get_children.return_value = ["feature"]
+        assert result == DownResult(
+            target_branch="feature-b",
+            previous_branch="main",
+            switched=True,
+        )
+        assert git.current_branch == "feature-b"
+        assert len(ui.select_branch_calls) == 1
+        assert "Select a child branch" in ui.select_branch_calls[0][1]
 
-    # Run the command
-    down()
+    def test_handles_worktree_branch(self):
+        """Test handling when child is in a worktree."""
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        git.worktrees["feature"] = "/path/to/feature-worktree"
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
 
-    # Check that we queried for the children of the current branch
-    mock_stacks.get_children.assert_called_once_with("main")
+        result = down_core(git=git, config=config, ui=ui)
 
-    # Check that we checked out the child branch
-    mock_git_utils["checkout"].assert_called_once_with("feature", "child branch")
+        assert result == DownResult(
+            target_branch="feature",
+            previous_branch="main",
+            switched=False,
+            worktree_path="/path/to/feature-worktree",
+        )
+        assert git.current_branch == "main"  # Not switched
+        assert git.checkout_calls == []
+        assert any("worktree" in msg for msg in ui.info_messages)
+        assert any("/path/to/feature-worktree" in msg for msg in ui.info_messages)
 
-    # Check that we printed a message
-    mock_prompt["print"].assert_called_once()
-    assert "Moving down to child branch" in mock_prompt["print"].call_args.args[0]
+    def test_raises_when_no_current_branch(self):
+        """Test error when current branch cannot be determined."""
+        git = FakeGit(branches=["main"], current_branch=None)
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
 
-    # Check that we didn't use select prompt
-    mock_prompt["select"].assert_not_called()
+        with pytest.raises(BranchNotFoundError) as exc_info:
+            down_core(git=git, config=config, ui=ui)
 
+        assert "Could not determine current branch" in str(exc_info.value)
 
-def test_down_with_multiple_children(mock_git_utils, mock_stacks, mock_prompt):
-    """Test navigating down with selection when multiple children exist."""
-    # Set up mock to return multiple child branches
-    mock_stacks.get_children.return_value = ["feature-a", "feature-b", "feature-c"]
+    def test_raises_when_no_children(self):
+        """Test error when current branch has no children."""
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
 
-    # Set up mock to return a selected branch
-    mock_prompt["select"].return_value = "feature-b"
+        with pytest.raises(BranchNotFoundError) as exc_info:
+            down_core(git=git, config=config, ui=ui)
 
-    # Run the command
-    down()
+        assert "has no child branches" in str(exc_info.value)
 
-    # Check that we queried for the children of the current branch
-    mock_stacks.get_children.assert_called_once_with("main")
+    def test_raises_when_selection_cancelled(self):
+        """Test error when user cancels selection."""
+        git = FakeGit(
+            branches=["main", "feature-a", "feature-b"],
+            current_branch="main",
+        )
+        config = FakeConfig(
+            stack={
+                "feature-a": {"parent": "main"},
+                "feature-b": {"parent": "main"},
+            }
+        )
+        ui = FakeUI(cancel_on_select_branch=True)
 
-    # Check that we prompted for selection
-    mock_prompt["print"].assert_called()
-    assert "has multiple children" in mock_prompt["print"].call_args_list[0].args[0]
+        with pytest.raises(UserCancelledError):
+            down_core(git=git, config=config, ui=ui)
 
-    # Verify prompt select arguments
-    mock_prompt["select"].assert_called_once()
-    assert "Select a child branch" in mock_prompt["select"].call_args.args[0]
-    choices = mock_prompt["select"].call_args.args[1]
-    assert len(choices) == 3
-    assert [c["value"] for c in choices] == ["feature-a", "feature-b", "feature-c"]
+        assert git.checkout_calls == []
 
-    # Check that we checked out the selected branch
-    mock_git_utils["checkout"].assert_called_once_with("feature-b", "child branch")
+    def test_raises_when_no_selection(self):
+        """Test error when user makes no selection."""
+        git = FakeGit(
+            branches=["main", "feature-a", "feature-b"],
+            current_branch="main",
+        )
+        config = FakeConfig(
+            stack={
+                "feature-a": {"parent": "main"},
+                "feature-b": {"parent": "main"},
+            }
+        )
+        ui = FakeUI(select_branch_responses=[None])
 
+        with pytest.raises(BranchNotFoundError) as exc_info:
+            down_core(git=git, config=config, ui=ui)
 
-def test_down_with_multiple_children_cancel(mock_git_utils, mock_stacks, mock_prompt):
-    """Test cancelling selection when navigating down with multiple children."""
-    # Set up mock to return multiple child branches
-    mock_stacks.get_children.return_value = ["feature-a", "feature-b"]
+        assert "No child branch selected" in str(exc_info.value)
 
-    # Set up mock to simulate cancellation (return None)
-    mock_prompt["select"].return_value = None
+    def test_navigates_through_stack(self):
+        """Test navigating down through a multi-level stack."""
+        git = FakeGit(
+            branches=["main", "feature", "sub-feature"],
+            current_branch="feature",
+        )
+        config = FakeConfig(
+            stack={
+                "feature": {"parent": "main"},
+                "sub-feature": {"parent": "feature"},
+            }
+        )
+        ui = FakeUI(strict=False)
 
-    # Run the command
-    down()
+        result = down_core(git=git, config=config, ui=ui)
 
-    # Check that we queried for the children of the current branch
-    mock_stacks.get_children.assert_called_once_with("main")
+        assert result.target_branch == "sub-feature"
+        assert result.previous_branch == "feature"
+        assert result.switched is True
+        assert git.current_branch == "sub-feature"
 
-    # Check that we prompted for selection
-    mock_prompt["select"].assert_called_once()
+    def test_single_child_no_prompt(self):
+        """Test that single child does not trigger selection prompt."""
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
 
-    # Check that we didn't check out any branch
-    mock_git_utils["checkout"].assert_not_called()
+        down_core(git=git, config=config, ui=ui)
 
-
-def test_down_without_children(mock_git_utils, mock_stacks, mock_prompt):
-    """Test error when current branch has no children."""
-    # Set up mock to return no children
-    mock_stacks.get_children.return_value = []
-
-    # Run the command, should exit with code 1
-    with pytest.raises(SystemExit) as excinfo:
-        down()
-    assert excinfo.value.code == 1
-
-    # Check that we queried for the children of the current branch
-    mock_stacks.get_children.assert_called_once_with("main")
-
-    # Check that we didn't check out any branch
-    mock_git_utils["checkout"].assert_not_called()
-
-    # Check that we printed an error message
-    mock_prompt["print"].assert_called_once()
-    assert "has no child branches" in mock_prompt["print"].call_args.args[0]
+        assert len(ui.select_branch_calls) == 0

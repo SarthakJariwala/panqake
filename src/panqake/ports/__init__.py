@@ -1,0 +1,127 @@
+"""Port interfaces (protocols) for dependency injection.
+
+This module provides the boundaries between core logic and external effects,
+enabling pure unit tests without extensive mocking.
+
+All public types are re-exported here for backward compatibility.
+"""
+
+from .exceptions import (
+    BranchExistsError,
+    BranchNotFoundError,
+    CannotDeleteCurrentBranchError,
+    CommitError,
+    GitHubCLINotFoundError,
+    GitOperationError,
+    InWorktreeBeingDeletedError,
+    NoChangesError,
+    PanqakeError,
+    PRBaseUpdateError,
+    PRCreationError,
+    PRMergeError,
+    PushError,
+    RebaseConflictError,
+    StagingError,
+    UserCancelledError,
+    WorktreeError,
+)
+from .helpers import find_stack_root, run_command
+from .implementations import (
+    RealConfig,
+    RealFilesystem,
+    RealGit,
+    RealGitHub,
+    RealUI,
+)
+from .protocols import (
+    ConfigPort,
+    FilesystemPort,
+    GitHubPort,
+    GitPort,
+    UIPort,
+)
+from .results import (
+    BranchPRResult,
+    BranchPRStatus,
+    BranchUpdateResult,
+    ChildUpdateResult,
+    CreatePRStackResult,
+    DeleteResult,
+    DownResult,
+    FileInfo,
+    ListResult,
+    MergeMethod,
+    MergeResult,
+    ModifyResult,
+    NewBranchResult,
+    PRBaseUpdateResult,
+    PromptCall,
+    RenameResult,
+    SubmitResult,
+    SwitchResult,
+    SyncResult,
+    TrackResult,
+    UntrackResult,
+    UpdateResult,
+    UpResult,
+)
+
+__all__ = [
+    # Exceptions
+    "BranchExistsError",
+    "BranchNotFoundError",
+    "CannotDeleteCurrentBranchError",
+    "CommitError",
+    "GitHubCLINotFoundError",
+    "GitOperationError",
+    "InWorktreeBeingDeletedError",
+    "NoChangesError",
+    "PanqakeError",
+    "PRBaseUpdateError",
+    "PRCreationError",
+    "PRMergeError",
+    "PushError",
+    "RebaseConflictError",
+    "StagingError",
+    "UserCancelledError",
+    "WorktreeError",
+    # Results
+    "BranchPRResult",
+    "BranchPRStatus",
+    "BranchUpdateResult",
+    "ChildUpdateResult",
+    "CreatePRStackResult",
+    "DeleteResult",
+    "DownResult",
+    "FileInfo",
+    "ListResult",
+    "MergeMethod",
+    "MergeResult",
+    "ModifyResult",
+    "NewBranchResult",
+    "PRBaseUpdateResult",
+    "PromptCall",
+    "RenameResult",
+    "SubmitResult",
+    "SwitchResult",
+    "SyncResult",
+    "TrackResult",
+    "UntrackResult",
+    "UpdateResult",
+    "UpResult",
+    # Protocols
+    "ConfigPort",
+    "FilesystemPort",
+    "GitHubPort",
+    "GitPort",
+    "UIPort",
+    # Implementations
+    "RealConfig",
+    "RealFilesystem",
+    "RealGit",
+    "RealGitHub",
+    "RealUI",
+    # Helpers
+    "find_stack_root",
+    "run_command",
+]

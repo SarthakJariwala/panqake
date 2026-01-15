@@ -1,139 +1,122 @@
-"""Tests for list.py command module."""
-
-from unittest.mock import MagicMock, patch
+"""Tests for list.py command module using fakes."""
 
 import pytest
 
-from panqake.commands.list import find_stack_root, list_branches
+from panqake.commands.list import list_branches_core
+from panqake.ports import BranchNotFoundError, find_stack_root
+from panqake.testing.fakes import FakeConfig, FakeGit, FakeUI
 
 
-@pytest.fixture
-def mock_git_utils():
-    """Mock git utility functions."""
-    with (
-        patch("panqake.commands.list.validate_branch") as mock_validate,
-        patch("panqake.commands.list.get_current_branch") as mock_current,
-    ):
-        mock_current.return_value = "main"
-        mock_validate.side_effect = lambda x: x if x else "main"
-        yield {
-            "validate": mock_validate,
-            "current": mock_current,
-        }
+class TestFindStackRoot:
+    """Tests for find_stack_root helper."""
+
+    def test_no_parent_returns_branch(self):
+        """Branch with no parent is its own root."""
+        config = FakeConfig()
+        assert find_stack_root("feature", config) == "feature"
+
+    def test_single_parent(self):
+        """Branch with one parent returns parent as root."""
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        assert find_stack_root("feature", config) == "main"
+
+    def test_multi_level_stack(self):
+        """Finds root through multiple levels."""
+        config = FakeConfig(
+            stack={
+                "subfeature": {"parent": "feature"},
+                "feature": {"parent": "main"},
+            }
+        )
+        assert find_stack_root("subfeature", config) == "main"
 
 
-@pytest.fixture
-def mock_config_utils():
-    """Mock config utility functions."""
-    with (
-        patch("panqake.commands.list.get_parent_branch") as mock_parent,
-    ):
-        yield {
-            "parent": mock_parent,
-        }
+class TestListBranchesCore:
+    """Tests for list_branches_core function."""
 
+    def test_no_current_branch_raises(self):
+        """Raises BranchNotFoundError when current branch cannot be determined."""
+        git = FakeGit(current_branch=None)
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
 
-@pytest.fixture
-def mock_prompt():
-    """Mock questionary prompt functions."""
-    with (
-        patch("panqake.commands.list.print_formatted_text") as mock_print,
-    ):
-        yield {
-            "print": mock_print,
-        }
+        with pytest.raises(BranchNotFoundError, match="Could not determine"):
+            list_branches_core(git, config, ui)
 
+    def test_nonexistent_branch_raises(self):
+        """Raises BranchNotFoundError for nonexistent branch."""
+        git = FakeGit(branches=["main"], current_branch="main")
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
 
-@pytest.fixture
-def mock_stacks():
-    """Mock the Stacks class."""
-    with patch("panqake.commands.list.Stacks") as mock_stacks_class:
-        mock_stacks_instance = MagicMock()
-        mock_stacks_class.return_value = mock_stacks_instance
-        mock_stacks_instance.visualize_tree.return_value = "mock tree output"
-        yield mock_stacks_instance
+        with pytest.raises(BranchNotFoundError, match="does not exist"):
+            list_branches_core(git, config, ui, branch_name="nonexistent")
 
+    def test_current_branch_used_when_none_specified(self):
+        """Uses current branch when no branch specified."""
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
 
-def test_find_stack_root_no_parent(mock_config_utils):
-    """Test finding root when branch has no parent."""
-    mock_config_utils["parent"].return_value = ""
-    assert find_stack_root("feature") == "feature"
+        result = list_branches_core(git, config, ui)
 
+        assert result.target_branch == "feature"
+        assert result.current_branch == "feature"
+        assert result.root_branch == "feature"
 
-def test_find_stack_root_with_parent(mock_config_utils):
-    """Test finding root with multiple levels of parents."""
-    # Setup parent chain: feature -> develop -> main
-    mock_config_utils["parent"].side_effect = ["develop", "main", ""]
-    assert find_stack_root("feature") == "main"
+    def test_specific_branch_used(self):
+        """Uses specified branch as target."""
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
 
+        result = list_branches_core(git, config, ui, branch_name="feature")
 
-def test_list_branches_nonexistent_branch(
-    mock_git_utils, mock_config_utils, mock_prompt, mock_stacks
-):
-    """Test listing branches with nonexistent branch."""
-    mock_git_utils["validate"].side_effect = SystemExit(1)
+        assert result.target_branch == "feature"
+        assert result.current_branch == "main"
+        assert result.root_branch == "feature"
 
-    with pytest.raises(SystemExit):
-        list_branches("nonexistent")
+    def test_finds_stack_root(self):
+        """Finds root through parent chain."""
+        git = FakeGit(
+            branches=["main", "feature", "subfeature"], current_branch="subfeature"
+        )
+        config = FakeConfig(
+            stack={
+                "subfeature": {"parent": "feature"},
+                "feature": {"parent": "main"},
+            }
+        )
+        ui = FakeUI(strict=False)
 
-    mock_git_utils["validate"].assert_called_once_with("nonexistent")
-    # Stacks instance should not be created
-    mock_stacks.visualize_tree.assert_not_called()
+        result = list_branches_core(git, config, ui)
 
+        assert result.target_branch == "subfeature"
+        assert result.current_branch == "subfeature"
+        assert result.root_branch == "main"
 
-def test_list_branches_current_branch(
-    mock_git_utils, mock_config_utils, mock_prompt, mock_stacks
-):
-    """Test listing branches from current branch."""
-    mock_config_utils["parent"].return_value = ""
+    def test_displays_branch_tree(self):
+        """Calls display_branch_tree with correct arguments."""
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
 
-    list_branches()
+        list_branches_core(git, config, ui)
 
-    # Should validate with None (current branch)
-    mock_git_utils["validate"].assert_called_once_with(None)
-    # Should use current branch (called for header and passed to visualize_tree)
-    assert mock_git_utils["current"].call_count >= 1
-    # Should call visualize_tree once
-    mock_stacks.visualize_tree.assert_called_once()
-    # Should print header and tree
-    assert mock_prompt["print"].call_count == 2
+        assert len(ui.display_tree_calls) == 1
+        root, current = ui.display_tree_calls[0]
+        assert root == "main"
+        assert current == "feature"
 
+    def test_displays_tree_for_specific_branch(self):
+        """Displays tree from specified branch's root."""
+        git = FakeGit(branches=["main", "feature", "other"], current_branch="other")
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
 
-def test_list_branches_specific_branch(
-    mock_git_utils, mock_config_utils, mock_prompt, mock_stacks
-):
-    """Test listing branches from specified branch."""
-    mock_config_utils["parent"].return_value = ""
+        list_branches_core(git, config, ui, branch_name="feature")
 
-    list_branches("feature")
-
-    # Should validate the specific branch
-    mock_git_utils["validate"].assert_called_once_with("feature")
-
-    # Current branch is still called for header
-    assert mock_git_utils["current"].call_count >= 1
-    # Should call visualize_tree with specified branch as root
-    mock_stacks.visualize_tree.assert_called_once()
-    assert mock_stacks.visualize_tree.call_args.kwargs["root"] == "feature"
-    # Should print header and tree
-    assert mock_prompt["print"].call_count == 2
-
-
-def test_list_branches_with_stack(
-    mock_git_utils, mock_config_utils, mock_prompt, mock_stacks
-):
-    """Test listing a complete branch stack."""
-    # Setup stack: main -> feature -> subfeature
-    mock_config_utils["parent"].side_effect = [
-        "main",
-        "",
-        None,
-    ]  # feature -> main -> None
-
-    list_branches("subfeature")
-
-    # Should find root (main) and use it as root for visualize_tree
-    mock_stacks.visualize_tree.assert_called_once()
-    assert mock_stacks.visualize_tree.call_args.kwargs["root"] == "main"
-    # Should print header and tree
-    assert mock_prompt["print"].call_count == 2
+        assert len(ui.display_tree_calls) == 1
+        root, current = ui.display_tree_calls[0]
+        assert root == "main"
+        assert current == "other"  # Current branch passed for highlighting

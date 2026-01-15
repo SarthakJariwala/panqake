@@ -1,77 +1,62 @@
-"""Tests for untrack.py command module."""
-
-from unittest.mock import patch
+"""Tests for untrack.py command module using dependency injection pattern."""
 
 import pytest
 
-from panqake.commands.untrack import untrack
+from panqake.commands.untrack import untrack_branch_core
+from panqake.ports import BranchNotFoundError
+from panqake.testing.fakes import FakeConfig, FakeGit, FakeUI
 
 
-@pytest.fixture
-def mock_git_utils():
-    """Mock git utility functions."""
-    with patch("panqake.commands.untrack.get_current_branch") as mock_current:
-        mock_current.return_value = "feature-branch"
-        yield mock_current
+class TestUntrackBranchCore:
+    """Tests for untrack_branch_core."""
 
+    def test_untracks_current_branch(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
 
-@pytest.fixture
-def mock_config_utils():
-    """Mock config utility functions."""
-    with patch("panqake.commands.untrack.remove_from_stack") as mock_remove:
-        yield mock_remove
+        result = untrack_branch_core(git=git, config=config, ui=ui)
 
+        assert result.branch_name == "feature"
+        assert result.was_tracked is True
+        assert "feature" not in config.stack
 
-@pytest.fixture
-def mock_prompt():
-    """Mock questionary prompt functions."""
-    with patch("panqake.commands.untrack.print_formatted_text") as mock_print:
-        yield mock_print
+    def test_untracks_specified_branch(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
 
+        result = untrack_branch_core(
+            git=git, config=config, ui=ui, branch_name="feature"
+        )
 
-def test_untrack_current_branch(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test untracking current branch when no branch name is provided."""
-    # Execute
-    untrack()
+        assert result.branch_name == "feature"
+        assert result.was_tracked is True
+        assert "feature" not in config.stack
 
-    # Verify
-    mock_git_utils.assert_called_once()
-    mock_config_utils.assert_called_once_with("feature-branch")
+    def test_raises_when_no_current_branch(self):
+        git = FakeGit(branches=["main"], current_branch=None)
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
 
+        with pytest.raises(BranchNotFoundError, match="Could not determine"):
+            untrack_branch_core(git=git, config=config, ui=ui)
 
-def test_untrack_specified_branch(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test untracking a specified branch name."""
-    # Setup
-    mock_config_utils.return_value = True  # Successful removal
+    def test_returns_false_when_not_tracked(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        config = FakeConfig(stack={})  # Empty stack
+        ui = FakeUI(strict=False)
 
-    # Execute
-    untrack("test-branch")
+        result = untrack_branch_core(git=git, config=config, ui=ui)
 
-    # Verify
-    mock_git_utils.assert_not_called()
-    mock_config_utils.assert_called_once_with("test-branch")
+        assert result.branch_name == "feature"
+        assert result.was_tracked is False
 
+    def test_prints_info_messages(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
 
-def test_untrack_no_current_branch(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test error when current branch cannot be determined."""
-    # Setup
-    mock_git_utils.return_value = None
+        untrack_branch_core(git=git, config=config, ui=ui)
 
-    # Execute and verify
-    with pytest.raises(SystemExit):
-        untrack()
-
-    # Verify no further operations were performed
-    mock_config_utils.assert_not_called()
-
-
-def test_untrack_success_messages(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test success messages are printed correctly."""
-    # Execute
-    untrack("test-branch")
-
-    # Verify appropriate messages were printed
-    assert mock_prompt.call_count >= 2
-    success_call = mock_prompt.call_args_list[-1]
-    assert "Successfully" in success_call.args[0]
-    assert "test-branch" in success_call.args[0]
+        assert any("feature" in msg for msg in ui.info_messages)

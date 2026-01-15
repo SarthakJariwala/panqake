@@ -1,37 +1,90 @@
-"""Command for navigating to parent branch in stack."""
+"""Command for navigating to parent branch in stack.
 
-import sys
+Uses dependency injection for testability.
+Core logic is pure - no sys.exit, no direct filesystem/git calls.
+"""
 
-from panqake.utils.git import (
-    get_current_branch,
-    switch_to_branch_or_worktree,
+from panqake.ports import (
+    BranchNotFoundError,
+    ConfigPort,
+    GitPort,
+    RealConfig,
+    RealGit,
+    RealUI,
+    UIPort,
+    UpResult,
+    run_command,
 )
-from panqake.utils.questionary_prompt import print_formatted_text
-from panqake.utils.stack import Stacks
+from panqake.utils.questionary_prompt import format_branch
+
+
+def up_core(
+    git: GitPort,
+    config: ConfigPort,
+    ui: UIPort,
+) -> UpResult:
+    """Navigate to the parent branch in the stack.
+
+    This is the pure core logic that can be tested without mocking.
+    Raises PanqakeError subclasses on failure instead of calling sys.exit.
+
+    Args:
+        git: Git operations interface
+        config: Stack configuration interface
+        ui: User interaction interface
+
+    Returns:
+        UpResult with navigation metadata
+
+    Raises:
+        BranchNotFoundError: If current branch cannot be determined or has no parent
+    """
+    current = git.get_current_branch()
+    if not current:
+        raise BranchNotFoundError("Could not determine current branch")
+
+    parent = config.get_parent_branch(current)
+    if not parent:
+        raise BranchNotFoundError(f"Branch '{current}' has no parent branch")
+
+    worktree_path = git.get_worktree_path(parent)
+    if worktree_path:
+        ui.print_info(f"Parent branch '{parent}' is in a worktree. To switch to it:")
+        ui.print_info(f"cd {worktree_path}")
+        return UpResult(
+            target_branch=parent,
+            previous_branch=current,
+            switched=False,
+            worktree_path=worktree_path,
+        )
+
+    git.checkout_branch(parent)
+    return UpResult(
+        target_branch=parent,
+        previous_branch=current,
+        switched=True,
+    )
 
 
 def up() -> None:
-    """Navigate to the parent branch in the stack.
+    """CLI entrypoint that wraps core logic with real implementations.
 
-    If the current branch has no parent (e.g., main/master),
-    informs the user and exits.
+    This thin wrapper:
+    1. Instantiates real dependencies
+    2. Calls the core logic
+    3. Handles printing output
+    4. Converts exceptions to sys.exit via run_command
     """
-    current_branch = get_current_branch()
-    if not current_branch:
-        print_formatted_text(
-            "[danger]Error: Could not determine current branch[/danger]"
-        )
-        sys.exit(1)
+    git = RealGit()
+    config = RealConfig()
+    ui = RealUI()
 
-    # Get the parent branch using the Stacks utility
-    with Stacks() as stacks:
-        parent = stacks.get_parent(current_branch)
+    def core() -> None:
+        result = up_core(git=git, config=config, ui=ui)
 
-        if not parent:
-            print_formatted_text(
-                f"[warning]Branch '{current_branch}' has no parent branch[/warning]"
+        if result.switched:
+            ui.print_success(
+                f"Moved up to parent branch {format_branch(result.target_branch)}"
             )
-            sys.exit(1)
 
-        print_formatted_text(f"[info]Moving up to parent branch: '{parent}'[/info]")
-        switch_to_branch_or_worktree(parent, "parent branch")
+    run_command(ui, core)

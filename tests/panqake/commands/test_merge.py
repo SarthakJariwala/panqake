@@ -1,405 +1,408 @@
-"""Tests for merge.py command module."""
-
-from unittest.mock import patch
+"""Tests for merge.py command module using dependency injection pattern."""
 
 import pytest
 
 from panqake.commands.merge import (
-    cleanup_local_branch,
-    get_merge_method,
-    merge_branch,
-    merge_pr,
-    update_pr_base_for_children,
+    cleanup_local_branch_core,
+    merge_branch_core,
+    update_child_branches_core,
+    update_pr_base_for_direct_children,
 )
-
-
-@pytest.fixture
-def mock_git_utils():
-    """Mock all git utility functions."""
-    with (
-        patch("panqake.commands.merge.branch_exists") as mock_exists,
-        patch("panqake.commands.merge.checkout_branch") as mock_checkout,
-        patch("panqake.commands.merge.get_current_branch") as mock_current,
-        patch("panqake.commands.merge.run_git_command") as mock_run,
-        patch("panqake.commands.merge.delete_remote_branch") as mock_delete_remote,
-        patch("panqake.commands.merge.validate_branch") as mock_validate,
-    ):
-        mock_current.return_value = "main"
-        mock_validate.side_effect = lambda x: x  # Return input unchanged
-        yield {
-            "exists": mock_exists,
-            "checkout": mock_checkout,
-            "current": mock_current,
-            "run": mock_run,
-            "delete_remote": mock_delete_remote,
-            "validate": mock_validate,
-        }
-
-
-@pytest.fixture
-def mock_config_utils():
-    """Mock config utility functions."""
-    with (
-        patch("panqake.commands.merge.add_to_stack") as mock_add,
-        patch("panqake.commands.merge.get_child_branches") as mock_get_children,
-        patch("panqake.commands.merge.get_parent_branch") as mock_get_parent,
-        patch("panqake.commands.merge.remove_from_stack") as mock_remove,
-    ):
-        yield {
-            "add": mock_add,
-            "get_children": mock_get_children,
-            "get_parent": mock_get_parent,
-            "remove": mock_remove,
-        }
-
-
-@pytest.fixture
-def mock_github_utils():
-    """Mock GitHub utility functions."""
-    with (
-        patch("panqake.commands.merge.branch_has_pr") as mock_has_pr,
-        patch("panqake.commands.merge.check_github_cli_installed") as mock_check_cli,
-        patch("panqake.commands.merge.update_pr_base") as mock_update_base,
-        patch("panqake.commands.merge.github_merge_pr") as mock_merge_pr,
-    ):
-        mock_check_cli.return_value = True
-        yield {
-            "has_pr": mock_has_pr,
-            "check_cli": mock_check_cli,
-            "update_base": mock_update_base,
-            "merge_pr": mock_merge_pr,
-        }
-
-
-@pytest.fixture
-def mock_branch_ops():
-    """Mock branch operation utilities."""
-    with (
-        patch("panqake.commands.merge.fetch_latest_from_remote") as mock_fetch,
-        patch(
-            "panqake.commands.merge.update_branch_with_conflict_detection"
-        ) as mock_update,
-        patch("panqake.commands.merge.return_to_branch") as mock_return,
-    ):
-        yield {
-            "fetch": mock_fetch,
-            "update": mock_update,
-            "return": mock_return,
-        }
-
-
-@pytest.fixture
-def mock_prompt():
-    """Mock questionary prompt functions."""
-    with (
-        patch("panqake.commands.merge.format_branch") as mock_format,
-        patch("panqake.commands.merge.print_formatted_text") as mock_print,
-        patch("panqake.commands.merge.prompt_confirm") as mock_confirm,
-        patch("panqake.commands.merge.select_from_options") as mock_select,
-    ):
-        mock_format.return_value = "formatted_branch"
-        yield {
-            "format": mock_format,
-            "print": mock_print,
-            "confirm": mock_confirm,
-            "select": mock_select,
-        }
-
-
-def test_merge_pr_success(mock_github_utils, mock_prompt):
-    """Test successful PR merge."""
-    # Setup
-    mock_github_utils["has_pr"].return_value = True
-    mock_github_utils["merge_pr"].return_value = True
-
-    # Execute
-    result = merge_pr("feature-branch", "squash")
-
-    # Verify
-    assert result is True
-    mock_github_utils["merge_pr"].assert_called_once_with("feature-branch", "squash")
-
-
-def test_merge_pr_no_pr(mock_github_utils, mock_prompt):
-    """Test merge attempt for branch without PR."""
-    # Setup
-    mock_github_utils["has_pr"].return_value = False
-
-    # Execute
-    result = merge_pr("feature-branch")
-
-    # Verify
-    assert result is False
-    mock_github_utils["merge_pr"].assert_not_called()
-
-
-def test_merge_pr_merge_failed(mock_github_utils, mock_prompt):
-    """Test PR merge failure."""
-    # Setup
-    mock_github_utils["has_pr"].return_value = True
-    mock_github_utils["merge_pr"].return_value = False
-
-    # Execute
-    result = merge_pr("feature-branch")
-
-    # Verify
-    assert result is False
-
-
-def test_update_pr_base_for_children_success(
-    mock_github_utils, mock_config_utils, mock_prompt
-):
-    """Test successful PR base update for child branches."""
-    # Setup: parent -> [child1, child2], child1 -> [], child2 -> []
-    mock_config_utils["get_children"].side_effect = [
-        ["child1", "child2"],  # Children of parent-branch
-        [],  # Children of child1
-        [],  # Children of child2
-    ]
-    mock_github_utils["has_pr"].return_value = True
-    mock_github_utils["update_base"].return_value = True
-
-    # Execute
-    result = update_pr_base_for_children("parent-branch", "main")
-
-    # Verify
-    assert result is True
-    assert (
-        mock_github_utils["update_base"].call_count == 2
-    )  # Called for child1 and child2
-    mock_github_utils["update_base"].assert_any_call("child1", "main")
-    mock_github_utils["update_base"].assert_any_call("child2", "main")
-    assert (
-        mock_config_utils["get_children"].call_count == 3
-    )  # Called for parent, child1, child2
-
-
-def test_update_pr_base_for_children_no_children(mock_config_utils):
-    """Test PR base update when no child branches exist."""
-    # Setup
-    mock_config_utils["get_children"].return_value = []
-
-    # Execute
-    result = update_pr_base_for_children("parent-branch", "main")
-
-    # Verify
-    assert result is True
-
-
-def test_cleanup_local_branch_success(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test successful local branch cleanup."""
-    # Setup
-    mock_git_utils["exists"].return_value = True
-    mock_git_utils["run"].return_value = "success"
-    mock_config_utils["remove"].return_value = True  # Successful stack removal
-
-    # Execute
-    result = cleanup_local_branch("feature-branch")
-
-    # Verify
-    assert result is True
-    mock_git_utils["run"].assert_called_with(["branch", "-D", "feature-branch"])
-    mock_config_utils["remove"].assert_called_once_with("feature-branch")
-
-
-def test_cleanup_local_branch_current_branch(
-    mock_git_utils, mock_config_utils, mock_prompt
-):
-    """Test cleanup when branch is current branch."""
-    # Setup
-    mock_git_utils["exists"].return_value = True
-    mock_git_utils["current"].return_value = "feature-branch"
-    mock_git_utils["run"].return_value = "success"
-    mock_config_utils["get_parent"].return_value = "main"
-
-    # Execute
-    result = cleanup_local_branch("feature-branch")
-
-    # Verify
-    assert result is True
-    mock_git_utils["checkout"].assert_called_once_with("main")
-
-
-def test_get_merge_method(mock_prompt):
-    """Test merge method selection."""
-    # Setup
-    mock_prompt["select"].return_value = "squash"
-
-    # Execute
-    result = get_merge_method()
-
-    # Verify
-    assert result == "squash"
-    mock_prompt["select"].assert_called_once()
-
-
-def test_merge_branch_success(
-    mock_git_utils,
-    mock_config_utils,
-    mock_github_utils,
-    mock_branch_ops,
-    mock_prompt,
-):
-    """Test successful branch merge with all operations."""
-    # Setup
-    mock_config_utils["get_parent"].return_value = "main"
-    mock_github_utils["has_pr"].return_value = True
-    mock_github_utils["merge_pr"].return_value = True
-    mock_prompt["select"].return_value = "squash"
-    mock_branch_ops["update"].return_value = (True, None)
-
-    # Mock successful checks
-    with patch("panqake.utils.github.get_pr_checks_status", return_value=(True, [])):
-        # Execute
-        merge_branch("feature-branch")
-
-        # Verify
-        mock_git_utils["delete_remote"].assert_called_once_with("feature-branch")
-        mock_branch_ops["return"].assert_called_once()
-
-
-def test_merge_branch_no_github_cli(mock_github_utils):
-    """Test merge attempt without GitHub CLI installed."""
-    # Setup
-    mock_github_utils["check_cli"].return_value = False
-
-    # Execute and verify
-    with pytest.raises(SystemExit):
-        merge_branch("feature-branch")
-
-
-def test_merge_branch_user_cancellation(
-    mock_git_utils,
-    mock_config_utils,
-    mock_github_utils,
-    mock_branch_ops,
-    mock_prompt,
-):
-    """Test merge cancellation by user after checks fail."""
-    # Setup
-    mock_config_utils["get_parent"].return_value = "main"
-    mock_prompt["select"].return_value = "squash"
-
-    # Mock checks failure and user cancellation
-    with (
-        patch(
-            "panqake.utils.github.get_pr_checks_status",
-            return_value=(False, ["CI (FAILURE)"]),
-        ),
-    ):
-        mock_prompt["confirm"].return_value = False
-
-        # Execute
-        merge_branch("feature-branch")
-
-        # Verify no merge operations occurred
-        mock_github_utils["merge_pr"].assert_not_called()
-        mock_git_utils["delete_remote"].assert_not_called()
-        # Verify PR base updates were NOT called since user cancelled
-        mock_github_utils["update_base"].assert_not_called()
-
-
-def test_merge_branch_with_children(
-    mock_git_utils,
-    mock_config_utils,
-    mock_github_utils,
-    mock_branch_ops,
-    mock_prompt,
-):
-    """Test merge with child branches that need updating."""
-    # Setup
-    mock_config_utils["get_parent"].return_value = "main"
-    # Setup side_effect for get_children:
-    # 1. update_pr_base_for_children('feature-branch') -> [child1, child2]
-    # 2. update_pr_base_for_children('child1') -> []
-    # 3. update_pr_base_for_children('child2') -> []
-    # 4. update_child_branches('feature-branch') -> [child1, child2]
-    # 5. update_child_branches('child1') -> [] (inside recursive call)
-    # 6. update_child_branches('child2') -> [] (inside recursive call)
-    mock_config_utils["get_children"].side_effect = [
-        ["child1", "child2"],
-        [],
-        [],
-        ["child1", "child2"],  # Called again in update_child_branches
-        [],  # For recursive call on child1
-        [],  # For recursive call on child2
-    ]
-    mock_github_utils["has_pr"].return_value = True
-    mock_github_utils["merge_pr"].return_value = True
-    mock_github_utils["update_base"].return_value = True
-    mock_prompt["select"].return_value = "squash"
-    mock_branch_ops["update"].return_value = (True, None)
-
-    # Mock successful checks
-    with patch("panqake.utils.github.get_pr_checks_status", return_value=(True, [])):
-        # Execute
-        merge_branch("feature-branch", update_children=True)
-
-        # Verify main actions
-        mock_github_utils["merge_pr"].assert_called_once()
-        assert mock_github_utils["update_base"].call_count == 2
-        mock_github_utils["update_base"].assert_any_call("child1", "main")
-        mock_github_utils["update_base"].assert_any_call("child2", "main")
-        # Verify branch updates were attempted
-        assert mock_branch_ops["update"].call_count == 2  # Called for child1, child2
-        mock_branch_ops["update"].assert_any_call(
-            "child1", "main", abort_on_conflict=True
-        )
-        mock_branch_ops["update"].assert_any_call(
-            "child2", "main", abort_on_conflict=True
-        )
-        mock_git_utils["delete_remote"].assert_called_once_with("feature-branch")
-        mock_config_utils["remove"].assert_called_once_with("feature-branch")
-
-
-@pytest.mark.parametrize(
-    "checks_passed,user_confirm,expected_result",
-    [
-        # All checks passed - should proceed with merge
-        ((True, []), True, True),
-        # Checks failed but user confirms - should proceed with merge
-        ((False, ["CI (FAILURE)"]), True, True),
-        # Checks failed and user cancels - should abort
-        ((False, ["CI (FAILURE)", "Tests (PENDING)"]), False, False),
-    ],
+from panqake.ports import (
+    GitHubCLINotFoundError,
+    PRMergeError,
+    UserCancelledError,
 )
-def test_merge_with_checks_status(
-    checks_passed,
-    user_confirm,
-    expected_result,
-    mock_github_utils,
-    mock_prompt,
-    mock_branch_ops,
-):
-    """Test that merge warns about failed checks and respects user confirmation."""
-    with (
-        patch(
-            "panqake.utils.github.get_pr_checks_status",
-            return_value=checks_passed,
-        ),
-        patch("panqake.commands.merge.fetch_latest_base_branch"),
-        patch("panqake.commands.merge.handle_pr_base_updates") as mock_pr_base_updates,
-        patch("panqake.commands.merge.prompt_confirm", return_value=user_confirm),
-        patch("panqake.commands.merge.merge_pr", return_value=True) as mock_merge,
-        patch("panqake.commands.merge.delete_remote_branch"),
-        patch("panqake.commands.merge.handle_branch_updates"),
-        patch("panqake.commands.merge.cleanup_local_branch"),
-        patch("panqake.commands.merge.return_to_branch"),
-        patch("panqake.commands.merge.print_formatted_text"),
-    ):
-        from panqake.commands.merge import perform_merge_operations
+from panqake.testing.fakes import FakeConfig, FakeGit, FakeGitHub, FakeUI
 
-        result = perform_merge_operations(
-            "test-branch", "main", "current-branch", "squash", True, True
+
+class TestUpdatePRBaseForDirectChildren:
+    """Tests for update_pr_base_for_direct_children."""
+
+    def test_no_children_returns_empty(self):
+        config = FakeConfig()
+        github = FakeGitHub()
+
+        result = update_pr_base_for_direct_children("feature", "main", config, github)
+
+        assert result == []
+
+    def test_child_without_pr_not_updated(self):
+        config = FakeConfig(
+            stack={
+                "feature": {"parent": "main"},
+                "child": {"parent": "feature"},
+            }
+        )
+        github = FakeGitHub()
+
+        result = update_pr_base_for_direct_children("feature", "main", config, github)
+
+        assert len(result) == 1
+        assert result[0].branch == "child"
+        assert result[0].had_pr is False
+        assert result[0].updated is False
+        assert len(github.update_pr_base_calls) == 0
+
+    def test_child_with_pr_updated(self):
+        config = FakeConfig(
+            stack={
+                "feature": {"parent": "main"},
+                "child": {"parent": "feature"},
+            }
+        )
+        github = FakeGitHub(branches_with_pr={"child"})
+
+        result = update_pr_base_for_direct_children("feature", "main", config, github)
+
+        assert len(result) == 1
+        assert result[0].branch == "child"
+        assert result[0].had_pr is True
+        assert result[0].updated is True
+        assert ("child", "main") in github.update_pr_base_calls
+
+    def test_update_failure_recorded_in_result(self):
+        config = FakeConfig(
+            stack={
+                "feature": {"parent": "main"},
+                "child": {"parent": "feature"},
+            }
+        )
+        github = FakeGitHub(branches_with_pr={"child"})
+        github.fail_update_pr_base = True
+
+        result = update_pr_base_for_direct_children("feature", "main", config, github)
+
+        assert len(result) == 1
+        assert result[0].branch == "child"
+        assert result[0].had_pr is True
+        assert result[0].updated is False
+        assert result[0].error is not None
+
+
+class TestUpdateChildBranchesCore:
+    """Tests for update_child_branches_core."""
+
+    def test_no_children_returns_empty(self):
+        git = FakeGit(branches=["main", "feature"])
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+
+        result = update_child_branches_core("feature", "main", git, config)
+
+        assert result == []
+
+    def test_child_rebased_successfully(self):
+        git = FakeGit(branches=["main", "feature", "child"])
+        config = FakeConfig(
+            stack={
+                "feature": {"parent": "main"},
+                "child": {"parent": "feature"},
+            }
         )
 
-        assert result == expected_result
+        result = update_child_branches_core("feature", "main", git, config)
 
-        # Verify PR base updates are NOT called if user cancels after seeing failed checks
-        if not expected_result:
-            mock_pr_base_updates.assert_not_called()
-            mock_merge.assert_not_called()
-        else:
-            # Verify PR base updates are called BEFORE merge when user confirms
-            mock_pr_base_updates.assert_called_once()
-            mock_merge.assert_called_once()
+        assert len(result) == 1
+        assert result[0].branch == "child"
+        assert result[0].rebased is True
+        assert ("child", "main") in git.rebase_calls
+        assert config.get_parent_branch("child") == "main"
+
+    def test_rebase_conflict_stops_processing(self):
+        git = FakeGit(branches=["main", "feature", "child1", "child2"])
+        git.fail_rebase = True
+        config = FakeConfig(
+            stack={
+                "feature": {"parent": "main"},
+                "child1": {"parent": "feature"},
+                "child2": {"parent": "feature"},
+            }
+        )
+
+        result = update_child_branches_core("feature", "main", git, config)
+
+        assert len(result) == 1
+        assert result[0].rebased is False
+        assert result[0].error is not None
+
+
+class TestCleanupLocalBranchCore:
+    """Tests for cleanup_local_branch_core."""
+
+    def test_branch_not_exists_returns_success(self):
+        git = FakeGit(branches=["main"])
+        config = FakeConfig()
+
+        local_del, stack_del, warnings = cleanup_local_branch_core(
+            "feature", "main", git, config
+        )
+
+        assert local_del is True
+        assert stack_del is True
+        assert warnings == []
+
+    def test_deletes_local_branch(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+
+        local_del, stack_del, warnings = cleanup_local_branch_core(
+            "feature", "main", git, config
+        )
+
+        assert local_del is True
+        assert stack_del is True
+        assert "feature" in git.deleted_local_branches
+        assert "feature" not in config.stack
+
+    def test_checkout_parent_if_on_branch(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+
+        local_del, stack_del, warnings = cleanup_local_branch_core(
+            "feature", "main", git, config
+        )
+
+        assert local_del is True
+        assert "main" in git.checkout_calls
+
+    def test_worktree_removed_before_delete(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        git.worktrees["feature"] = "/path/to/worktree"
+        config = FakeConfig(
+            stack={"feature": {"parent": "main", "worktree": "/path/to/worktree"}}
+        )
+
+        local_del, stack_del, warnings = cleanup_local_branch_core(
+            "feature", "main", git, config
+        )
+
+        assert local_del is True
+        assert "/path/to/worktree" in git.removed_worktrees
+
+
+class TestMergeBranchCore:
+    """Tests for merge_branch_core."""
+
+    def test_raises_when_cli_not_installed(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        github = FakeGitHub(cli_installed=False)
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitHubCLINotFoundError):
+            merge_branch_core(
+                git=git,
+                github=github,
+                config=config,
+                ui=ui,
+                branch_name="feature",
+            )
+
+    def test_raises_when_no_pr(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        github = FakeGitHub()
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(PRMergeError):
+            merge_branch_core(
+                git=git,
+                github=github,
+                config=config,
+                ui=ui,
+                branch_name="feature",
+            )
+
+    def test_merges_pr_successfully(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        github = FakeGitHub(branches_with_pr={"feature"})
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
+
+        result = merge_branch_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature",
+            delete_branch=False,
+            update_children=False,
+        )
+
+        assert result.branch == "feature"
+        assert result.parent_branch == "main"
+        assert ("feature", "squash") in github.merge_pr_calls
+
+    def test_deletes_remote_branch_when_requested(self):
+        git = FakeGit(
+            branches=["main", "feature"],
+            current_branch="main",
+            pushed_branches={"feature"},
+        )
+        github = FakeGitHub(branches_with_pr={"feature"})
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
+
+        result = merge_branch_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature",
+            delete_branch=True,
+            update_children=False,
+        )
+
+        assert result.remote_branch_deleted is True
+        assert "feature" in git.deleted_remote_branches
+
+    def test_checks_pr_status_before_merge(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        github = FakeGitHub(
+            branches_with_pr={"feature"},
+            pr_checks={"feature": (False, ["CI failed"])},
+        )
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(confirm_responses=[False], strict=False)
+
+        with pytest.raises(UserCancelledError):
+            merge_branch_core(
+                git=git,
+                github=github,
+                config=config,
+                ui=ui,
+                branch_name="feature",
+            )
+
+    def test_proceeds_when_user_confirms_failed_checks(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        github = FakeGitHub(
+            branches_with_pr={"feature"},
+            pr_checks={"feature": (False, ["CI failed"])},
+        )
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(confirm_responses=[True], strict=False)
+
+        result = merge_branch_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature",
+            delete_branch=False,
+            update_children=False,
+        )
+
+        assert result.checks_passed is False
+        assert "CI failed" in result.failed_checks
+        assert "feature" in github.merged_prs
+
+    def test_updates_child_pr_bases(self):
+        git = FakeGit(branches=["main", "feature", "child"], current_branch="main")
+        github = FakeGitHub(branches_with_pr={"feature", "child"})
+        config = FakeConfig(
+            stack={
+                "feature": {"parent": "main"},
+                "child": {"parent": "feature"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        result = merge_branch_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature",
+            delete_branch=False,
+            update_children=True,
+        )
+
+        assert len(result.pr_base_updates) == 1
+        assert result.pr_base_updates[0].branch == "child"
+        assert result.pr_base_updates[0].updated is True
+        assert ("child", "main") in github.update_pr_base_calls
+
+    def test_rebases_child_branches(self):
+        git = FakeGit(branches=["main", "feature", "child"], current_branch="main")
+        github = FakeGitHub(branches_with_pr={"feature"})
+        config = FakeConfig(
+            stack={
+                "feature": {"parent": "main"},
+                "child": {"parent": "feature"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        result = merge_branch_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature",
+            delete_branch=False,
+            update_children=True,
+        )
+
+        assert len(result.child_updates) == 1
+        assert result.child_updates[0].branch == "child"
+        assert result.child_updates[0].rebased is True
+        assert ("child", "main") in git.rebase_calls
+
+    def test_returns_to_original_branch(self):
+        git = FakeGit(branches=["main", "feature", "other"], current_branch="other")
+        github = FakeGitHub(branches_with_pr={"feature"})
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
+
+        result = merge_branch_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature",
+            delete_branch=False,
+            update_children=False,
+        )
+
+        assert result.returned_to == "other"
+
+    def test_returns_to_parent_if_original_deleted(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        github = FakeGitHub(branches_with_pr={"feature"})
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
+
+        result = merge_branch_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature",
+            delete_branch=True,
+            update_children=False,
+        )
+
+        assert result.returned_to == "main"
+
+
+class TestUserCancellation:
+    """Tests for user cancellation handling."""
+
+    def test_cancel_on_failed_checks_confirmation(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        github = FakeGitHub(
+            branches_with_pr={"feature"},
+            pr_checks={"feature": (False, ["CI failed"])},
+        )
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(cancel_on_confirm=True)
+
+        with pytest.raises(UserCancelledError):
+            merge_branch_core(
+                git=git,
+                github=github,
+                config=config,
+                ui=ui,
+                branch_name="feature",
+            )

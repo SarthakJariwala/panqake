@@ -1,65 +1,111 @@
-"""Command for navigating to child branch in stack."""
+"""Command for navigating to child branch in stack.
 
-import sys
+Uses dependency injection for testability.
+Core logic is pure - no sys.exit, no direct filesystem/git calls.
+"""
 
-from panqake.utils.git import (
-    get_current_branch,
-    switch_to_branch_or_worktree,
+from panqake.ports import (
+    BranchNotFoundError,
+    ConfigPort,
+    DownResult,
+    GitPort,
+    RealConfig,
+    RealGit,
+    RealUI,
+    UIPort,
+    run_command,
 )
-from panqake.utils.questionary_prompt import print_formatted_text, prompt_select
-from panqake.utils.stack import Stacks
+from panqake.utils.questionary_prompt import format_branch
+
+
+def down_core(
+    git: GitPort,
+    config: ConfigPort,
+    ui: UIPort,
+) -> DownResult:
+    """Navigate to a child branch in the stack.
+
+    This is the pure core logic that can be tested without mocking.
+    Raises PanqakeError subclasses on failure instead of calling sys.exit.
+
+    If the current branch has:
+    - No children: Raises BranchNotFoundError
+    - One child: Directly switches to that child branch
+    - Multiple children: Prompts user to select which child to navigate to
+
+    Args:
+        git: Git operations interface
+        config: Stack configuration interface
+        ui: User interaction interface
+
+    Returns:
+        DownResult with navigation metadata
+
+    Raises:
+        BranchNotFoundError: If current branch cannot be determined or has no children
+        UserCancelledError: If user cancels selection prompt
+    """
+    current = git.get_current_branch()
+    if not current:
+        raise BranchNotFoundError("Could not determine current branch")
+
+    children = config.get_child_branches(current)
+    if not children:
+        raise BranchNotFoundError(f"Branch '{current}' has no child branches")
+
+    # Determine which child to switch to
+    if len(children) == 1:
+        child = children[0]
+    else:
+        ui.print_info(f"Branch '{current}' has multiple children")
+        child = ui.prompt_select_branch(
+            branches=children,
+            message="Select a child branch to switch to:",
+            current_branch=current,
+            exclude_protected=False,
+            enable_search=True,
+        )
+        if not child:
+            raise BranchNotFoundError("No child branch selected")
+
+    worktree_path = git.get_worktree_path(child)
+    if worktree_path:
+        ui.print_info(f"Child branch '{child}' is in a worktree. To switch to it:")
+        ui.print_info(f"cd {worktree_path}")
+        return DownResult(
+            target_branch=child,
+            previous_branch=current,
+            switched=False,
+            worktree_path=worktree_path,
+        )
+
+    git.checkout_branch(child)
+    return DownResult(
+        target_branch=child,
+        previous_branch=current,
+        switched=True,
+    )
 
 
 def down() -> None:
-    """Navigate to a child branch in the stack.
+    """CLI entrypoint that wraps core logic with real implementations.
 
-    If the current branch has:
-    - No children: Informs the user and exits
-    - One child: Directly switches to that child branch
-    - Multiple children: Prompts user to select which child to navigate to
+    This thin wrapper:
+    1. Instantiates real dependencies
+    2. Calls the core logic
+    3. Handles printing output
+    4. Converts exceptions to sys.exit via run_command
     """
-    current_branch = get_current_branch()
-    if not current_branch:
-        print_formatted_text(
-            "[danger]Error: Could not determine current branch[/danger]"
-        )
-        sys.exit(1)
+    git = RealGit()
+    config = RealConfig()
+    ui = RealUI()
 
-    # Get the child branches using the Stacks utility
-    with Stacks() as stacks:
-        children = stacks.get_children(current_branch)
+    def core() -> None:
+        result = down_core(git=git, config=config, ui=ui)
 
-        if not children:
-            print_formatted_text(
-                f"[warning]Branch '{current_branch}' has no child branches[/warning]"
+        if result.switched:
+            ui.print_success(
+                f"Moved down to child branch {format_branch(result.target_branch)}"
             )
-            sys.exit(1)
 
-        # If there's only one child, switch directly
-        if len(children) == 1:
-            child = children[0]
-            print_formatted_text(f"[info]Moving down to child branch: '{child}'[/info]")
-            switch_to_branch_or_worktree(child, "child branch")
-            return
-
-        # Multiple children, prompt for selection
-        print_formatted_text(
-            f"[info]Branch '{current_branch}' has multiple children[/info]"
-        )
-
-        # Format child branches for display
-        choices = []
-        for child in children:
-            child_item = {"display": child, "value": child}
-            choices.append(child_item)
-
-        # Show interactive branch selection with search enabled
-        selected = prompt_select(
-            "Select a child branch to switch to:", choices, enable_search=True
-        )
-
-        if selected:
-            print_formatted_text(
-                f"[info]Moving down to child branch: '{selected}'[/info]"
-            )
-            switch_to_branch_or_worktree(selected, "child branch")
+    run_command(ui, core)

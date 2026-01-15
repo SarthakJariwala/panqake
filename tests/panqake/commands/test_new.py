@@ -1,194 +1,348 @@
-"""Tests for new.py command module."""
+"""Tests for new.py - refactored with fakes instead of mocks.
 
-from unittest.mock import patch
+These tests verify BEHAVIOR, not implementation details.
+No patches required - just inject fakes.
+"""
 
 import pytest
 
-from panqake.commands.new import create_new_branch
+from panqake.commands.new import create_new_branch_core
+from panqake.ports import (
+    BranchExistsError,
+    BranchNotFoundError,
+    UserCancelledError,
+    WorktreeError,
+)
+from panqake.testing import FakeConfig, FakeFilesystem, FakeGit, FakeUI
 
 
-@pytest.fixture
-def mock_git_utils():
-    """Mock all git utility functions."""
-    with (
-        patch("panqake.commands.new.branch_exists") as mock_exists,
-        patch("panqake.commands.new.validate_branch") as mock_validate,
-        patch("panqake.commands.new.create_branch") as mock_create,
-        patch("panqake.commands.new.get_current_branch") as mock_current,
-        patch("panqake.commands.new.list_all_branches") as mock_list,
+class TestCreateNewBranchCore:
+    """Tests for the core branch creation logic."""
+
+    def test_creates_branch_with_explicit_args(self):
+        """Branch is created and added to stack when args are provided."""
+        git = FakeGit(branches=["main", "develop"])
+        config = FakeConfig()
+        ui = FakeUI()
+        fs = FakeFilesystem()
+
+        result = create_new_branch_core(
+            git=git,
+            config=config,
+            ui=ui,
+            fs=fs,
+            branch_name="feature-x",
+            base_branch="main",
+        )
+
+        # Verify result
+        assert result.branch_name == "feature-x"
+        assert result.base_branch == "main"
+        assert result.worktree_path is None
+
+        # Verify state changes
+        assert "feature-x" in git.branches
+        assert git.current_branch == "feature-x"
+        assert config.stack["feature-x"] == {"parent": "main"}
+
+    def test_creates_branch_interactively(self):
+        """Prompts for branch name and base when not provided."""
+        git = FakeGit(branches=["main", "develop"], current_branch="develop")
+        config = FakeConfig()
+        ui = FakeUI(input_responses=["feature-y", "main"])
+        fs = FakeFilesystem()
+
+        result = create_new_branch_core(
+            git=git,
+            config=config,
+            ui=ui,
+            fs=fs,
+            branch_name=None,
+            base_branch=None,
+        )
+
+        # Verify prompts were asked with correct data
+        assert len(ui.input_calls) == 2
+        assert "branch name" in ui.input_calls[0].message.lower()
+        assert ui.input_calls[0].has_validator is True  # Validator was passed
+
+        assert "base branch" in ui.input_calls[1].message.lower()
+        assert ui.input_calls[1].completer == ["develop", "main"]  # Branch list
+        assert ui.input_calls[1].default == "develop"  # Current branch as default
+
+        # Verify outcome
+        assert result.branch_name == "feature-y"
+        assert result.base_branch == "main"
+        assert "feature-y" in git.branches
+
+    def test_uses_current_branch_as_default_base(self):
+        """When base not specified, defaults to current branch."""
+        git = FakeGit(branches=["main", "develop"], current_branch="develop")
+        config = FakeConfig()
+        # Second response is "develop" = accept default
+        ui = FakeUI(input_responses=["feature-z", "develop"])
+        fs = FakeFilesystem()
+
+        result = create_new_branch_core(
+            git=git,
+            config=config,
+            ui=ui,
+            fs=fs,
+            branch_name=None,
+            base_branch=None,
+        )
+
+        # Feature created from develop (current branch)
+        assert result.base_branch == "develop"
+        assert ("feature-z", "develop") in git.created_branches
+
+    def test_raises_when_branch_already_exists(self):
+        """Error raised if new branch name already exists."""
+        git = FakeGit(branches=["main", "existing-branch"])
+        config = FakeConfig()
+        ui = FakeUI()
+        fs = FakeFilesystem()
+
+        with pytest.raises(BranchExistsError) as exc_info:
+            create_new_branch_core(
+                git=git,
+                config=config,
+                ui=ui,
+                fs=fs,
+                branch_name="existing-branch",
+                base_branch="main",
+            )
+
+        assert "already exists" in str(exc_info.value)
+        # Branch not re-created
+        assert len(git.created_branches) == 0
+        # Stack not modified
+        assert "existing-branch" not in config.stack
+
+    def test_raises_when_base_branch_missing(self):
+        """Error raised if base branch doesn't exist."""
+        git = FakeGit(branches=["main"])
+        config = FakeConfig()
+        ui = FakeUI()
+        fs = FakeFilesystem()
+
+        with pytest.raises(BranchNotFoundError) as exc_info:
+            create_new_branch_core(
+                git=git,
+                config=config,
+                ui=ui,
+                fs=fs,
+                branch_name="feature-a",
+                base_branch="nonexistent",
+            )
+
+        assert "nonexistent" in str(exc_info.value)
+        assert len(git.created_branches) == 0
+
+    def test_creates_worktree_branch(self):
+        """Branch created in worktree with metadata recorded."""
+        git = FakeGit(branches=["main"])
+        config = FakeConfig()
+        ui = FakeUI()
+        fs = FakeFilesystem()
+
+        result = create_new_branch_core(
+            git=git,
+            config=config,
+            ui=ui,
+            fs=fs,
+            branch_name="feature-wt",
+            base_branch="main",
+            use_worktree=True,
+            worktree_path="/tmp/feature-wt",
+        )
+
+        assert result.worktree_path is not None
+        assert "feature-wt" in result.worktree_path
+        assert "feature-wt" in git.worktrees
+        assert config.stack["feature-wt"]["parent"] == "main"
+        assert "worktree" in config.stack["feature-wt"]
+
+    def test_worktree_path_prompted_when_not_provided(self):
+        """Prompts for worktree path when use_worktree=True but path not given."""
+        git = FakeGit(branches=["main"])
+        config = FakeConfig()
+        ui = FakeUI(path_responses=["/custom/path"])
+        fs = FakeFilesystem()
+
+        result = create_new_branch_core(
+            git=git,
+            config=config,
+            ui=ui,
+            fs=fs,
+            branch_name="feature-wt2",
+            base_branch="main",
+            use_worktree=True,
+            worktree_path=None,
+        )
+
+        assert len(ui.path_calls) == 1
+        assert "worktree path" in ui.path_calls[0].message.lower()
+        assert result.worktree_path is not None
+
+    def test_worktree_directory_exists_raises_error(self):
+        """Error raised if worktree directory already exists."""
+        git = FakeGit(branches=["main"])
+        config = FakeConfig()
+        ui = FakeUI()
+        fs = FakeFilesystem(existing_paths={"/existing/path"})
+
+        with pytest.raises(WorktreeError) as exc_info:
+            create_new_branch_core(
+                git=git,
+                config=config,
+                ui=ui,
+                fs=fs,
+                branch_name="feature-wt",
+                base_branch="main",
+                use_worktree=True,
+                worktree_path="/existing/path",
+            )
+
+        assert "already exists" in str(exc_info.value)
+
+
+class TestCancellation:
+    """Tests for user cancellation handling."""
+
+    def test_cancel_on_branch_name_prompt(self):
+        """UserCancelledError raised when user cancels branch name prompt."""
+        git = FakeGit(branches=["main"])
+        config = FakeConfig()
+        ui = FakeUI(cancel_on_input=True)
+        fs = FakeFilesystem()
+
+        with pytest.raises(UserCancelledError):
+            create_new_branch_core(
+                git=git,
+                config=config,
+                ui=ui,
+                fs=fs,
+                branch_name=None,
+                base_branch="main",
+            )
+
+        # No changes made
+        assert len(git.created_branches) == 0
+
+    def test_cancel_on_path_prompt(self):
+        """UserCancelledError raised when user cancels path prompt."""
+        git = FakeGit(branches=["main"])
+        config = FakeConfig()
+        ui = FakeUI(cancel_on_path=True)
+        fs = FakeFilesystem()
+
+        with pytest.raises(UserCancelledError):
+            create_new_branch_core(
+                git=git,
+                config=config,
+                ui=ui,
+                fs=fs,
+                branch_name="feature",
+                base_branch="main",
+                use_worktree=True,
+                worktree_path=None,
+            )
+
+
+class TestBehaviorMatrix:
+    """Matrix of scenarios for regression catching."""
+
+    @pytest.mark.parametrize(
+        "branches,current,new_name,base,expected_base",
+        [
+            # Create from main
+            (["main"], "main", "feature-1", "main", "main"),
+            # Create from develop
+            (["main", "develop"], "develop", "feature-2", "develop", "develop"),
+            # Explicit base different from current
+            (["main", "develop"], "develop", "feature-3", "main", "main"),
+            # Deep stack: feature on feature
+            (["main", "feat-a"], "feat-a", "feat-b", "feat-a", "feat-a"),
+        ],
+    )
+    def test_branch_creation_scenarios(
+        self, branches, current, new_name, base, expected_base
     ):
-        mock_current.return_value = "main"
-        mock_list.return_value = ["main", "develop", "feature"]
-        mock_validate.side_effect = lambda x: x  # Just return the input
-        yield {
-            "exists": mock_exists,
-            "validate": mock_validate,
-            "create": mock_create,
-            "current": mock_current,
-            "list": mock_list,
-        }
+        """Various branch creation scenarios produce correct results."""
+        git = FakeGit(branches=branches, current_branch=current)
+        config = FakeConfig()
+        ui = FakeUI()
+        fs = FakeFilesystem()
+
+        result = create_new_branch_core(
+            git=git,
+            config=config,
+            ui=ui,
+            fs=fs,
+            branch_name=new_name,
+            base_branch=base,
+        )
+
+        assert result.branch_name == new_name
+        assert result.base_branch == expected_base
+        assert new_name in git.branches
+        assert config.stack[new_name]["parent"] == expected_base
+
+    @pytest.mark.parametrize(
+        "scenario,setup,error_type",
+        [
+            (
+                "branch exists",
+                {"branches": ["main", "existing"], "new": "existing", "base": "main"},
+                BranchExistsError,
+            ),
+            (
+                "base missing",
+                {"branches": ["main"], "new": "feature", "base": "missing"},
+                BranchNotFoundError,
+            ),
+        ],
+    )
+    def test_error_scenarios(self, scenario, setup, error_type):
+        """Error scenarios raise appropriate exceptions."""
+        git = FakeGit(branches=setup["branches"])
+        config = FakeConfig()
+        ui = FakeUI()
+        fs = FakeFilesystem()
+
+        with pytest.raises(error_type):
+            create_new_branch_core(
+                git=git,
+                config=config,
+                ui=ui,
+                fs=fs,
+                branch_name=setup["new"],
+                base_branch=setup["base"],
+            )
+
+        # State unchanged on error
+        if setup["new"] not in setup["branches"]:
+            assert setup["new"] not in git.branches
+        assert setup["new"] not in config.stack
 
 
-@pytest.fixture
-def mock_config_utils():
-    """Mock config utility functions."""
-    with patch("panqake.commands.new.add_to_stack") as mock_add:
-        yield mock_add
+class TestFakeUIStrictMode:
+    """Tests for FakeUI strict mode behavior."""
 
+    def test_strict_mode_raises_on_missing_response(self):
+        """In strict mode, missing responses raise AssertionError."""
+        ui = FakeUI(strict=True)
 
-@pytest.fixture
-def mock_prompt():
-    """Mock questionary prompt functions."""
-    with (
-        patch("panqake.commands.new.prompt_input") as mock_input,
-        patch("panqake.commands.new.print_formatted_text") as mock_print,
-    ):
-        yield {"input": mock_input, "print": mock_print}
+        with pytest.raises(AssertionError) as exc_info:
+            ui.prompt_input("What is your name?")
 
+        assert "No response queued" in str(exc_info.value)
 
-def test_create_new_branch_with_args(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test creating new branch with provided arguments."""
-    # Setup
-    mock_git_utils["exists"].side_effect = [
-        False,
-        True,
-    ]  # new branch doesn't exist, base does
+    def test_non_strict_mode_returns_default(self):
+        """In non-strict mode, missing responses return default."""
+        ui = FakeUI(strict=False)
 
-    # Execute
-    create_new_branch("feature-branch", "main")
+        result = ui.prompt_input("What is your name?", default="anonymous")
 
-    # Verify
-    mock_git_utils["create"].assert_called_once_with("feature-branch", "main")
-    mock_config_utils.assert_called_once_with("feature-branch", "main")
-    mock_prompt["print"].assert_called()  # Success message printed
-
-
-def test_create_new_branch_interactive(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test creating new branch interactively."""
-    # Setup
-    mock_git_utils["exists"].side_effect = [
-        False,
-        True,
-    ]  # new branch doesn't exist, base does
-    mock_prompt["input"].side_effect = ["feature-branch", "develop"]  # User inputs
-
-    # Execute
-    create_new_branch()
-
-    # Verify
-    mock_git_utils["create"].assert_called_once_with("feature-branch", "develop")
-    mock_config_utils.assert_called_once_with("feature-branch", "develop")
-
-
-def test_create_new_branch_existing_branch(
-    mock_git_utils, mock_config_utils, mock_prompt
-):
-    """Test error when new branch already exists."""
-    # Setup
-    mock_git_utils["exists"].return_value = True
-
-    # Execute and verify
-    with pytest.raises(SystemExit):
-        create_new_branch("existing-branch", "main")
-
-    # Verify branch was not created
-    mock_git_utils["create"].assert_not_called()
-    mock_config_utils.assert_not_called()
-
-
-def test_create_new_branch_nonexistent_base(
-    mock_git_utils, mock_config_utils, mock_prompt
-):
-    """Test error when base branch doesn't exist."""
-    # Setup
-    mock_git_utils[
-        "exists"
-    ].return_value = False  # new branch doesn't exist (should pass)
-    mock_git_utils["validate"].side_effect = SystemExit(
-        1
-    )  # base branch validation fails
-
-    # Execute and verify
-    with pytest.raises(SystemExit):
-        create_new_branch("feature-branch", "nonexistent")
-
-    # Verify branch was not created
-    mock_git_utils["create"].assert_not_called()
-    mock_config_utils.assert_not_called()
-
-
-def test_create_new_branch_default_base(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test creating branch with default base (current branch)."""
-    # Setup
-    mock_git_utils["exists"].side_effect = [
-        False,  # branch_name doesn't exist
-        True,  # base_branch ('main') exists
-    ]
-    mock_prompt["input"].side_effect = [
-        "feature-branch",  # User enters branch name
-        "main",  # User accepts default base branch (questionary returns default)
-    ]
-    # Mock current branch which should be used as default base
-    mock_git_utils["current"].return_value = "main"
-    # Mock list_all_branches to ensure the base branch prompt happens
-    mock_git_utils["list"].return_value = ["main", "other"]
-
-    # Execute
-    create_new_branch()
-
-    # Verify
-    # get_current_branch called to determine default base
-    mock_git_utils["current"].assert_called_once()
-    # list_all_branches called to provide completer
-    mock_git_utils["list"].assert_called_once()
-    # prompt_input called twice (name, base)
-    assert mock_prompt["input"].call_count == 2
-    # create_branch called with the value returned by prompt ("main")
-    mock_git_utils["create"].assert_called_once_with("feature-branch", "main")
-    # add_to_stack also called with the value returned by prompt ("main")
-    mock_config_utils.assert_called_once_with("feature-branch", "main")
-
-
-def test_create_new_branch_with_validation(
-    mock_git_utils, mock_config_utils, mock_prompt
-):
-    """Test branch name validation in interactive mode."""
-    # Setup
-    mock_git_utils["exists"].side_effect = [
-        False,
-        True,
-    ]  # new branch doesn't exist, base does
-    mock_prompt["input"].side_effect = [
-        "feature/branch",
-        "main",
-    ]  # User inputs with validation
-
-    # Execute
-    create_new_branch()
-
-    # Verify validator was used
-    assert "validator" in mock_prompt["input"].call_args_list[0].kwargs
-    mock_git_utils["create"].assert_called_once_with("feature/branch", "main")
-
-
-def test_create_new_branch_with_branch_completion(
-    mock_git_utils, mock_config_utils, mock_prompt
-):
-    """Test base branch completion in interactive mode."""
-    # Setup
-    mock_git_utils["exists"].side_effect = [
-        False,
-        True,
-    ]  # new branch doesn't exist, base does
-    mock_prompt["input"].side_effect = ["feature-branch", "develop"]  # User inputs
-
-    # Execute
-    create_new_branch()
-
-    # Verify completer was used with branch list
-    assert "completer" in mock_prompt["input"].call_args_list[1].kwargs
-    assert mock_prompt["input"].call_args_list[1].kwargs["completer"] == [
-        "main",
-        "develop",
-        "feature",
-    ]
+        assert result == "anonymous"

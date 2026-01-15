@@ -1,78 +1,140 @@
-"""Command for updating remote branches and pull requests."""
+"""Command for updating remote branches and pull requests.
 
-import sys
+Uses dependency injection for testability.
+Core logic is pure - no sys.exit, no direct filesystem/git calls.
+"""
 
 from panqake.commands.pr import create_pr_for_branch
-from panqake.utils.config import get_parent_branch
-from panqake.utils.git import (
-    is_force_push_needed,
-    is_last_commit_amended,
-    push_branch_to_remote,
-    validate_branch,
+from panqake.ports import (
+    BranchNotFoundError,
+    ConfigPort,
+    GitHubCLINotFoundError,
+    GitHubPort,
+    GitPort,
+    RealConfig,
+    RealGit,
+    RealGitHub,
+    RealUI,
+    SubmitResult,
+    UIPort,
+    run_command,
 )
-from panqake.utils.github import (
-    branch_has_pr,
-    check_github_cli_installed,
-    get_pr_url,
-)
-from panqake.utils.questionary_prompt import (
-    format_branch,
-    print_formatted_text,
-    prompt_confirm,
-)
-from panqake.utils.status import status
+from panqake.utils.questionary_prompt import format_branch
+from panqake.utils.types import BranchName
 
 
-def update_pull_request(branch_name=None):
-    """Update a remote branch and its associated PR."""
-    # Check for GitHub CLI
-    if not check_github_cli_installed():
-        print_formatted_text(
-            "[warning]Error: GitHub CLI (gh) is required but not installed.[/warning]"
+def submit_branch_core(
+    git: GitPort,
+    github: GitHubPort,
+    config: ConfigPort,
+    ui: UIPort,
+    branch_name: BranchName | None = None,
+) -> SubmitResult:
+    """Update a remote branch and its associated PR.
+
+    This is the pure core logic that can be tested without mocking.
+    Raises PanqakeError subclasses on failure instead of calling sys.exit.
+
+    Args:
+        git: Git operations interface
+        github: GitHub CLI operations interface
+        config: Stack configuration interface
+        ui: User interaction interface
+        branch_name: Branch to submit (uses current branch if None)
+
+    Returns:
+        SubmitResult with push and PR metadata
+
+    Raises:
+        GitHubCLINotFoundError: If GitHub CLI is not installed
+        BranchNotFoundError: If branch doesn't exist
+        PushError: If push fails
+        UserCancelledError: If user cancels a prompt
+    """
+    if not github.is_cli_installed():
+        raise GitHubCLINotFoundError(
+            "GitHub CLI (gh) is required but not installed. "
+            "Please install GitHub CLI: https://cli.github.com"
         )
-        print_formatted_text(
-            "[info]Please install GitHub CLI: https://cli.github.com[/info]"
-        )
-        sys.exit(1)
 
-    branch_name = validate_branch(branch_name)
+    if not branch_name:
+        branch_name = git.get_current_branch()
+        if not branch_name:
+            raise BranchNotFoundError("Could not determine current branch")
 
-    with status("Analyzing branch status...") as s:
-        # Check if the last commit was amended
-        s.update("Checking for amended commits...")
-        is_amended = is_last_commit_amended()
+    git.validate_branch(branch_name)
 
-        # Determine if force push is needed
-        needs_force = is_amended
+    ui.print_info("Analyzing branch status...")
 
-        # If we didn't detect an amended commit, check if a non-fast-forward issue would occur
-        if not needs_force:
-            s.update("Checking if force push is needed...")
-            needs_force = is_force_push_needed(branch_name)
-            if needs_force:
-                s.pause_and_print(
-                    "[info]Detected non-fast-forward update. Force push with lease will be used.[/info]"
-                )
+    is_amended = git.is_last_commit_amended()
+    needs_force = is_amended
 
-    # Push the branch to remote
-    success = push_branch_to_remote(branch_name, force_with_lease=needs_force)
-
-    if success:
-        if branch_has_pr(branch_name):
-            print_formatted_text(
-                f"[success]PR for {format_branch(branch_name)} has been updated[/success]"
+    if not needs_force:
+        needs_force = git.is_force_push_needed(branch_name)
+        if needs_force:
+            ui.print_info(
+                "Detected non-fast-forward update. Force push with lease will be used."
             )
-            # Display PR URL if available
-            pr_url = get_pr_url(branch_name)
-            if pr_url:
-                print_formatted_text(f"[info]Pull request URL: {pr_url}[/info]")
+
+    git.push_branch(branch_name, force_with_lease=needs_force)
+
+    pr_existed = github.branch_has_pr(branch_name)
+    pr_created = False
+    pr_url: str | None = None
+
+    if pr_existed:
+        pr_url = github.get_pr_url(branch_name)
+    else:
+        should_create = ui.prompt_confirm("Do you want to create a PR?")
+        if should_create:
+            pr_created = True
+
+    return SubmitResult(
+        branch_name=branch_name,
+        force_pushed=needs_force,
+        pr_existed=pr_existed,
+        pr_created=pr_created,
+        pr_url=pr_url,
+    )
+
+
+def update_pull_request(branch_name: BranchName | None = None) -> None:
+    """CLI entrypoint that wraps core logic with real implementations.
+
+    This thin wrapper:
+    1. Instantiates real dependencies
+    2. Calls the core logic
+    3. Handles printing output
+    4. Converts exceptions to sys.exit via run_command
+    """
+    git = RealGit()
+    github = RealGitHub()
+    config = RealConfig()
+    ui = RealUI()
+
+    def core() -> None:
+        result = submit_branch_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name=branch_name,
+        )
+
+        if result.pr_existed:
+            ui.print_success(
+                f"PR for {format_branch(result.branch_name)} has been updated"
+            )
+            if result.pr_url:
+                ui.print_info(f"Pull request URL: {result.pr_url}")
+        elif result.pr_created:
+            parent = config.get_parent_branch(result.branch_name)
+            create_pr_for_branch(result.branch_name, parent or "main")
         else:
-            print_formatted_text(
-                f"[info]Branch {format_branch(branch_name)} updated on remote. No PR exists yet.[/info]"
+            ui.print_info(
+                f"Branch {format_branch(result.branch_name)} updated on remote. "
+                "No PR exists yet."
             )
-            if prompt_confirm("Do you want to create a PR?"):
-                # Create a PR if the user confirms
-                parent = get_parent_branch(branch_name)
-                create_pr_for_branch(branch_name, parent)
-            else:
-                print_formatted_text("[info]To create a PR, run: pq pr[/info]")
+            ui.print_info("To create a PR, run: pq pr")
+
+    run_command(ui, core)

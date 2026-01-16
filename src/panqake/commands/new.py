@@ -1,30 +1,135 @@
-"""Command for creating a new branch in the stack."""
+"""Command for creating a new branch in the stack.
 
-import sys
+Uses dependency injection for testability.
+Core logic is pure - no sys.exit, no direct filesystem/git calls.
+"""
+
 from pathlib import Path
 
-import questionary
-
-from panqake.utils.config import add_to_stack
-from panqake.utils.exit import clean_exit
-from panqake.utils.git import (
-    add_worktree,
-    branch_exists,
-    create_branch,
-    get_current_branch,
-    list_all_branches,
-    validate_branch,
+from panqake.ports import (
+    BranchExistsError,
+    BranchNotFoundError,
+    ConfigPort,
+    FilesystemPort,
+    GitPort,
+    NewBranchResult,
+    RealConfig,
+    RealFilesystem,
+    RealGit,
+    RealUI,
+    UIPort,
+    WorktreeError,
+    run_command,
 )
-from panqake.utils.questionary_prompt import (
-    BranchNameValidator,
-    format_branch,
-    print_formatted_text,
-    prompt_input,
-    rich_prompt,
-    style,
-)
-from panqake.utils.status import status
+from panqake.utils.questionary_prompt import BranchNameValidator, format_branch
 from panqake.utils.types import BranchName
+
+
+def create_new_branch_core(
+    git: GitPort,
+    config: ConfigPort,
+    ui: UIPort,
+    fs: FilesystemPort,
+    branch_name: BranchName | None = None,
+    base_branch: BranchName | None = None,
+    use_worktree: bool = False,
+    worktree_path: str | None = None,
+) -> NewBranchResult:
+    """Create a new branch in the stack.
+
+    This is the pure core logic that can be tested without mocking.
+    Raises PanqakeError subclasses on failure instead of calling sys.exit.
+
+    Args:
+        git: Git operations interface
+        config: Stack configuration interface
+        ui: User interaction interface
+        fs: Filesystem operations interface
+        branch_name: Name for the new branch (prompts if None)
+        base_branch: Parent branch to base off (prompts if None)
+        use_worktree: Whether to create in a worktree
+        worktree_path: Explicit worktree path (prompts if None and use_worktree=True)
+
+    Returns:
+        NewBranchResult with branch metadata
+
+    Raises:
+        BranchExistsError: If branch_name already exists
+        BranchNotFoundError: If base_branch doesn't exist
+        WorktreeError: If worktree creation fails
+        UserCancelledError: If user cancels a prompt
+    """
+    # Resolve branch name
+    if not branch_name:
+        validator = BranchNameValidator()
+        branch_name = ui.prompt_input("Enter new branch name: ", validator=validator)
+
+    # Check new branch doesn't already exist (before prompting for base)
+    if git.branch_exists(branch_name):
+        raise BranchExistsError(f"Branch '{branch_name}' already exists")
+
+    # Resolve base branch
+    current = git.get_current_branch()
+    if not base_branch:
+        base_branch = current
+        branches = git.list_all_branches()
+        if branches:
+            base_branch = ui.prompt_input(
+                f"Enter base branch [default: {current or ''}]: ",
+                completer=branches,
+                default=current or "",
+            )
+
+    # Validate base branch exists
+    if not base_branch:
+        raise BranchNotFoundError("Base branch is required")
+
+    git.validate_branch(base_branch)
+
+    # Handle worktree path resolution
+    resolved_worktree_path: str | None = None
+    if use_worktree:
+        default_path = str(Path.cwd().parent / branch_name)
+
+        if worktree_path:
+            input_path = worktree_path
+        else:
+            input_path = ui.prompt_path("Enter worktree path", default=default_path)
+
+        # Resolve path using filesystem port
+        expanded_path = fs.resolve_path(input_path)
+
+        # If input ends with / or is an existing directory, append branch name
+        if (
+            input_path.endswith("/")
+            or input_path.endswith("\\")
+            or (fs.path_exists(expanded_path) and fs.is_directory(expanded_path))
+        ):
+            resolved_worktree_path = fs.resolve_path(f"{expanded_path}/{branch_name}")
+        else:
+            resolved_worktree_path = expanded_path
+
+        if fs.path_exists(resolved_worktree_path):
+            raise WorktreeError(f"Directory '{resolved_worktree_path}' already exists")
+
+    # Execute the branch creation
+    if use_worktree and resolved_worktree_path:
+        git.add_worktree(branch_name, resolved_worktree_path, base_branch)
+        config.add_to_stack(branch_name, base_branch, resolved_worktree_path)
+
+        return NewBranchResult(
+            branch_name=branch_name,
+            base_branch=base_branch,
+            worktree_path=resolved_worktree_path,
+        )
+    else:
+        git.create_branch(branch_name, base_branch)
+        config.add_to_stack(branch_name, base_branch)
+
+        return NewBranchResult(
+            branch_name=branch_name,
+            base_branch=base_branch,
+        )
 
 
 def create_new_branch(
@@ -33,112 +138,44 @@ def create_new_branch(
     use_worktree: bool = False,
     worktree_path: str | None = None,
 ) -> None:
-    """Create a new branch in the stack."""
-    # If no branch name specified, prompt for it
-    if not branch_name:
-        validator = BranchNameValidator()
-        branch_name = prompt_input("Enter new branch name: ", validator=validator)
+    """CLI entrypoint that wraps core logic with real implementations.
 
-    # If no base branch specified, use current branch but offer selection
-    current = get_current_branch()
-    if not base_branch:
-        base_branch = current
-        branches = list_all_branches()
-        if branches:
-            base_branch = prompt_input(
-                f"Enter base branch [default: {current or ''}]: ",
-                completer=branches,
-                default=current or "",
+    This thin wrapper:
+    1. Instantiates real dependencies
+    2. Calls the core logic
+    3. Handles printing output
+    4. Converts exceptions to sys.exit via run_command
+    """
+    git = RealGit()
+    config = RealConfig()
+    ui = RealUI()
+    fs = RealFilesystem()
+
+    def core() -> None:
+        result = create_new_branch_core(
+            git=git,
+            config=config,
+            ui=ui,
+            fs=fs,
+            branch_name=branch_name,
+            base_branch=base_branch,
+            use_worktree=use_worktree,
+            worktree_path=worktree_path,
+        )
+
+        # Print success output
+        if result.worktree_path:
+            ui.print_success(
+                f"Created new branch '{result.branch_name}' "
+                f"in worktree at '{result.worktree_path}'"
             )
-
-    # Determine worktree path if using worktree
-    resolved_worktree_path = ""
-    if use_worktree:
-        default_path = str(Path.cwd().parent / branch_name)
-
-        if worktree_path:
-            # Use explicit path from CLI
-            input_path = worktree_path
         else:
-            # Prompt with path autocomplete
-            rich_prompt(f"Enter worktree path [default: {default_path}]: ", "prompt")
-            try:
-                result = questionary.path(
-                    "",
-                    default=default_path,
-                    only_directories=True,
-                    style=style,
-                ).ask()
-                if result is None:
-                    clean_exit()
-                input_path = result
-            except KeyboardInterrupt:
-                clean_exit()
+            ui.print_success(f"Created new branch '{result.branch_name}' in the stack")
 
-        # Handle relative paths like "../" or existing directories - append branch name
-        expanded_path = Path(input_path).expanduser()
-        if input_path.endswith("/") or (
-            expanded_path.exists() and expanded_path.is_dir()
-        ):
-            resolved_worktree_path = str(expanded_path / branch_name)
-        else:
-            resolved_worktree_path = str(expanded_path)
+        ui.print_info(f"Parent branch: {format_branch(result.base_branch)}")
 
-        if Path(resolved_worktree_path).exists():
-            print_formatted_text(
-                f"[warning]Error: Directory '{resolved_worktree_path}' already exists[/warning]"
-            )
-            sys.exit(1)
+        if result.worktree_path:
+            ui.print_info("\nTo switch to the new worktree, run:")
+            ui.print_info(f"cd {result.worktree_path}")
 
-    with status("Creating new branch...") as s:
-        # Check if the new branch already exists
-        s.update("Checking if branch name is available...")
-        if branch_exists(branch_name):
-            s.pause_and_print(
-                f"[warning]Error: Branch '{branch_name}' already exists[/warning]"
-            )
-            sys.exit(1)
-
-        # Check if the base branch exists
-        s.update("Validating base branch...")
-        if base_branch:
-            validate_branch(base_branch)
-        else:
-            s.pause_and_print("[danger]Error: Base branch is required[/danger]")
-            sys.exit(1)
-
-        if use_worktree:
-            # Create the new branch in a worktree
-            s.update(f"Creating worktree at '{resolved_worktree_path}'...")
-            if not add_worktree(branch_name, resolved_worktree_path, base_branch):
-                s.pause_and_print("[danger]Error: Failed to create worktree[/danger]")
-                sys.exit(1)
-
-            # Record the dependency information with worktree path
-            s.update("Adding branch to stack metadata...")
-            add_to_stack(branch_name, base_branch, resolved_worktree_path)
-        else:
-            # Create the new branch normally
-            s.update(f"Creating branch '{branch_name}' from '{base_branch}'...")
-            create_branch(branch_name, base_branch)
-
-            # Record the dependency information
-            s.update("Adding branch to stack metadata...")
-            add_to_stack(branch_name, base_branch)
-
-    if use_worktree:
-        print_formatted_text(
-            f"[success]Success! Created new branch '{branch_name}' in worktree at '{resolved_worktree_path}'[/success]"
-        )
-        print_formatted_text(
-            f"[info]Parent branch: {format_branch(base_branch)}[/info]"
-        )
-        print_formatted_text("\n[info]To switch to the new worktree, run:[/info]")
-        print_formatted_text(f"[info]cd {resolved_worktree_path}[/info]")
-    else:
-        print_formatted_text(
-            f"[success]Success! Created new branch '{branch_name}' in the stack[/success]"
-        )
-        print_formatted_text(
-            f"[info]Parent branch: {format_branch(base_branch)}[/info]"
-        )
+    run_command(ui, core)

@@ -1,44 +1,86 @@
-"""Command for listing branches in the stack."""
+"""Command for listing branches in the stack.
 
-import sys
+Uses dependency injection for testability.
+Core logic is pure - no sys.exit, no direct filesystem/git calls.
+"""
 
-from panqake.utils.config import get_parent_branch
-from panqake.utils.git import get_current_branch, validate_branch
-from panqake.utils.questionary_prompt import format_branch, print_formatted_text
-from panqake.utils.stack import Stacks
+from panqake.ports import (
+    BranchNotFoundError,
+    ConfigPort,
+    GitPort,
+    ListResult,
+    RealConfig,
+    RealGit,
+    RealUI,
+    UIPort,
+    find_stack_root,
+    run_command,
+)
+from panqake.utils.types import BranchName
 
 
-def find_stack_root(branch):
-    """Find the root of the stack for a given branch."""
-    parent = get_parent_branch(branch)
+def list_branches_core(
+    git: GitPort,
+    config: ConfigPort,
+    ui: UIPort,
+    branch_name: BranchName | None = None,
+) -> ListResult:
+    """List the branch stack.
 
-    if not parent:
-        return branch
-    else:
-        return find_stack_root(parent)
+    This is the pure core logic that can be tested without mocking.
 
+    Args:
+        git: Git operations interface
+        config: Stack configuration interface
+        ui: User interaction interface
+        branch_name: Target branch to show stack for (uses current if None)
 
-def list_branches(branch_name=None):
-    """List the branch stack."""
-    # Validate branch exists and get current branch if none specified
-    branch_name = validate_branch(branch_name)
+    Returns:
+        ListResult with the root, current, and target branches
 
-    # Find the root of the stack for the target branch
-    root_branch = find_stack_root(branch_name)
-
-    current = get_current_branch()
+    Raises:
+        BranchNotFoundError: If branch doesn't exist or no current branch
+    """
+    current = git.get_current_branch()
     if not current:
-        print_formatted_text(
-            "[danger]Error: Could not determine current branch[/danger]"
-        )
-        sys.exit(1)
+        raise BranchNotFoundError("Could not determine current branch")
 
-    print_formatted_text(
-        f"[info]Branch stack (current: {format_branch(current, current=True)})[/info]"
+    if branch_name:
+        if not git.branch_exists(branch_name):
+            raise BranchNotFoundError(f"Branch '{branch_name}' does not exist")
+        target = branch_name
+    else:
+        target = current
+
+    root_branch = find_stack_root(target, config)
+
+    ui.display_branch_tree(root_branch, current)
+
+    return ListResult(
+        root_branch=root_branch,
+        current_branch=current,
+        target_branch=target,
     )
 
-    # Use the Stacks.visualize_tree method to generate the tree
-    stacks = Stacks()
-    tree_output = stacks.visualize_tree(root=root_branch, current_branch=current)
 
-    print_formatted_text(tree_output)
+def list_branches(branch_name: BranchName | None = None) -> None:
+    """CLI entrypoint that wraps core logic with real implementations.
+
+    This thin wrapper:
+    1. Instantiates real dependencies
+    2. Calls the core logic
+    3. Converts exceptions to sys.exit via run_command
+    """
+    git = RealGit()
+    config = RealConfig()
+    ui = RealUI()
+
+    def core() -> None:
+        list_branches_core(
+            git=git,
+            config=config,
+            ui=ui,
+            branch_name=branch_name,
+        )
+
+    run_command(ui, core)

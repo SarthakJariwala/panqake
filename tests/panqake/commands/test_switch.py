@@ -1,123 +1,141 @@
-"""Tests for switch.py command module."""
-
-from unittest.mock import patch
+"""Tests for switch.py command module using dependency injection pattern."""
 
 import pytest
 
-from panqake.commands.switch import switch_branch
+from panqake.commands.switch import find_stack_root, switch_branch_core
+from panqake.ports import BranchNotFoundError, UserCancelledError
+from panqake.testing.fakes import FakeConfig, FakeGit, FakeUI
 
 
-@pytest.fixture
-def mock_git_utils():
-    """Mock git utility functions."""
-    with (
-        patch("panqake.commands.switch.list_all_branches") as mock_list,
-        patch("panqake.commands.switch.get_current_branch") as mock_current,
-        patch("panqake.commands.switch.switch_to_branch_or_worktree") as mock_checkout,
-    ):
-        mock_list.return_value = ["main", "feature", "develop"]
-        mock_current.return_value = "main"
-        yield {
-            "list": mock_list,
-            "current": mock_current,
-            "checkout": mock_checkout,
-        }
+class TestFindStackRoot:
+    """Tests for find_stack_root helper."""
+
+    def test_branch_without_parent_is_root(self):
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        assert find_stack_root("main", config) == "main"
+
+    def test_finds_root_through_chain(self):
+        config = FakeConfig(
+            stack={
+                "feature": {"parent": "main"},
+                "child": {"parent": "feature"},
+                "grandchild": {"parent": "child"},
+            }
+        )
+        assert find_stack_root("grandchild", config) == "main"
 
 
-@pytest.fixture
-def mock_prompt():
-    """Mock questionary prompt functions."""
-    with (
-        patch("panqake.commands.switch.print_formatted_text") as mock_print,
-        patch("panqake.commands.switch.select_branch_excluding_current") as mock_select,
-    ):
-        yield {
-            "print": mock_print,
-            "select": mock_select,
-        }
+class TestSwitchBranchCore:
+    """Tests for switch_branch_core."""
+
+    def test_raises_when_no_branches(self):
+        git = FakeGit(branches=[])
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(BranchNotFoundError, match="No branches found"):
+            switch_branch_core(git=git, config=config, ui=ui)
+
+    def test_raises_when_branch_not_exists(self):
+        git = FakeGit(branches=["main", "develop"])
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(BranchNotFoundError, match="does not exist"):
+            switch_branch_core(git=git, config=config, ui=ui, branch_name="nonexistent")
+
+    def test_already_on_branch(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        result = switch_branch_core(
+            git=git, config=config, ui=ui, branch_name="feature"
+        )
+
+        assert result.target_branch == "feature"
+        assert result.switched is False
+        assert any("Already on branch" in msg for msg in ui.info_messages)
+
+    def test_switch_to_explicit_branch(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        result = switch_branch_core(
+            git=git, config=config, ui=ui, branch_name="feature"
+        )
+
+        assert result.target_branch == "feature"
+        assert result.previous_branch == "main"
+        assert result.switched is True
+        assert git.current_branch == "feature"
+        assert "feature" in git.checkout_calls
+
+    def test_worktree_branch_not_checked_out(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        git.worktrees["feature"] = "/path/to/worktree"
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        result = switch_branch_core(
+            git=git, config=config, ui=ui, branch_name="feature"
+        )
+
+        assert result.switched is False
+        assert result.worktree_path == "/path/to/worktree"
+        assert "feature" not in git.checkout_calls
+        assert any("/path/to/worktree" in msg for msg in ui.info_messages)
+
+    def test_interactive_selection(self):
+        git = FakeGit(branches=["main", "feature", "develop"], current_branch="main")
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(select_branch_responses=["develop"])
+
+        result = switch_branch_core(git=git, config=config, ui=ui, show_tree=False)
+
+        assert result.target_branch == "develop"
+        assert result.switched is True
+        assert git.current_branch == "develop"
+
+    def test_interactive_shows_tree(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(select_branch_responses=["feature"])
+
+        switch_branch_core(git=git, config=config, ui=ui, show_tree=True)
+
+        assert len(ui.display_tree_calls) == 2  # Before and after selection
+
+    def test_interactive_worktree_not_checked_out(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        git.worktrees["feature"] = "/worktree/path"
+        config = FakeConfig()
+        ui = FakeUI(select_branch_responses=["feature"])
+
+        result = switch_branch_core(git=git, config=config, ui=ui, show_tree=False)
+
+        assert result.switched is False
+        assert result.worktree_path == "/worktree/path"
+
+    def test_no_selection_available(self):
+        git = FakeGit(branches=["main"], current_branch="main")
+        config = FakeConfig()
+        ui = FakeUI(select_branch_responses=[None], strict=False)
+
+        with pytest.raises(BranchNotFoundError, match="No branches available"):
+            switch_branch_core(git=git, config=config, ui=ui, show_tree=False)
 
 
-@pytest.fixture
-def mock_list_command():
-    """Mock list command functions."""
-    with patch("panqake.commands.switch.list_branches") as mock_list:
-        yield mock_list
+class TestUserCancellation:
+    """Tests for user cancellation handling."""
 
+    def test_cancel_on_branch_selection(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        config = FakeConfig()
+        ui = FakeUI(cancel_on_select_branch=True)
 
-def test_switch_branch_direct(mock_git_utils, mock_prompt, mock_list_command):
-    """Test switching to a branch directly with branch name."""
-    switch_branch("feature")
+        with pytest.raises(UserCancelledError):
+            switch_branch_core(git=git, config=config, ui=ui, show_tree=False)
 
-    mock_git_utils["checkout"].assert_called_once_with("feature")
-    mock_prompt["select"].assert_not_called()
-
-
-def test_switch_branch_nonexistent(mock_git_utils, mock_prompt, mock_list_command):
-    """Test error when switching to nonexistent branch."""
-    with pytest.raises(SystemExit):
-        switch_branch("nonexistent")
-
-    mock_git_utils["checkout"].assert_not_called()
-    mock_prompt["print"].assert_called_once()
-    assert "does not exist" in mock_prompt["print"].call_args.args[0]
-
-
-def test_switch_branch_already_current(mock_git_utils, mock_prompt, mock_list_command):
-    """Test when switching to current branch."""
-    switch_branch("main")
-
-    mock_git_utils["checkout"].assert_not_called()
-    mock_prompt["print"].assert_called_once()
-    assert "Already on branch" in mock_prompt["print"].call_args.args[0]
-
-
-def test_switch_branch_no_branches(mock_git_utils, mock_prompt, mock_list_command):
-    """Test error when no branches exist."""
-    mock_git_utils["list"].return_value = []
-
-    with pytest.raises(SystemExit):
-        switch_branch()
-
-    mock_prompt["print"].assert_called_once()
-    assert "No branches found" in mock_prompt["print"].call_args.args[0]
-
-
-def test_switch_branch_interactive(mock_git_utils, mock_prompt, mock_list_command):
-    """Test interactive branch selection."""
-    mock_prompt["select"].return_value = "feature"
-
-    switch_branch()
-
-    # Should show branch list before and after
-    assert mock_list_command.call_count == 2
-    # Should call select with the exclusion utility
-    mock_prompt["select"].assert_called_once()
-    # Should checkout selected branch
-    mock_git_utils["checkout"].assert_called_once_with("feature")
-
-
-def test_switch_branch_interactive_cancel(
-    mock_git_utils, mock_prompt, mock_list_command
-):
-    """Test cancellation of interactive selection."""
-    mock_prompt["select"].return_value = None
-
-    switch_branch()
-
-    mock_list_command.assert_called_once()  # Only initial list
-    mock_git_utils["checkout"].assert_not_called()
-
-
-def test_switch_branch_no_other_branches(
-    mock_git_utils, mock_prompt, mock_list_command
-):
-    """Test when no other branches available to switch to."""
-    mock_git_utils["list"].return_value = ["main"]
-    mock_prompt["select"].return_value = None  # No branch selected
-
-    switch_branch()
-
-    mock_prompt["print"].assert_called_with(
-        "[warning]No other branches available to switch to[/warning]"
-    )
-    mock_git_utils["checkout"].assert_not_called()
+        assert git.current_branch == "main"  # State unchanged

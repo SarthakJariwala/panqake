@@ -1,84 +1,116 @@
-"""Command for renaming a branch while maintaining stack relationships."""
+"""Command for renaming a branch while maintaining stack relationships.
 
-import sys
-from typing import Optional
+Uses dependency injection for testability.
+Core logic is pure - no sys.exit, no direct filesystem/git calls.
+"""
 
-from panqake.utils.git import get_current_branch, rename_branch
-from panqake.utils.questionary_prompt import (
-    BranchNameValidator,
-    print_formatted_text,
-    prompt_input,
+from panqake.ports import (
+    BranchNotFoundError,
+    ConfigPort,
+    GitPort,
+    RealConfig,
+    RealGit,
+    RealUI,
+    RenameResult,
+    UIPort,
+    run_command,
 )
-from panqake.utils.stack import Stacks
-from panqake.utils.status import status
+from panqake.utils.questionary_prompt import BranchNameValidator
 
 
-def rename(old_name: Optional[str] = None, new_name: Optional[str] = None):
+def rename_core(
+    git: GitPort,
+    config: ConfigPort,
+    ui: UIPort,
+    old_name: str | None = None,
+    new_name: str | None = None,
+) -> RenameResult:
     """Rename a branch while maintaining its stack relationships.
 
-    This command renames a Git branch and updates all stack references to ensure
-    parent-child relationships are preserved in the stack configuration.
+    This is the pure core logic that can be tested without mocking.
+    Raises PanqakeError subclasses on failure instead of calling sys.exit.
 
     Args:
-        old_name: The current name of the branch to rename. If not provided,
-                 the current branch will be used.
-        new_name: The new name for the branch. If not provided, user will be prompted.
-    """
-    # Get the branch to rename (current branch if not specified)
-    if not old_name:
-        old_name = get_current_branch()
-        if not old_name:
-            print_formatted_text(
-                "[warning]Could not determine the current branch.[/warning]"
-            )
-            sys.exit(1)
+        git: Git operations interface
+        config: Stack configuration interface
+        ui: User interaction interface
+        old_name: The current name of the branch to rename.
+                  If not provided, the current branch will be used.
+        new_name: The new name for the branch.
+                  If not provided, user will be prompted.
 
-    # If no new branch name specified, prompt for it
+    Returns:
+        RenameResult with rename metadata
+
+    Raises:
+        BranchNotFoundError: If current branch cannot be determined
+        BranchExistsError: If new_name already exists
+        GitOperationError: If git rename fails
+        UserCancelledError: If user cancels prompt
+    """
+
+    if not old_name:
+        old_name = git.get_current_branch()
+        if not old_name:
+            raise BranchNotFoundError("Could not determine the current branch")
+
     if not new_name:
         validator = BranchNameValidator()
-        new_name = prompt_input(
-            f"Enter new name for branch '{old_name}': ", validator=validator
+        new_name = ui.prompt_input(
+            f"Enter new name for branch '{old_name}': ",
+            validator=validator,
         )
 
-    with status("Analyzing branch for rename...") as s:
-        # First, check if the branch is tracked by panqake
-        s.update("Checking if branch is tracked by panqake...")
-        stacks = Stacks()
-        is_tracked = stacks.branch_exists(old_name)
+    was_tracked = config.branch_exists(old_name)
+    was_pushed = git.is_branch_pushed_to_remote(old_name)
 
-        if not is_tracked:
-            s.pause_and_print(
-                f"[warning]Warning: Branch '{old_name}' is not tracked by panqake.[/warning]"
-            )
-            s.pause_and_print(
-                "[info]Only renaming the Git branch, no stack relationships to update.[/info]"
-            )
+    git.rename_branch(old_name, new_name)
 
-            # Just rename the Git branch and exit
-            if rename_branch(old_name, new_name):
-                sys.exit(0)
-            else:
-                sys.exit(1)
+    if was_pushed:
+        git.delete_remote_branch(old_name)
+        git.push_branch(new_name)
 
-        # Rename the Git branch first
-        s.update("Renaming Git branch...")
-        if not rename_branch(old_name, new_name):
-            s.pause_and_print(
-                f"[error]Failed to rename Git branch from '{old_name}' to '{new_name}'.[/error]"
-            )
-            sys.exit(1)
+    if was_tracked:
+        config.rename_branch(old_name, new_name)
 
-        # Update stack references
-        s.update("Updating stack references...")
+    return RenameResult(
+        old_name=old_name,
+        new_name=new_name,
+        was_tracked=was_tracked,
+        remote_updated=was_pushed,
+    )
 
-        if stacks.rename_branch(old_name, new_name):
-            s.pause_and_print(
-                f"[success]Successfully updated stack references for '{new_name}'.[/success]"
-            )
+
+def rename(old_name: str | None = None, new_name: str | None = None) -> None:
+    """CLI entrypoint that wraps core logic with real implementations.
+
+    This thin wrapper:
+    1. Instantiates real dependencies
+    2. Calls the core logic
+    3. Handles printing output
+    4. Converts exceptions to sys.exit via run_command
+    """
+    git = RealGit()
+    config = RealConfig()
+    ui = RealUI()
+
+    def core() -> None:
+        result = rename_core(
+            git=git,
+            config=config,
+            ui=ui,
+            old_name=old_name,
+            new_name=new_name,
+        )
+
+        ui.print_success(f"Renamed branch '{result.old_name}' to '{result.new_name}'")
+
+        if result.was_tracked:
+            ui.print_info("Stack references updated")
         else:
-            s.pause_and_print(
-                f"[warning]Warning: Failed to update stack references for '{new_name}'.[/warning]"
-            )
-            s.pause_and_print(
-                f"[warning]Stack references may be inconsistent. Consider running 'pq untrack {new_name}' and 'pq track {new_name}' to fix.[/warning]"
-            )
+            ui.print_muted("Branch was not tracked by panqake")
+
+        if result.remote_updated:
+            ui.print_info("Remote branch updated")
+
+    run_command(ui, core)

@@ -1,124 +1,100 @@
-"""Tests for track.py command module."""
-
-from unittest.mock import patch
+"""Tests for track.py command module using dependency injection pattern."""
 
 import pytest
 
-from panqake.commands.track import track
+from panqake.commands.track import track_branch_core
+from panqake.ports import BranchNotFoundError, UserCancelledError
+from panqake.testing.fakes import FakeConfig, FakeGit, FakeUI
 
 
-@pytest.fixture
-def mock_git_utils():
-    """Mock git utility functions."""
-    with (
-        patch("panqake.commands.track.get_current_branch") as mock_current,
-        patch("panqake.commands.track.get_potential_parents") as mock_parents,
-    ):
-        mock_current.return_value = "feature-branch"
-        mock_parents.return_value = ["main", "develop"]
-        yield {
-            "current": mock_current,
-            "parents": mock_parents,
-        }
+class TestTrackBranchCore:
+    """Tests for track_branch_core."""
 
+    def test_tracks_current_branch(self):
+        git = FakeGit(
+            branches=["main", "feature"],
+            current_branch="feature",
+            potential_parents={"feature": ["main", "develop"]},
+        )
+        config = FakeConfig()
+        ui = FakeUI(select_branch_responses=["main"])
 
-@pytest.fixture
-def mock_config_utils():
-    """Mock config utility functions."""
-    with patch("panqake.commands.track.add_to_stack") as mock_add:
-        yield mock_add
+        result = track_branch_core(git=git, config=config, ui=ui)
 
+        assert result.branch_name == "feature"
+        assert result.parent_branch == "main"
+        assert config.stack["feature"]["parent"] == "main"
 
-@pytest.fixture
-def mock_prompt():
-    """Mock questionary prompt functions."""
-    with (
-        patch("panqake.commands.track.select_parent_branch") as mock_parent_prompt,
-        patch("panqake.commands.track.print_formatted_text") as mock_print,
-    ):
-        mock_parent_prompt.return_value = "main"
-        yield {
-            "parent": mock_parent_prompt,
-            "print": mock_print,
-        }
+    def test_tracks_specified_branch(self):
+        git = FakeGit(
+            branches=["main", "feature", "other"],
+            current_branch="main",
+            potential_parents={"other": ["main", "feature"]},
+        )
+        config = FakeConfig()
+        ui = FakeUI(select_branch_responses=["feature"])
 
+        result = track_branch_core(git=git, config=config, ui=ui, branch_name="other")
 
-def test_track_current_branch(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test tracking current branch when no branch name is provided."""
-    # Execute
-    track()
+        assert result.branch_name == "other"
+        assert result.parent_branch == "feature"
+        assert config.stack["other"]["parent"] == "feature"
 
-    # Verify
-    mock_git_utils["current"].assert_called_once()
-    mock_git_utils["parents"].assert_called_once_with("feature-branch")
-    mock_prompt["parent"].assert_called_once_with(["main", "develop"])
-    mock_config_utils.assert_called_once_with("feature-branch", "main")
+    def test_raises_when_no_current_branch(self):
+        git = FakeGit(branches=["main"], current_branch=None)
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
 
+        with pytest.raises(BranchNotFoundError, match="Could not determine"):
+            track_branch_core(git=git, config=config, ui=ui)
 
-def test_track_specified_branch(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test tracking a specified branch name."""
-    # Execute
-    track("test-branch")
+    def test_raises_when_no_potential_parents(self):
+        git = FakeGit(
+            branches=["main", "feature"],
+            current_branch="feature",
+            potential_parents={},  # No parents for feature
+        )
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
 
-    # Verify
-    mock_git_utils["current"].assert_not_called()
-    mock_git_utils["parents"].assert_called_once_with("test-branch")
-    mock_prompt["parent"].assert_called_once_with(["main", "develop"])
-    mock_config_utils.assert_called_once_with("test-branch", "main")
+        with pytest.raises(BranchNotFoundError, match="No potential parent"):
+            track_branch_core(git=git, config=config, ui=ui)
 
+    def test_raises_when_user_cancels_selection(self):
+        git = FakeGit(
+            branches=["main", "feature"],
+            current_branch="feature",
+            potential_parents={"feature": ["main"]},
+        )
+        config = FakeConfig()
+        ui = FakeUI(cancel_on_select_branch=True)
 
-def test_track_no_current_branch(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test error when current branch cannot be determined."""
-    # Setup
-    mock_git_utils["current"].return_value = None
+        with pytest.raises(UserCancelledError):
+            track_branch_core(git=git, config=config, ui=ui)
 
-    # Execute and verify
-    with pytest.raises(SystemExit):
-        track()
+        assert "feature" not in config.stack
 
-    # Verify no further operations were performed
-    mock_git_utils["parents"].assert_not_called()
-    mock_prompt["parent"].assert_not_called()
-    mock_config_utils.assert_not_called()
+    def test_raises_when_no_parent_selected(self):
+        git = FakeGit(
+            branches=["main", "feature"],
+            current_branch="feature",
+            potential_parents={"feature": ["main"]},
+        )
+        config = FakeConfig()
+        ui = FakeUI(select_branch_responses=[None], strict=False)
 
+        with pytest.raises(UserCancelledError):
+            track_branch_core(git=git, config=config, ui=ui)
 
-def test_track_no_potential_parents(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test error when no potential parent branches are found."""
-    # Setup
-    mock_git_utils["parents"].return_value = []
+    def test_prints_info_messages(self):
+        git = FakeGit(
+            branches=["main", "feature"],
+            current_branch="feature",
+            potential_parents={"feature": ["main"]},
+        )
+        config = FakeConfig()
+        ui = FakeUI(select_branch_responses=["main"])
 
-    # Execute and verify
-    with pytest.raises(SystemExit):
-        track("test-branch")
+        track_branch_core(git=git, config=config, ui=ui)
 
-    # Verify no further operations were performed
-    mock_prompt["parent"].assert_not_called()
-    mock_config_utils.assert_not_called()
-
-
-def test_track_user_cancels_parent_selection(
-    mock_git_utils, mock_config_utils, mock_prompt
-):
-    """Test when user cancels parent branch selection."""
-    # Setup
-    mock_prompt["parent"].return_value = None
-
-    # Execute and verify
-    with pytest.raises(SystemExit):
-        track("test-branch")
-
-    # Verify no stack update was performed
-    mock_config_utils.assert_not_called()
-
-
-def test_track_success_messages(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test success messages are printed correctly."""
-    # Execute
-    track("test-branch")
-
-    # Verify appropriate messages were printed
-    mock_prompt["print"].assert_called()
-    success_call = mock_prompt["print"].call_args_list[-1]
-    assert "Successfully" in success_call.args[0]
-    assert "test-branch" in success_call.args[0]
-    assert "main" in success_call.args[0]
+        assert any("feature" in msg for msg in ui.info_messages)

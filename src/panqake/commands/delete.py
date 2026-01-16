@@ -1,221 +1,170 @@
 """Command for deleting a branch and relinking the stack."""
 
-import sys
-from pathlib import Path
-
-from panqake.utils.config import (
-    add_to_stack,
-    get_child_branches,
-    get_parent_branch,
-    get_worktree_path,
-    remove_from_stack,
-    set_worktree_path,
+from panqake.ports import (
+    BranchNotFoundError,
+    CannotDeleteCurrentBranchError,
+    ConfigPort,
+    DeleteResult,
+    GitOperationError,
+    GitPort,
+    InWorktreeBeingDeletedError,
+    RealConfig,
+    RealGit,
+    RealUI,
+    UIPort,
+    UserCancelledError,
+    run_command,
 )
-from panqake.utils.git import (
-    branch_exists,
-    checkout_branch,
-    get_current_branch,
-    remove_worktree,
-    run_git_command,
-    validate_branch,
-)
-from panqake.utils.questionary_prompt import (
-    format_branch,
-    print_formatted_text,
-    prompt_confirm,
-)
-from panqake.utils.selection import select_branch_excluding_current
-from panqake.utils.status import status
 from panqake.utils.types import BranchName
 
 
-def validate_branch_for_deletion(branch_name: BranchName) -> BranchName:
-    """Validate that a branch can be deleted."""
-    current_branch = get_current_branch()
+def delete_branch_core(
+    git: GitPort,
+    config: ConfigPort,
+    ui: UIPort,
+    branch_name: BranchName | None = None,
+    current_dir: str | None = None,
+) -> DeleteResult:
+    """Core logic for deleting a branch and relinking the stack.
+
+    Args:
+        git: Git operations port
+        config: Stack configuration port
+        ui: User interaction port
+        branch_name: Branch to delete (prompts if None)
+        current_dir: Current working directory (for worktree detection)
+
+    Returns:
+        DeleteResult with deletion details
+
+    Raises:
+        BranchNotFoundError: If branch doesn't exist
+        CannotDeleteCurrentBranchError: If trying to delete current branch
+        InWorktreeBeingDeletedError: If in the worktree being deleted
+        RebaseConflictError: If rebase conflicts during child relinking
+        UserCancelledError: If user cancels the operation
+    """
+    current_branch = git.get_current_branch()
     if not current_branch:
-        print_formatted_text(
-            "[danger]Error: Could not determine current branch[/danger]"
+        raise GitOperationError("Could not determine current branch")
+
+    if not branch_name:
+        branches = git.list_all_branches()
+        eligible = [b for b in branches if b != current_branch]
+        eligible = [b for b in eligible if b not in ("main", "master")]
+        if not eligible:
+            return DeleteResult(
+                deleted_branch=None,
+                parent_branch=None,
+                relinked_children=[],
+                worktree_removed=False,
+                removed_from_stack=False,
+                status="skipped",
+                skip_reason="no_eligible_branches",
+            )
+        selected = ui.prompt_select_branch(
+            branches,
+            "Select branch to delete:",
+            current_branch=current_branch,
+            exclude_protected=True,
+            enable_search=True,
         )
-        sys.exit(1)
+        if not selected:
+            raise UserCancelledError()
+        branch_name = selected
 
-    # Check if target branch exists
-    validate_branch(branch_name)
+    git.validate_branch(branch_name)
 
-    # Check if target branch is the current branch
     if branch_name == current_branch:
-        print_formatted_text(
-            "[warning]Error: Cannot delete the current branch. Please checkout another branch first.[/warning]"
+        raise CannotDeleteCurrentBranchError(
+            "Cannot delete the current branch. Please checkout another branch first."
         )
-        sys.exit(1)
 
-    return current_branch
+    parent_branch = config.get_parent_branch(branch_name)
+    child_branches = config.get_child_branches(branch_name)
 
+    if parent_branch and not git.branch_exists(parent_branch):
+        raise BranchNotFoundError(f"Parent branch '{parent_branch}' does not exist")
 
-def get_branch_relationships(
-    branch_name: BranchName,
-) -> tuple[BranchName | None, list[BranchName]]:
-    """Get parent and child branches and validate parent exists."""
-    parent_branch = get_parent_branch(branch_name)
-    child_branches = get_child_branches(branch_name)
-
-    # Ensure parent branch exists
-    if parent_branch and not branch_exists(parent_branch):
-        print_formatted_text(
-            f"[warning]Error: Parent branch '{parent_branch}' does not exist[/warning]"
-        )
-        sys.exit(1)
-
-    return parent_branch, child_branches
-
-
-def display_deletion_info(
-    branch_name: BranchName,
-    parent_branch: BranchName | None,
-    child_branches: list[BranchName],
-) -> bool:
-    """Display deletion information and ask for confirmation."""
-    print_formatted_text(
-        f"[info]Branch to delete:[/info] {format_branch(branch_name, danger=True)}"
-    )
+    ui.print_info(f"Branch to delete: {branch_name}")
     if parent_branch:
-        print_formatted_text(
-            f"[info]Parent branch:[/info] {format_branch(parent_branch)}"
-        )
+        ui.print_info(f"Parent branch: {parent_branch}")
     if child_branches:
-        print_formatted_text("[info]Child branches that will be relinked:[/info]")
+        ui.print_info("Child branches that will be relinked:")
         for child in child_branches:
-            print_formatted_text(f"  {format_branch(child)}")
+            ui.print_muted(f"  {child}")
 
-    # Confirm deletion
-    if not prompt_confirm("Are you sure you want to delete this branch?"):
-        print_formatted_text("[info]Branch deletion cancelled.[/info]")
-        return False
+    if not ui.prompt_confirm("Are you sure you want to delete this branch?"):
+        raise UserCancelledError()
 
-    return True
+    worktree_path = config.get_worktree_path(branch_name)
+    worktree_removed = False
 
+    if worktree_path and current_dir:
+        if current_dir.rstrip("/") == worktree_path.rstrip("/"):
+            git_worktree_path = git.get_worktree_path(branch_name)
+            repo_root = git_worktree_path or ""
+            raise InWorktreeBeingDeletedError(worktree_path, repo_root)
 
-def relink_child_branches(
-    child_branches: list[BranchName],
-    parent_branch: BranchName | None,
-    current_branch: BranchName,
-    branch_name: BranchName,
-) -> bool:
-    """Relink child branches to the parent branch."""
-    if not child_branches:
-        return True
+    relinked_children: list[BranchName] = []
+    for child in child_branches:
+        git.checkout_branch(child)
+        if parent_branch:
+            git.rebase_onto(child, parent_branch, abort_on_conflict=True)
+            config.add_to_stack(child, parent_branch)
+        relinked_children.append(child)
 
-    with status(f"Relinking child branches to parent '{parent_branch}'...") as s:
-        for child in child_branches:
-            s.update(f"Processing child branch {child}...")
+    if branch_name != current_branch:
+        git.checkout_branch(current_branch)
 
-            checkout_branch(child)
+    if worktree_path:
+        try:
+            git.remove_worktree(worktree_path, force=True)
+            worktree_removed = True
+        except Exception:
+            pass
+        config.set_worktree_path(branch_name, "")
 
-            # Rebase onto the grandparent branch
-            if parent_branch:
-                s.update(f"Rebasing {child} onto {parent_branch}...")
-                rebase_result = run_git_command(
-                    ["rebase", "--autostash", parent_branch]
-                )
-                if rebase_result is None:
-                    s.pause_and_print(
-                        f"[warning]Error: Rebase conflict detected in branch '{child}'[/warning]"
-                    )
-                    s.pause_and_print(
-                        "[warning]Please resolve conflicts and run 'git rebase --continue'[/warning]"
-                    )
-                    s.pause_and_print(
-                        f"[warning]Then run 'panqake delete {branch_name}' again to retry[/warning]"
-                    )
-                    sys.exit(1)
+    git.delete_local_branch(branch_name, force=True)
 
-                # Update stack metadata
-                add_to_stack(child, parent_branch)
+    removed_from_stack = config.remove_from_stack(branch_name)
 
-    return True
+    return DeleteResult(
+        deleted_branch=branch_name,
+        parent_branch=parent_branch,
+        relinked_children=relinked_children,
+        worktree_removed=worktree_removed,
+        removed_from_stack=removed_from_stack,
+        status="deleted",
+    )
 
 
 def delete_branch(branch_name: BranchName | None = None) -> None:
     """Delete a branch and relink the stack."""
-    # If no branch name specified, prompt for it
-    if not branch_name:
-        selected_branch = select_branch_excluding_current(
-            "Select branch to delete:", exclude_protected=True, enable_search=True
-        )
+    from pathlib import Path
 
-        if not selected_branch:
-            print_formatted_text(
-                "[warning]No branches available for deletion.[/warning]"
-            )
-            return
+    git = RealGit()
+    config = RealConfig()
+    ui = RealUI()
+    current_dir = str(Path.cwd().resolve())
 
-        branch_name = selected_branch
+    def _run() -> DeleteResult:
+        return delete_branch_core(git, config, ui, branch_name, current_dir)
 
-    current_branch = validate_branch_for_deletion(branch_name)
-    parent_branch, child_branches = get_branch_relationships(branch_name)
-
-    if not display_deletion_info(branch_name, parent_branch, child_branches):
+    result = run_command(ui, _run)
+    if result is None:
         return
 
-    # Check if branch has a worktree that needs cleanup
-    worktree_path = get_worktree_path(branch_name)
+    if result.status == "skipped":
+        if result.skip_reason == "no_eligible_branches":
+            ui.print_info("No branches available to delete.")
+        return
 
-    with status(f"Deleting branch '{branch_name}' from the stack...") as s:
-        # If we're currently in the worktree being deleted, inform user
-        if worktree_path:
-            current_dir = str(Path.cwd().resolve())
-            target_dir = str(Path(worktree_path).resolve())
-
-            if current_dir == target_dir:
-                # Find git repo root
-                repo_root = run_git_command(["rev-parse", "--show-toplevel"])
-                if repo_root:
-                    print_formatted_text(
-                        "You are currently in the worktree you are trying to delete. Switch to main worktree first."
-                    )
-                    print_formatted_text(f"[info]cd {repo_root}[/info]")
-
-                    # Update current_branch since we're now in main worktree
-                    current_branch = get_current_branch()
-
-        # Process child branches
-        if child_branches:
-            s.update("Processing child branches...")
-            relink_child_branches(
-                child_branches, parent_branch, current_branch, branch_name
-            )
-
-        # Return to original branch if it's not the one being deleted
-        if branch_name != current_branch:
-            s.update(f"Returning to {current_branch}...")
-            checkout_branch(current_branch)
-
-        # Clean up worktree if it exists
-        if worktree_path:
-            s.update(f"Removing worktree at {worktree_path}...")
-            if not remove_worktree(worktree_path, force=True):
-                s.pause_and_print(
-                    f"[warning]Warning: Failed to remove worktree at '{worktree_path}'[/warning]"
-                )
-            # Clear worktree path from metadata
-            set_worktree_path(branch_name, "")
-
-        # Delete the branch
-        s.update(f"Deleting branch {branch_name}...")
-        delete_result = run_git_command(["branch", "-D", branch_name])
-        if delete_result is None:
-            s.pause_and_print(
-                f"[warning]Error: Failed to delete branch '{branch_name}'[/warning]"
-            )
-            sys.exit(1)
-
-        # Remove from stack metadata
-        stack_removal = remove_from_stack(branch_name)
-
-    if stack_removal:
-        print_formatted_text(
-            f"[success]Success! Deleted branch '{branch_name}' and relinked the stack[/success]"
+    if result.removed_from_stack:
+        ui.print_success(
+            f"Deleted branch '{result.deleted_branch}' and relinked the stack"
         )
     else:
-        print_formatted_text(
-            f"[warning]Branch '{branch_name}' was deleted but not found in stack metadata.[/warning]"
+        ui.print_error(
+            f"Branch '{result.deleted_branch}' was deleted but not found in stack metadata."
         )

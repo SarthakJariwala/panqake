@@ -1,66 +1,155 @@
-"""Command for switching between Git branches."""
+"""Command for switching between Git branches.
 
-import sys
+Uses dependency injection for testability.
+Core logic is pure - no sys.exit, no direct filesystem/git calls.
+"""
 
-from panqake.commands.list import list_branches
-from panqake.utils.git import (
-    get_current_branch,
-    list_all_branches,
-    switch_to_branch_or_worktree,
+from panqake.ports import (
+    BranchNotFoundError,
+    ConfigPort,
+    GitPort,
+    RealConfig,
+    RealGit,
+    RealUI,
+    SwitchResult,
+    UIPort,
+    find_stack_root,
+    run_command,
 )
-from panqake.utils.questionary_prompt import print_formatted_text
-from panqake.utils.selection import select_branch_excluding_current
+from panqake.utils.questionary_prompt import format_branch
+from panqake.utils.types import BranchName
 
 
-def switch_branch(branch_name=None):
-    """Switch to another git branch using interactive selection.
+def switch_branch_core(
+    git: GitPort,
+    config: ConfigPort,
+    ui: UIPort,
+    branch_name: BranchName | None = None,
+    show_tree: bool = True,
+) -> SwitchResult:
+    """Switch to another git branch.
+
+    This is the pure core logic that can be tested without mocking.
+    Raises PanqakeError subclasses on failure instead of calling sys.exit.
 
     Args:
-        branch_name: Optional branch name to switch to directly.
-                    If not provided, shows an interactive selection.
+        git: Git operations interface
+        config: Stack configuration interface
+        ui: User interaction interface
+        branch_name: Target branch to switch to (prompts if None)
+        show_tree: Whether to display the branch tree before/after switch
+
+    Returns:
+        SwitchResult with switch metadata
+
+    Raises:
+        BranchNotFoundError: If branch doesn't exist or no branches available
+        UserCancelledError: If user cancels a prompt
     """
-    # Get all available branches
-    branches = list_all_branches()
+    current = git.get_current_branch()
+    branches = git.list_all_branches()
 
-    if not branches:
-        print_formatted_text("[warning]No branches found in repository[/warning]")
-        sys.exit(1)
-
-    current = get_current_branch()
-
-    # If branch name is provided, switch directly
     if branch_name:
         if branch_name not in branches:
-            print_formatted_text(
-                f"[warning]Error: Branch '{branch_name}' does not exist[/warning]"
-            )
-            sys.exit(1)
+            raise BranchNotFoundError(f"Branch '{branch_name}' does not exist")
 
         if branch_name == current:
-            print_formatted_text(f"[info]Already on branch '{branch_name}'[/info]")
-            return
+            ui.print_info(f"Already on branch '{branch_name}'")
+            return SwitchResult(
+                target_branch=branch_name,
+                previous_branch=current,
+                switched=False,
+            )
 
-        switch_to_branch_or_worktree(branch_name)
-        return
+        worktree_path = git.get_worktree_path(branch_name)
+        if worktree_path:
+            ui.print_info(
+                f"Branch '{branch_name}' is in a worktree. To switch to it, run:"
+            )
+            ui.print_info(f"cd {worktree_path}")
+            return SwitchResult(
+                target_branch=branch_name,
+                previous_branch=current,
+                switched=False,
+                worktree_path=worktree_path,
+            )
 
-    # First show the branch hierarchy
-    list_branches()
-    print_formatted_text("")  # Add a blank line for better readability
+        git.checkout_branch(branch_name)
+        return SwitchResult(
+            target_branch=branch_name,
+            previous_branch=current,
+            switched=True,
+        )
 
-    # Use shared utility for branch selection
-    selected = select_branch_excluding_current(
-        "Select a branch to switch to:", exclude_protected=False, enable_search=True
+    if not branches:
+        raise BranchNotFoundError("No branches found in repository")
+
+    if show_tree and current:
+        root = find_stack_root(current, config)
+        ui.display_branch_tree(root, current)
+        ui.print_info("")
+
+    selected = ui.prompt_select_branch(
+        branches,
+        "Select a branch to switch to:",
+        current_branch=current,
+        exclude_protected=False,
+        enable_search=True,
     )
 
-    # If no selection made or no branches available
     if not selected:
-        print_formatted_text(
-            "[warning]No other branches available to switch to[/warning]"
-        )
-        return
+        ui.print_error("No other branches available to switch to")
+        raise BranchNotFoundError("No branches available to switch to")
 
-    if selected:
-        switch_to_branch_or_worktree(selected)
-        print_formatted_text("")
-        # Show the branch hierarchy again
-        list_branches()
+    worktree_path = git.get_worktree_path(selected)
+    if worktree_path:
+        ui.print_info(f"Branch '{selected}' is in a worktree. To switch to it, run:")
+        ui.print_info(f"cd {worktree_path}")
+        return SwitchResult(
+            target_branch=selected,
+            previous_branch=current,
+            switched=False,
+            worktree_path=worktree_path,
+        )
+
+    git.checkout_branch(selected)
+
+    if show_tree:
+        ui.print_info("")
+        root = find_stack_root(selected, config)
+        ui.display_branch_tree(root, selected)
+
+    return SwitchResult(
+        target_branch=selected,
+        previous_branch=current,
+        switched=True,
+    )
+
+
+def switch_branch(branch_name: BranchName | None = None) -> None:
+    """CLI entrypoint that wraps core logic with real implementations.
+
+    This thin wrapper:
+    1. Instantiates real dependencies
+    2. Calls the core logic
+    3. Handles printing output
+    4. Converts exceptions to sys.exit via run_command
+    """
+    git = RealGit()
+    config = RealConfig()
+    ui = RealUI()
+
+    def core() -> None:
+        result = switch_branch_core(
+            git=git,
+            config=config,
+            ui=ui,
+            branch_name=branch_name,
+        )
+
+        if result.switched:
+            ui.print_success(
+                f"Switched to branch {format_branch(result.target_branch)}"
+            )
+
+    run_command(ui, core)

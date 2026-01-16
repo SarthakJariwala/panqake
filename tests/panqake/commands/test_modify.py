@@ -1,325 +1,296 @@
-"""Tests for modify.py command module."""
-
-from unittest.mock import patch
+"""Tests for modify command using the ports/fakes testing architecture."""
 
 import pytest
 
-from panqake.commands.modify import (
-    amend_existing_commit,
-    create_new_commit,
-    has_staged_changes,
-    has_unstaged_changes,
-    modify_commit,
-    stage_selected_files,
+from panqake.commands.modify import modify_commit_core
+from panqake.ports import (
+    CommitError,
+    FileInfo,
+    NoChangesError,
+    UserCancelledError,
 )
+from panqake.testing.fakes import FakeConfig, FakeGit, FakeUI
 
 
-@pytest.fixture
-def mock_git_utils():
-    """Mock all git utility functions."""
-    with (
-        patch("panqake.commands.modify.run_git_command") as mock_run,
-        patch("panqake.commands.modify.get_current_branch") as mock_current,
-        patch("panqake.commands.modify.get_staged_files") as mock_staged,
-        patch("panqake.commands.modify.get_unstaged_files") as mock_unstaged,
-        patch("panqake.commands.modify.branch_has_commits") as mock_has_commits,
+class TestModifyCommitCore:
+    """Test modify_commit_core with fakes."""
+
+    def test_amends_when_branch_has_commits(self):
+        """When branch has commits, should amend by default."""
+        git = FakeGit(
+            current_branch="feature-x",
+            staged_files=[FileInfo("file.py", "Modified: file.py")],
+            branch_commits={"feature-x": True},
+        )
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI(strict=False)
+
+        result = modify_commit_core(git=git, config=config, ui=ui)
+
+        assert result.amended is True
+        assert result.branch_name == "feature-x"
+        assert len(git.amend_calls) == 1
+        assert len(git.commits) == 0
+
+    def test_creates_new_commit_when_no_commits_on_branch(self):
+        """When branch has no commits, should create new commit."""
+        git = FakeGit(
+            current_branch="feature-x",
+            staged_files=[FileInfo("file.py", "Modified: file.py")],
+            branch_commits={"feature-x": False},
+        )
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI(input_responses=["Initial commit"], strict=False)
+
+        result = modify_commit_core(git=git, config=config, ui=ui)
+
+        assert result.amended is False
+        assert result.message == "Initial commit"
+        assert len(git.commits) == 1
+        assert git.commits[0] == "Initial commit"
+        assert len(git.amend_calls) == 0
+
+    def test_force_new_commit_with_commit_flag(self):
+        """--commit flag should force new commit even if branch has commits."""
+        git = FakeGit(
+            current_branch="feature-x",
+            staged_files=[FileInfo("file.py", "Modified: file.py")],
+            branch_commits={"feature-x": True},
+        )
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI(input_responses=["Forced new commit"], strict=False)
+
+        result = modify_commit_core(git=git, config=config, ui=ui, commit_flag=True)
+
+        assert result.amended is False
+        assert result.message == "Forced new commit"
+        assert len(git.commits) == 1
+        assert len(git.amend_calls) == 0
+
+    def test_no_amend_flag_creates_new_commit(self):
+        """--no-amend flag should create new commit."""
+        git = FakeGit(
+            current_branch="feature-x",
+            staged_files=[FileInfo("file.py", "Modified: file.py")],
+            branch_commits={"feature-x": True},
+        )
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI(input_responses=["New commit"], strict=False)
+
+        result = modify_commit_core(git=git, config=config, ui=ui, no_amend=True)
+
+        assert result.amended is False
+        assert len(git.commits) == 1
+
+    def test_explicit_message_used_for_new_commit(self):
+        """Explicit message should be used without prompting."""
+        git = FakeGit(
+            current_branch="feature-x",
+            staged_files=[FileInfo("file.py", "Modified: file.py")],
+            branch_commits={"feature-x": False},
+        )
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI(strict=False)
+
+        result = modify_commit_core(
+            git=git, config=config, ui=ui, message="Explicit message"
+        )
+
+        assert result.message == "Explicit message"
+        assert git.commits[0] == "Explicit message"
+        assert len(ui.input_calls) == 0
+
+    def test_explicit_message_used_for_amend(self):
+        """Explicit message should be passed to amend."""
+        git = FakeGit(
+            current_branch="feature-x",
+            staged_files=[FileInfo("file.py", "Modified: file.py")],
+            branch_commits={"feature-x": True},
+        )
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI(strict=False)
+
+        result = modify_commit_core(
+            git=git, config=config, ui=ui, message="New amend message"
+        )
+
+        assert result.amended is True
+        assert result.message == "New amend message"
+        assert git.amend_calls[0] == "New amend message"
+
+    def test_stages_selected_unstaged_files(self):
+        """Should stage files selected by user."""
+        unstaged = [
+            FileInfo("a.py", "Modified: a.py"),
+            FileInfo("b.py", "Modified: b.py"),
+            FileInfo("c.py", "Untracked: c.py"),
+        ]
+        git = FakeGit(
+            current_branch="feature-x",
+            unstaged_files=unstaged,
+            branch_commits={"feature-x": True},
+        )
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI(select_files_responses=[["a.py", "c.py"]], strict=False)
+
+        result = modify_commit_core(git=git, config=config, ui=ui)
+
+        assert result.files_staged == ["a.py", "c.py"]
+        assert len(git.staged_file_calls) == 1
+        staged_paths = [f.path for f in git.staged_file_calls[0]]
+        assert "a.py" in staged_paths
+        assert "c.py" in staged_paths
+        assert "b.py" not in staged_paths
+
+    def test_no_changes_error_when_nothing_to_commit(self):
+        """Should raise NoChangesError when no staged or unstaged changes."""
+        git = FakeGit(current_branch="feature-x")
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(NoChangesError) as exc_info:
+            modify_commit_core(git=git, config=config, ui=ui)
+
+        assert "No changes" in exc_info.value.message
+
+    def test_no_changes_error_when_nothing_staged(self):
+        """Should raise NoChangesError when user doesn't stage anything."""
+        unstaged = [FileInfo("a.py", "Modified: a.py")]
+        git = FakeGit(
+            current_branch="feature-x",
+            unstaged_files=unstaged,
+        )
+        config = FakeConfig()
+        ui = FakeUI(select_files_responses=[[]], strict=False)
+
+        with pytest.raises(NoChangesError) as exc_info:
+            modify_commit_core(git=git, config=config, ui=ui)
+
+        assert "No changes staged" in exc_info.value.message
+
+    def test_commit_error_on_empty_message(self):
+        """Should raise CommitError when commit message is empty."""
+        git = FakeGit(
+            current_branch="feature-x",
+            staged_files=[FileInfo("file.py", "Modified: file.py")],
+            branch_commits={"feature-x": False},
+        )
+        config = FakeConfig()
+        ui = FakeUI(input_responses=[""], strict=False)
+
+        with pytest.raises(CommitError) as exc_info:
+            modify_commit_core(git=git, config=config, ui=ui)
+
+        assert "empty" in exc_info.value.message.lower()
+
+    def test_user_cancelled_on_file_selection(self):
+        """Should raise UserCancelledError when user cancels file selection."""
+        unstaged = [FileInfo("a.py", "Modified: a.py")]
+        git = FakeGit(
+            current_branch="feature-x",
+            unstaged_files=unstaged,
+        )
+        config = FakeConfig()
+        ui = FakeUI(cancel_on_select_files=True)
+
+        with pytest.raises(UserCancelledError):
+            modify_commit_core(git=git, config=config, ui=ui)
+
+        assert len(git.commits) == 0
+        assert len(git.amend_calls) == 0
+
+    def test_user_cancelled_on_commit_message_prompt(self):
+        """Should raise UserCancelledError when user cancels message prompt."""
+        git = FakeGit(
+            current_branch="feature-x",
+            staged_files=[FileInfo("file.py", "Modified: file.py")],
+            branch_commits={"feature-x": False},
+        )
+        config = FakeConfig()
+        ui = FakeUI(cancel_on_input=True)
+
+        with pytest.raises(UserCancelledError):
+            modify_commit_core(git=git, config=config, ui=ui)
+
+    def test_handles_renamed_files(self):
+        """Should properly stage renamed files."""
+        unstaged = [
+            FileInfo("new.py", "Renamed: old.py → new.py", original_path="old.py"),
+        ]
+        git = FakeGit(
+            current_branch="feature-x",
+            unstaged_files=unstaged,
+            branch_commits={"feature-x": True},
+        )
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI(select_files_responses=[["new.py"]], strict=False)
+
+        result = modify_commit_core(git=git, config=config, ui=ui)
+
+        assert result.files_staged == ["new.py"]
+        staged_files = git.staged_file_calls[0]
+        assert staged_files[0].original_path == "old.py"
+
+    def test_handles_deleted_files(self):
+        """Should properly stage deleted files."""
+        unstaged = [
+            FileInfo("deleted.py", "Deleted: deleted.py"),
+        ]
+        git = FakeGit(
+            current_branch="feature-x",
+            unstaged_files=unstaged,
+            branch_commits={"feature-x": True},
+        )
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI(select_files_responses=[["deleted.py"]], strict=False)
+
+        result = modify_commit_core(git=git, config=config, ui=ui)
+
+        assert "deleted.py" in result.files_staged
+
+    def test_prints_info_messages(self):
+        """Should print appropriate info messages."""
+        git = FakeGit(
+            current_branch="feature-x",
+            staged_files=[FileInfo("file.py", "Modified: file.py")],
+            branch_commits={"feature-x": True},
+        )
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI(strict=False)
+
+        modify_commit_core(git=git, config=config, ui=ui)
+
+        assert any("feature-x" in msg for msg in ui.info_messages)
+        assert any("staged" in msg.lower() for msg in ui.info_messages)
+
+
+class TestModifyCommitScenarios:
+    """Parametrized tests for various modify scenarios."""
+
+    @pytest.mark.parametrize(
+        "has_commits,commit_flag,no_amend,expected_amend",
+        [
+            (True, False, False, True),
+            (True, True, False, False),
+            (True, False, True, False),
+            (False, False, False, False),
+            (False, True, False, False),
+        ],
+    )
+    def test_amend_decision_logic(
+        self, has_commits, commit_flag, no_amend, expected_amend
     ):
-        mock_current.return_value = "feature-branch"
-        yield {
-            "run": mock_run,
-            "current": mock_current,
-            "staged": mock_staged,
-            "unstaged": mock_unstaged,
-            "has_commits": mock_has_commits,
-        }
-
-
-@pytest.fixture
-def mock_config_utils():
-    """Mock config utility functions."""
-    with patch("panqake.commands.modify.get_parent_branch") as mock_get_parent:
-        mock_get_parent.return_value = "main"
-        yield {"get_parent": mock_get_parent}
-
-
-@pytest.fixture
-def mock_prompt():
-    """Mock questionary prompt functions."""
-    with (
-        patch("panqake.commands.modify.print_formatted_text") as mock_print,
-        patch("panqake.commands.modify.select_files_for_staging") as mock_select_files,
-        patch("panqake.commands.modify.prompt_input") as mock_input,
-    ):
-        yield {
-            "print": mock_print,
-            "select_files": mock_select_files,
-            "input": mock_input,
-        }
-
-
-def test_has_staged_changes_true(mock_git_utils):
-    """Test detection of staged changes when present."""
-    # Setup
-    mock_git_utils["run"].return_value = "modified.py\ndeleted.py"
-
-    # Execute
-    result = has_staged_changes()
-
-    # Verify
-    assert result is True
-    mock_git_utils["run"].assert_called_once_with(["diff", "--staged", "--name-only"])
-
-
-def test_has_staged_changes_false(mock_git_utils):
-    """Test detection of staged changes when none present."""
-    # Setup
-    mock_git_utils["run"].return_value = ""
-
-    # Execute
-    result = has_staged_changes()
-
-    # Verify
-    assert result is False
-
-
-def test_has_unstaged_changes_true(mock_git_utils):
-    """Test detection of unstaged changes when present."""
-    # Setup
-    mock_git_utils["run"].return_value = "modified.py\ndeleted.py"
-
-    # Execute
-    result = has_unstaged_changes()
-
-    # Verify
-    assert result is True
-    mock_git_utils["run"].assert_called_once_with(["diff", "--name-only"])
-
-
-def test_has_unstaged_changes_false(mock_git_utils):
-    """Test detection of unstaged changes when none present."""
-    # Setup
-    mock_git_utils["run"].return_value = ""
-
-    # Execute
-    result = has_unstaged_changes()
-
-    # Verify
-    assert result is False
-
-
-def test_stage_selected_files_success(mock_git_utils, mock_prompt):
-    """Test successful staging of selected files."""
-    # Setup
-    files = [
-        {"path": "new.py"},
-        {"path": "renamed.py", "original_path": "old.py"},
-    ]
-    mock_git_utils["run"].return_value = "success"
-
-    # Execute
-    result = stage_selected_files(files)
-
-    # Verify
-    assert result is True
-    assert (
-        mock_git_utils["run"].call_count == 3
-    )  # One regular file + two paths for rename
-
-
-def test_stage_selected_files_empty(mock_prompt):
-    """Test staging with no files selected."""
-    # Execute
-    result = stage_selected_files([])
-
-    # Verify
-    assert result is False
-
-
-def test_stage_selected_files_failure(mock_git_utils, mock_prompt):
-    """Test staging failure."""
-    # Setup
-    files = [{"path": "new.py"}]
-    mock_git_utils["run"].return_value = None
-
-    # Execute
-    result = stage_selected_files(files)
-
-    # Verify
-    assert result is False
-
-
-def test_stage_selected_files_deleted(mock_git_utils, mock_prompt):
-    """Test successful staging of deleted files."""
-    # Setup
-    files = [
-        {"path": "deleted.py", "display": "Deleted: deleted.py"},
-        {"path": "also_deleted.py", "display": "Deleted: also_deleted.py"},
-    ]
-    mock_git_utils["run"].return_value = "success"
-
-    # Execute
-    result = stage_selected_files(files)
-
-    # Verify
-    assert result is True
-    assert mock_git_utils["run"].call_count == 2
-    # Verify that git add -u was used for deleted files
-    mock_git_utils["run"].assert_any_call(["add", "-u", "--", "deleted.py"])
-    mock_git_utils["run"].assert_any_call(["add", "-u", "--", "also_deleted.py"])
-
-
-def test_stage_selected_files_mixed(mock_git_utils, mock_prompt):
-    """Test staging a mix of modified, new, and deleted files."""
-    # Setup
-    files = [
-        {"path": "modified.py", "display": "Modified: modified.py"},
-        {"path": "deleted.py", "display": "Deleted: deleted.py"},
-        {"path": "new.py", "display": "Untracked: new.py"},
-        {
-            "path": "renamed.py",
-            "original_path": "old.py",
-            "display": "Renamed: old.py → renamed.py",
-        },
-    ]
-    mock_git_utils["run"].return_value = "success"
-
-    # Execute
-    result = stage_selected_files(files)
-
-    # Verify
-    assert result is True
-    # 3 regular files (using add -A) + 2 for the rename (old and new paths)
-    assert mock_git_utils["run"].call_count == 5
-    # Verify git add -A was used for regular files
-    mock_git_utils["run"].assert_any_call(["add", "-A", "--", "modified.py"])
-    mock_git_utils["run"].assert_any_call(["add", "-A", "--", "new.py"])
-    # Verify deletion handling uses git add -u
-    mock_git_utils["run"].assert_any_call(["add", "-u", "--", "deleted.py"])
-    # Verify rename handling
-    mock_git_utils["run"].assert_any_call(["add", "--", "old.py"])
-    mock_git_utils["run"].assert_any_call(["add", "--", "renamed.py"])
-
-
-def test_create_new_commit_success(mock_git_utils, mock_prompt):
-    """Test successful creation of new commit."""
-    # Setup
-    message = "test commit"
-    mock_git_utils["run"].return_value = "success"
-
-    # Execute
-    create_new_commit(message)
-
-    # Verify
-    mock_git_utils["run"].assert_called_once_with(["commit", "-m", message])
-
-
-def test_create_new_commit_prompt(mock_git_utils, mock_prompt):
-    """Test commit creation with prompted message."""
-    # Setup
-    mock_prompt["input"].return_value = "test commit"
-    mock_git_utils["run"].return_value = "success"
-
-    # Execute
-    create_new_commit()
-
-    # Verify
-    mock_prompt["input"].assert_called_once()
-    mock_git_utils["run"].assert_called_once_with(["commit", "-m", "test commit"])
-
-
-def test_create_new_commit_empty_message(mock_prompt):
-    """Test commit creation with empty message."""
-    # Setup
-    mock_prompt["input"].return_value = ""
-
-    # Execute and verify
-    with pytest.raises(SystemExit):
-        create_new_commit()
-
-
-def test_amend_existing_commit_success(mock_git_utils, mock_prompt):
-    """Test successful commit amendment."""
-    # Setup
-    mock_git_utils["run"].return_value = "success"
-
-    # Execute
-    amend_existing_commit()
-
-    # Verify
-    mock_git_utils["run"].assert_called_once_with(["commit", "--amend", "--no-edit"])
-
-
-def test_amend_existing_commit_with_message(mock_git_utils, mock_prompt):
-    """Test commit amendment with new message."""
-    # Setup
-    message = "updated commit"
-    mock_git_utils["run"].return_value = "success"
-
-    # Execute
-    amend_existing_commit(message)
-
-    # Verify
-    mock_git_utils["run"].assert_called_once_with(["commit", "--amend", "-m", message])
-
-
-def test_modify_commit_no_changes(mock_git_utils, mock_prompt):
-    """Test modify commit when no changes exist."""
-    # Setup
-    mock_git_utils["staged"].return_value = []
-    mock_git_utils["unstaged"].return_value = []
-
-    # Execute and verify
-    with pytest.raises(SystemExit):
-        modify_commit()
-
-
-def test_modify_commit_amend_existing(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test modifying existing commit via amendment."""
-    # Setup
-    mock_git_utils["staged"].return_value = [{"display": "modified.py"}]
-    mock_git_utils["unstaged"].return_value = []
-    mock_git_utils["has_commits"].return_value = True
-    mock_git_utils["run"].return_value = "success"
-
-    # Execute
-    modify_commit()
-
-    # Verify amend was called
-    mock_git_utils["run"].assert_called_with(["commit", "--amend", "--no-edit"])
-
-
-def test_modify_commit_force_new(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test forcing new commit creation with --commit flag."""
-    # Setup
-    mock_git_utils["staged"].return_value = [{"display": "modified.py"}]
-    mock_git_utils["unstaged"].return_value = []
-    mock_git_utils["has_commits"].return_value = True
-    mock_git_utils["run"].return_value = "success"
-    # Mock the commit message prompt
-    commit_message = "Forced new commit message"
-    mock_prompt["input"].return_value = commit_message
-
-    # Execute
-    modify_commit(commit_flag=True)
-
-    # Verify new commit was created with the prompted message
-    mock_prompt["input"].assert_called_once()
-    mock_git_utils["run"].assert_called_once_with(["commit", "-m", commit_message])
-
-
-def test_modify_commit_stage_unstaged(mock_git_utils, mock_config_utils, mock_prompt):
-    """Test modifying commit with staging unstaged changes."""
-    # Setup
-    mock_git_utils["staged"].return_value = []
-    mock_git_utils["unstaged"].return_value = [
-        {"path": "unstaged.py", "display": "unstaged.py"}
-    ]
-    mock_git_utils["has_commits"].return_value = True
-    mock_git_utils["run"].return_value = "success"
-    mock_prompt["select_files"].return_value = ["unstaged.py"]
-
-    # Execute
-    modify_commit()
-
-    # Verify staging and commit
-    assert mock_git_utils["run"].call_count >= 2  # At least one stage and one commit
+        """Test the decision logic for amend vs new commit."""
+        git = FakeGit(
+            current_branch="feature-x",
+            staged_files=[FileInfo("file.py", "Modified: file.py")],
+            branch_commits={"feature-x": has_commits},
+        )
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI(input_responses=["test message"], strict=False)
+
+        result = modify_commit_core(
+            git=git, config=config, ui=ui, commit_flag=commit_flag, no_amend=no_amend
+        )
+
+        assert result.amended == expected_amend

@@ -1,244 +1,396 @@
-"""Tests for update.py command module."""
+"""Tests for update command using dependency injection with fakes.
 
-from unittest.mock import patch
+No mocking - tests use FakeGit, FakeConfig, FakeUI to verify behavior and state.
+"""
 
 import pytest
 
 from panqake.commands.update import (
-    get_affected_branches,
-    update_branch_and_children,
-    update_branches,
-    validate_branch_for_update,
+    UpdateResult,
+    get_affected_branches_core,
+    push_updated_branches_core,
+    return_to_branch_core,
+    update_all_branches_core,
+    update_branch_with_conflict_detection_core,
+    update_core,
 )
+from panqake.ports import BranchNotFoundError, UserCancelledError
+from panqake.testing.fakes import FakeConfig, FakeGit, FakeUI
 
 
-@pytest.fixture
-def mock_git_utils():
-    """Mock git utility functions."""
-    with (
-        patch("panqake.commands.update.get_current_branch") as mock_current,
-        patch("panqake.commands.update.validate_branch") as mock_validate,
-    ):
-        mock_current.return_value = "feature-1"
-        mock_validate.side_effect = lambda x: x if x else "feature-1"
-        yield {
-            "current": mock_current,
-            "validate": mock_validate,
-        }
+class TestGetAffectedBranchesCore:
+    """Tests for get_affected_branches_core function."""
+
+    def test_returns_empty_list_when_no_children(self):
+        config = FakeConfig(stack={"main": {"parent": None}})
+
+        result = get_affected_branches_core(config, "main")
+
+        assert result == []
+
+    def test_returns_direct_children(self):
+        config = FakeConfig(
+            stack={
+                "main": {"parent": None},
+                "feature-1": {"parent": "main"},
+                "feature-2": {"parent": "main"},
+            }
+        )
+
+        result = get_affected_branches_core(config, "main")
+
+        assert set(result) == {"feature-1", "feature-2"}
+
+    def test_returns_all_descendants_depth_first(self):
+        config = FakeConfig(
+            stack={
+                "main": {"parent": None},
+                "feature-1": {"parent": "main"},
+                "feature-1a": {"parent": "feature-1"},
+                "feature-1b": {"parent": "feature-1"},
+                "feature-2": {"parent": "main"},
+            }
+        )
+
+        result = get_affected_branches_core(config, "main")
+
+        # All descendants should be present
+        assert set(result) == {"feature-1", "feature-1a", "feature-1b", "feature-2"}
 
 
-@pytest.fixture
-def mock_stack_utils():
-    """Mock stack utility functions."""
-    with patch("panqake.commands.update.Stacks") as MockStacks:
-        mock_stacks = MockStacks.return_value.__enter__.return_value
-        mock_stacks.get_children.return_value = ["feature-2", "feature-3"]
-        mock_stacks.get_all_descendants.return_value = ["feature-2", "feature-3"]
-        mock_stacks.branch_exists.return_value = True
-        yield mock_stacks
+class TestUpdateBranchWithConflictDetectionCore:
+    """Tests for update_branch_with_conflict_detection_core function."""
+
+    def test_successful_rebase_returns_true(self):
+        git = FakeGit(branches=["main", "feature-1"])
+
+        success, error = update_branch_with_conflict_detection_core(
+            git, "feature-1", "main"
+        )
+
+        assert success is True
+        assert error is None
+        assert ("feature-1", "main") in git.rebase_calls
+
+    def test_rebase_conflict_returns_false_with_error(self):
+        git = FakeGit(branches=["main", "feature-1"])
+        git.fail_rebase = True
+
+        success, error = update_branch_with_conflict_detection_core(
+            git, "feature-1", "main"
+        )
+
+        assert success is False
+        assert error is not None
+        assert "conflict" in error.lower()
+
+    def test_worktree_branch_uses_worktree_rebase(self):
+        git = FakeGit(branches=["main", "feature-1"])
+        git.worktrees["feature-1"] = "/path/to/worktree"
+
+        success, error = update_branch_with_conflict_detection_core(
+            git, "feature-1", "main"
+        )
+
+        assert success is True
+        assert error is None
 
 
-@pytest.fixture
-def mock_branch_ops():
-    """Mock branch operation functions."""
-    with (
-        patch(
-            "panqake.commands.update.update_branches_and_handle_conflicts"
-        ) as mock_update_branches,
-        patch("panqake.commands.update.return_to_branch") as mock_return,
-        patch("panqake.commands.update.push_updated_branches") as mock_push,
-    ):
-        mock_update_branches.return_value = (["feature-2", "feature-3"], [])
-        mock_push.return_value = ["feature-2", "feature-3"]
-        yield {
-            "update_branches": mock_update_branches,
-            "return": mock_return,
-            "push": mock_push,
-        }
+class TestUpdateAllBranchesCore:
+    """Tests for update_all_branches_core function."""
+
+    def test_updates_all_children_in_order(self):
+        git = FakeGit(branches=["main", "feature-1", "feature-2"])
+        config = FakeConfig(
+            stack={
+                "main": {"parent": None},
+                "feature-1": {"parent": "main"},
+                "feature-2": {"parent": "main"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        updated, conflicts = update_all_branches_core(git, config, ui, "main")
+
+        assert set(updated) == {"feature-1", "feature-2"}
+        assert conflicts == []
+        assert len(ui.success_messages) == 2
+
+    def test_skips_children_of_conflicted_branches(self):
+        git = FakeGit(branches=["main", "feature-1", "feature-1a"])
+        config = FakeConfig(
+            stack={
+                "main": {"parent": None},
+                "feature-1": {"parent": "main"},
+                "feature-1a": {"parent": "feature-1"},
+            }
+        )
+        ui = FakeUI(strict=False)
+        git.fail_rebase = True
+
+        updated, conflicts = update_all_branches_core(git, config, ui, "main")
+
+        assert updated == []
+        # Both branches should be in conflicts - parent failed and child skipped
+        assert set(conflicts) == {"feature-1", "feature-1a"}
+
+    def test_reports_errors_for_conflicts(self):
+        git = FakeGit(branches=["main", "feature-1"])
+        config = FakeConfig(
+            stack={
+                "main": {"parent": None},
+                "feature-1": {"parent": "main"},
+            }
+        )
+        ui = FakeUI(strict=False)
+        git.fail_rebase = True
+
+        update_all_branches_core(git, config, ui, "main")
+
+        assert len(ui.error_messages) >= 1
 
 
-@pytest.fixture
-def mock_prompt():
-    """Mock questionary prompt functions."""
-    with (
-        patch("panqake.commands.update.prompt_confirm") as mock_confirm,
-        patch("panqake.commands.update.print_formatted_text") as mock_print,
-    ):
-        mock_confirm.return_value = True
-        yield {
-            "confirm": mock_confirm,
-            "print": mock_print,
-        }
+class TestPushUpdatedBranchesCore:
+    """Tests for push_updated_branches_core function."""
+
+    def test_pushes_branches_with_unpushed_changes(self):
+        git = FakeGit(
+            branches=["main", "feature-1"],
+            pushed_branches={"feature-1"},
+            unpushed_changes={"feature-1": True},
+        )
+        ui = FakeUI(strict=False)
+
+        pushed, skipped = push_updated_branches_core(git, ui, ["feature-1"])
+
+        assert pushed == ["feature-1"]
+        assert skipped == []
+        assert len(git.push_calls) == 1
+
+    def test_skips_branches_not_on_remote(self):
+        git = FakeGit(branches=["main", "feature-1"])
+        ui = FakeUI(strict=False)
+
+        pushed, skipped = push_updated_branches_core(git, ui, ["feature-1"])
+
+        assert pushed == []
+        assert skipped == ["feature-1"]
+        assert len(git.push_calls) == 0
+
+    def test_skips_branches_already_in_sync(self):
+        git = FakeGit(
+            branches=["main", "feature-1"],
+            pushed_branches={"feature-1"},
+            unpushed_changes={"feature-1": False},
+        )
+        ui = FakeUI(strict=False)
+
+        pushed, skipped = push_updated_branches_core(git, ui, ["feature-1"])
+
+        assert pushed == []
+        assert skipped == ["feature-1"]
+
+    def test_skips_worktree_branches(self):
+        git = FakeGit(
+            branches=["main", "feature-1"],
+            pushed_branches={"feature-1"},
+            unpushed_changes={"feature-1": True},
+        )
+        git.worktrees["feature-1"] = "/path/to/worktree"
+        ui = FakeUI(strict=False)
+
+        pushed, skipped = push_updated_branches_core(git, ui, ["feature-1"])
+
+        assert pushed == []
+        assert skipped == ["feature-1"]
+
+    def test_empty_list_returns_empty(self):
+        git = FakeGit()
+        ui = FakeUI(strict=False)
+
+        pushed, skipped = push_updated_branches_core(git, ui, [])
+
+        assert pushed == []
+        assert skipped == []
 
 
-def test_validate_branch_exists(mock_git_utils, mock_stack_utils):
-    """Test validating an existing branch."""
-    # Execute
-    branch_name, current = validate_branch_for_update("test-branch")
+class TestReturnToBranchCore:
+    """Tests for return_to_branch_core function."""
 
-    # Verify
-    mock_git_utils["validate"].assert_called_once_with("test-branch")
-    assert branch_name == "test-branch"
-    assert current == "feature-1"
+    def test_returns_to_existing_branch(self):
+        git = FakeGit(branches=["main", "feature-1"], current_branch="main")
+        ui = FakeUI(strict=False)
 
+        result = return_to_branch_core(git, ui, "feature-1")
 
-def test_validate_branch_not_exists(mock_git_utils, mock_stack_utils):
-    """Test validating a non-existent branch."""
-    # Setup
-    mock_git_utils["validate"].side_effect = SystemExit(1)
+        assert result == "feature-1"
+        assert git.current_branch == "feature-1"
 
-    # Execute and verify
-    with pytest.raises(SystemExit):
-        validate_branch_for_update("non-existent")
+    def test_returns_none_for_nonexistent_branch(self):
+        git = FakeGit(branches=["main"], current_branch="main")
+        ui = FakeUI(strict=False)
 
+        result = return_to_branch_core(git, ui, "feature-1")
 
-def test_validate_branch_no_name(mock_git_utils, mock_stack_utils):
-    """Test validating with no branch name provided."""
-    # Setup: Return 'main' when validate_branch is called with None
-    mock_git_utils["validate"].side_effect = lambda x: "main" if x is None else x
-    mock_git_utils["current"].return_value = "main"
-
-    # Execute
-    branch_name, current = validate_branch_for_update(None)
-
-    # Verify
-    mock_git_utils["validate"].assert_called_once_with(None)
-    mock_git_utils["current"].assert_called_once()
-    assert branch_name == "main"  # Should be the resolved current branch
-    assert current == "main"
-    assert current == "main"  # Should be the final current branch call
+        assert result is None
+        assert len(ui.error_messages) == 1
 
 
-def test_get_affected_branches_with_children(mock_stack_utils, mock_prompt):
-    """Test getting affected branches with confirmation."""
-    # Execute
-    result = get_affected_branches("feature-1")
+class TestUpdateCore:
+    """Tests for the main update_core function."""
 
-    # Verify
-    assert result == ["feature-2", "feature-3"]
-    mock_prompt["confirm"].assert_called_once()
+    def test_returns_early_when_no_children(self):
+        git = FakeGit(branches=["main", "feature-1"], current_branch="feature-1")
+        config = FakeConfig(stack={"feature-1": {"parent": "main"}})
+        ui = FakeUI(strict=False)
 
+        result = update_core(git, config, ui, branch_name="feature-1")
 
-def test_get_affected_branches_no_children(mock_stack_utils, mock_prompt):
-    """Test getting affected branches when there are no children."""
-    # Setup
-    mock_stack_utils.get_all_descendants.return_value = []
+        assert isinstance(result, UpdateResult)
+        assert result.affected_branches == []
+        assert result.updated_branches == []
+        assert len(ui.info_messages) >= 1
 
-    # Execute
-    result = get_affected_branches("feature-1")
+    def test_uses_current_branch_when_none_specified(self):
+        git = FakeGit(branches=["main", "feature-1"], current_branch="feature-1")
+        config = FakeConfig(stack={"feature-1": {"parent": "main"}})
+        ui = FakeUI(strict=False)
 
-    # Verify
-    assert result is None
-    mock_prompt["confirm"].assert_not_called()
+        result = update_core(git, config, ui, branch_name=None)
 
+        assert result.starting_branch == "feature-1"
 
-def test_get_affected_branches_user_cancels(mock_stack_utils, mock_prompt):
-    """Test when user cancels the update operation."""
-    # Setup
-    mock_prompt["confirm"].return_value = False
+    def test_raises_when_current_branch_unknown(self):
+        git = FakeGit(branches=["main"], current_branch=None)
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
 
-    # Execute
-    result = get_affected_branches("feature-1")
+        with pytest.raises(BranchNotFoundError):
+            update_core(git, config, ui)
 
-    # Verify
-    assert result is None
+    def test_raises_when_branch_not_found(self):
+        git = FakeGit(branches=["main"], current_branch="main")
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
 
+        with pytest.raises(BranchNotFoundError):
+            update_core(git, config, ui, branch_name="nonexistent")
 
-def test_update_branch_and_children_success(mock_stack_utils, mock_branch_ops):
-    """Test successful branch updates with the new non-recursive approach."""
-    # Execute
-    updated_branches, conflict_branches = update_branch_and_children(
-        "feature-1", "feature-1"
-    )
+    def test_returns_cancelled_result_when_user_declines(self):
+        git = FakeGit(
+            branches=["main", "feature-1", "feature-2"], current_branch="feature-1"
+        )
+        config = FakeConfig(
+            stack={
+                "feature-1": {"parent": "main"},
+                "feature-2": {"parent": "feature-1"},
+            }
+        )
+        ui = FakeUI(confirm_responses=[False], strict=False)
 
-    # Verify
-    # The function now delegates to update_branches_and_handle_conflicts
-    mock_branch_ops["update_branches"].assert_called_once_with("feature-1", "feature-1")
-    assert set(updated_branches) == {"feature-2", "feature-3"}
-    assert len(updated_branches) == 2
-    assert len(conflict_branches) == 0
+        result = update_core(git, config, ui, branch_name="feature-1")
 
+        assert result.updated_branches == []
+        assert result.affected_branches == ["feature-2"]
 
-def test_update_branch_and_children_conflict(mock_stack_utils, mock_branch_ops):
-    """Test handling update conflicts."""
-    # Setup
-    mock_branch_ops["update_branches"].return_value = ([], ["feature-2", "feature-3"])
+    def test_raises_on_user_cancel(self):
+        git = FakeGit(
+            branches=["main", "feature-1", "feature-2"], current_branch="feature-1"
+        )
+        config = FakeConfig(
+            stack={
+                "feature-1": {"parent": "main"},
+                "feature-2": {"parent": "feature-1"},
+            }
+        )
+        ui = FakeUI(cancel_on_confirm=True, strict=False)
 
-    # Execute
-    updated_branches, conflict_branches = update_branch_and_children(
-        "feature-1", "feature-1"
-    )
+        with pytest.raises(UserCancelledError):
+            update_core(git, config, ui, branch_name="feature-1")
 
-    # Verify
-    mock_branch_ops["update_branches"].assert_called_once_with("feature-1", "feature-1")
-    assert len(updated_branches) == 0
-    assert set(conflict_branches) == {"feature-2", "feature-3"}
+    def test_full_update_success(self):
+        git = FakeGit(
+            branches=["main", "feature-1", "feature-2"],
+            current_branch="feature-1",
+            pushed_branches={"feature-2"},
+            unpushed_changes={"feature-2": True},
+        )
+        config = FakeConfig(
+            stack={
+                "main": {"parent": None},
+                "feature-1": {"parent": "main"},
+                "feature-2": {"parent": "feature-1"},
+            }
+        )
+        ui = FakeUI(confirm_responses=[True], strict=False)
 
+        result = update_core(git, config, ui, branch_name="feature-1")
 
-def test_update_branches_full_success(
-    mock_git_utils,
-    mock_stack_utils,
-    mock_branch_ops,
-    mock_prompt,
-):
-    """Test full update process with pushing to remote."""
-    mock_stack_utils.get_all_descendants.return_value = ["feature-2", "feature-3"]
-    # Assume validate_branch determines current branch is 'main'
-    mock_git_utils["current"].return_value = "main"
+        assert result.starting_branch == "feature-1"
+        assert result.updated_branches == ["feature-2"]
+        assert result.conflict_branches == []
+        assert result.pushed_branches == ["feature-2"]
+        assert result.returned_to == "feature-1"
 
-    update_branches("feature-1")
+    def test_skip_push_flag(self):
+        git = FakeGit(
+            branches=["main", "feature-1", "feature-2"],
+            current_branch="feature-1",
+            pushed_branches={"feature-2"},
+            unpushed_changes={"feature-2": True},
+        )
+        config = FakeConfig(
+            stack={
+                "main": {"parent": None},
+                "feature-1": {"parent": "main"},
+                "feature-2": {"parent": "feature-1"},
+            }
+        )
+        ui = FakeUI(confirm_responses=[True], strict=False)
 
-    mock_stack_utils.get_all_descendants.assert_called_with("feature-1")
-    mock_branch_ops["update_branches"].assert_called_once_with("feature-1", "main")
-    mock_branch_ops["push"].assert_called_once_with(["feature-2", "feature-3"])
-    mock_branch_ops["return"].assert_called_once_with("main")
-    assert mock_prompt["print"].call_args_list[-1].args[0].startswith("[success]")
+        result = update_core(git, config, ui, branch_name="feature-1", skip_push=True)
 
+        assert result.updated_branches == ["feature-2"]
+        assert result.pushed_branches == []
+        assert result.skip_push is True
+        # Verify "local only" message
+        assert any("local only" in msg.lower() for msg in ui.success_messages)
 
-def test_update_branches_skip_push(
-    mock_git_utils,
-    mock_stack_utils,
-    mock_branch_ops,
-    mock_prompt,
-):
-    """Test update process without pushing to remote."""
-    mock_stack_utils.get_all_descendants.return_value = ["feature-2", "feature-3"]
-    mock_git_utils["current"].return_value = "main"
+    def test_reports_conflicts(self):
+        git = FakeGit(
+            branches=["main", "feature-1", "feature-2"], current_branch="feature-1"
+        )
+        git.fail_rebase = True
+        config = FakeConfig(
+            stack={
+                "main": {"parent": None},
+                "feature-1": {"parent": "main"},
+                "feature-2": {"parent": "feature-1"},
+            }
+        )
+        ui = FakeUI(confirm_responses=[True], strict=False)
 
-    update_branches("feature-1", skip_push=True)
+        result = update_core(git, config, ui, branch_name="feature-1")
 
-    mock_stack_utils.get_all_descendants.assert_called_with("feature-1")
-    mock_branch_ops["update_branches"].assert_called_once_with("feature-1", "main")
-    mock_branch_ops["return"].assert_called_once_with("main")
-    success_message_found = False
-    for call in mock_prompt["print"].call_args_list:
-        if "local only" in call.args[0] and call.args[0].startswith("[success]"):
-            success_message_found = True
-            break
-    assert success_message_found, "Success message with 'local only' not found"
+        assert result.updated_branches == []
+        assert result.conflict_branches == ["feature-2"]
+        assert len(ui.error_messages) >= 1
 
+    def test_returns_to_original_branch(self):
+        git = FakeGit(
+            branches=["main", "feature-1", "feature-2"], current_branch="feature-1"
+        )
+        config = FakeConfig(
+            stack={
+                "main": {"parent": None},
+                "feature-1": {"parent": "main"},
+                "feature-2": {"parent": "feature-1"},
+            }
+        )
+        ui = FakeUI(confirm_responses=[True], strict=False)
 
-def test_update_branches_with_conflicts(
-    mock_git_utils,
-    mock_stack_utils,
-    mock_branch_ops,
-    mock_prompt,
-):
-    """Test update process with conflict branches."""
-    mock_stack_utils.get_all_descendants.return_value = ["feature-2", "feature-3"]
-    mock_branch_ops["update_branches"].return_value = (["feature-2"], ["feature-3"])
-    mock_git_utils["current"].return_value = "main"
+        result = update_core(git, config, ui, branch_name="feature-1")
 
-    with patch(
-        "panqake.commands.update.report_update_conflicts",
-        return_value=(False, "Some branches had conflicts during update"),
-    ) as mock_report:
-        result, error = update_branches("feature-1")
-
-    assert result is False
-    assert "conflicts" in error
-    mock_stack_utils.get_all_descendants.assert_called_with("feature-1")
-    mock_branch_ops["update_branches"].assert_called_once_with("feature-1", "main")
-    mock_branch_ops["push"].assert_called_once_with(["feature-2"])
-    mock_branch_ops["return"].assert_called_once_with("main")
-    mock_report.assert_called_once_with(["feature-3"])
+        assert result.original_branch == "feature-1"
+        assert result.returned_to == "feature-1"
+        assert git.current_branch == "feature-1"

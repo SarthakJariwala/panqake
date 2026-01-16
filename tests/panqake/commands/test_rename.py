@@ -1,182 +1,180 @@
-"""Tests for rename.py command module."""
-
-from unittest.mock import MagicMock, patch
+"""Tests for rename.py command module using dependency injection."""
 
 import pytest
 
-from panqake.commands.rename import rename
+from panqake.commands.rename import rename_core
+from panqake.ports import (
+    BranchExistsError,
+    BranchNotFoundError,
+    RenameResult,
+    UserCancelledError,
+)
+from panqake.testing import FakeConfig, FakeGit, FakeUI
 
 
-@pytest.fixture
-def mock_git_utils():
-    """Mock git utility functions."""
-    with (
-        patch("panqake.commands.rename.get_current_branch") as mock_current,
-        patch("panqake.commands.rename.rename_branch") as mock_rename,
-    ):
-        mock_current.return_value = "feature-branch"
-        mock_rename.return_value = True
-        yield {
-            "current": mock_current,
-            "rename": mock_rename,
-        }
+class TestRenameCore:
+    """Tests for rename_core function."""
 
+    def test_renames_current_branch(self):
+        """Test renaming the current branch."""
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
 
-@pytest.fixture
-def mock_stack_utils():
-    """Mock stack utility functions."""
-    with patch("panqake.commands.rename.Stacks") as mock_stacks_class:
-        mock_stacks = mock_stacks_class.return_value
-        mock_stacks.branch_exists.return_value = True
-        mock_stacks.rename_branch.return_value = True
-        yield mock_stacks
+        result = rename_core(
+            git=git, config=config, ui=ui, old_name=None, new_name="feature-v2"
+        )
 
+        assert result == RenameResult(
+            old_name="feature",
+            new_name="feature-v2",
+            was_tracked=True,
+            remote_updated=False,
+        )
+        assert "feature" not in git.branches
+        assert "feature-v2" in git.branches
+        assert git.current_branch == "feature-v2"
+        assert "feature-v2" in config.stack
+        assert "feature" not in config.stack
 
-@pytest.fixture
-def mock_prompt():
-    """Mock questionary prompt functions."""
-    with (
-        patch("panqake.commands.rename.prompt_input") as mock_input,
-        patch("panqake.commands.rename.print_formatted_text") as mock_print,
-    ):
-        mock_input.return_value = "new-feature-branch"
-        yield {
-            "input": mock_input,
-            "print": mock_print,
-        }
+    def test_renames_specified_branch(self):
+        """Test renaming a specified branch (not current)."""
+        git = FakeGit(branches=["main", "feature", "other"], current_branch="other")
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
 
+        result = rename_core(
+            git=git, config=config, ui=ui, old_name="feature", new_name="feature-v2"
+        )
 
-def test_rename_current_branch(mock_git_utils, mock_stack_utils, mock_prompt):
-    """Test renaming the current branch when no branch name is provided."""
-    # Execute
-    rename(new_name="new-feature-branch")
+        assert result.old_name == "feature"
+        assert result.new_name == "feature-v2"
+        assert "feature-v2" in git.branches
+        assert "feature" not in git.branches
 
-    # Verify
-    mock_git_utils["current"].assert_called_once()
-    mock_stack_utils.branch_exists.assert_called_once_with("feature-branch")
-    mock_git_utils["rename"].assert_called_once_with(
-        "feature-branch", "new-feature-branch"
-    )
-    mock_stack_utils.rename_branch.assert_called_once_with(
-        "feature-branch", "new-feature-branch"
-    )
+    def test_prompts_for_new_name(self):
+        """Test prompting for new name when not provided."""
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(input_responses=["new-feature"])
 
+        result = rename_core(
+            git=git, config=config, ui=ui, old_name="feature", new_name=None
+        )
 
-def test_rename_specified_branch(mock_git_utils, mock_stack_utils, mock_prompt):
-    """Test renaming a specified branch."""
-    # Execute
-    rename("test-branch", "new-test-branch")
+        assert result.new_name == "new-feature"
+        assert len(ui.input_calls) == 1
+        assert "feature" in ui.input_calls[0].message
 
-    # Verify
-    mock_git_utils["current"].assert_not_called()
-    mock_stack_utils.branch_exists.assert_called_once_with("test-branch")
-    mock_git_utils["rename"].assert_called_once_with("test-branch", "new-test-branch")
-    mock_stack_utils.rename_branch.assert_called_once_with(
-        "test-branch", "new-test-branch"
-    )
+    def test_updates_remote_when_pushed(self):
+        """Test updating remote branch when branch was pushed."""
+        git = FakeGit(
+            branches=["main", "feature"],
+            current_branch="feature",
+            pushed_branches={"feature"},
+        )
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
 
+        result = rename_core(
+            git=git, config=config, ui=ui, old_name="feature", new_name="feature-v2"
+        )
 
-def test_rename_prompt_for_new_name(mock_git_utils, mock_stack_utils, mock_prompt):
-    """Test prompting for a new branch name when not provided."""
-    # Execute
-    rename("test-branch")
+        assert result.remote_updated is True
+        assert "feature" in git.deleted_remote_branches
+        assert ("feature-v2", False) in git.push_calls
 
-    # Verify
-    mock_prompt["input"].assert_called_once()
-    assert "Enter new name" in mock_prompt["input"].call_args.args[0]
-    mock_git_utils["rename"].assert_called_once_with(
-        "test-branch", "new-feature-branch"
-    )
+    def test_handles_untracked_branch(self):
+        """Test renaming a branch not tracked by panqake."""
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        config = FakeConfig()  # No stack entries
+        ui = FakeUI(strict=False)
 
+        result = rename_core(
+            git=git, config=config, ui=ui, old_name="feature", new_name="feature-v2"
+        )
 
-def test_rename_no_current_branch(mock_git_utils, mock_stack_utils, mock_prompt):
-    """Test error when current branch cannot be determined."""
-    # Setup
-    mock_git_utils["current"].return_value = None
+        assert result.was_tracked is False
+        assert "feature-v2" in git.branches
 
-    # Execute and verify
-    with pytest.raises(SystemExit):
-        rename()
+    def test_updates_child_parent_references(self):
+        """Test that child branches' parent references are updated."""
+        git = FakeGit(
+            branches=["main", "feature", "child"],
+            current_branch="feature",
+        )
+        config = FakeConfig(
+            stack={
+                "feature": {"parent": "main"},
+                "child": {"parent": "feature"},
+            }
+        )
+        ui = FakeUI(strict=False)
 
-    # Verify no further operations were performed
-    mock_git_utils["rename"].assert_not_called()
-    mock_stack_utils.rename_branch.assert_not_called()
+        rename_core(
+            git=git, config=config, ui=ui, old_name="feature", new_name="feature-v2"
+        )
 
+        assert config.get_parent_branch("child") == "feature-v2"
 
-def test_rename_untracked_branch(mock_git_utils, mock_stack_utils, mock_prompt):
-    """Test renaming a branch that is not tracked in the stack."""
-    # Setup
-    mock_stack_utils.branch_exists.return_value = False
-    mock_git_utils["rename"].return_value = True
+    def test_raises_when_no_current_branch(self):
+        """Test error when current branch cannot be determined."""
+        git = FakeGit(branches=["main"], current_branch=None)
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
 
-    # Mock the status context manager
-    mock_status_manager = MagicMock()
-    mock_status_instance = MagicMock()
+        with pytest.raises(BranchNotFoundError) as exc_info:
+            rename_core(git=git, config=config, ui=ui, old_name=None, new_name="new")
 
-    # Make pause_and_print actually call print_formatted_text
-    def mock_pause_and_print(message):
-        mock_prompt["print"](message)
+        assert "Could not determine" in str(exc_info.value)
 
-    mock_status_instance.pause_and_print = mock_pause_and_print
-    mock_status_manager.return_value.__enter__.return_value = mock_status_instance
-    mock_status_manager.return_value.__exit__.return_value = None
+    def test_raises_when_branch_not_found(self):
+        """Test error when specified branch doesn't exist."""
+        git = FakeGit(branches=["main"], current_branch="main")
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
 
-    # Mock sys.exit to prevent the test from exiting
-    with (
-        patch("panqake.commands.rename.sys.exit"),
-        patch("panqake.commands.rename.status", mock_status_manager),
-    ):
-        # Execute
-        rename("test-branch", "new-test-branch")
+        with pytest.raises(BranchNotFoundError):
+            rename_core(
+                git=git, config=config, ui=ui, old_name="nonexistent", new_name="new"
+            )
 
-    # Verify appropriate warning was printed about untracked branch
-    info_printed = False
-    for call_args in mock_prompt["print"].call_args_list:
-        if "not tracked" in str(call_args):
-            info_printed = True
-            break
+    def test_raises_when_new_name_exists(self):
+        """Test error when new name already exists."""
+        git = FakeGit(
+            branches=["main", "feature", "existing"], current_branch="feature"
+        )
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
 
-    assert info_printed, "Warning about untracked branch was not printed"
+        with pytest.raises(BranchExistsError):
+            rename_core(
+                git=git, config=config, ui=ui, old_name="feature", new_name="existing"
+            )
 
+    def test_raises_when_user_cancels(self):
+        """Test error when user cancels input prompt."""
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        config = FakeConfig()
+        ui = FakeUI(cancel_on_input=True)
 
-def test_rename_git_failure(mock_git_utils, mock_stack_utils, mock_prompt):
-    """Test failure in Git rename operation."""
-    # Setup
-    mock_git_utils["rename"].return_value = False
+        with pytest.raises(UserCancelledError):
+            rename_core(
+                git=git, config=config, ui=ui, old_name="feature", new_name=None
+            )
 
-    # Execute and verify
-    with pytest.raises(SystemExit):
-        rename("test-branch", "new-test-branch")
+    def test_preserves_worktree_path(self):
+        """Test that worktree path is preserved after rename."""
+        git = FakeGit(branches=["main", "feature"], current_branch="feature")
+        git.worktrees["feature"] = "/path/to/worktree"
+        config = FakeConfig(
+            stack={"feature": {"parent": "main", "worktree": "/path/to/worktree"}}
+        )
+        ui = FakeUI(strict=False)
 
-    # Verify stack was not updated
-    mock_stack_utils.rename_branch.assert_not_called()
+        rename_core(
+            git=git, config=config, ui=ui, old_name="feature", new_name="feature-v2"
+        )
 
-
-def test_rename_stack_failure(mock_git_utils, mock_stack_utils, mock_prompt):
-    """Test failure in stack update operation."""
-    # Setup
-    mock_stack_utils.rename_branch.return_value = False
-
-    # Mock the status context manager
-    mock_status_manager = MagicMock()
-    mock_status_instance = MagicMock()
-
-    # Make pause_and_print actually call print_formatted_text
-    def mock_pause_and_print(message):
-        mock_prompt["print"](message)
-
-    mock_status_instance.pause_and_print = mock_pause_and_print
-    mock_status_manager.return_value.__enter__.return_value = mock_status_instance
-    mock_status_manager.return_value.__exit__.return_value = None
-
-    with patch("panqake.commands.rename.status", mock_status_manager):
-        # Execute
-        rename("test-branch", "new-test-branch")
-
-    # Verify appropriate warning was printed
-    warning_calls = [
-        call
-        for call in mock_prompt["print"].call_args_list
-        if "Warning: Failed to update" in call.args[0]
-    ]
-    assert warning_calls
+        assert git.worktrees.get("feature-v2") == "/path/to/worktree"
+        assert "feature" not in git.worktrees

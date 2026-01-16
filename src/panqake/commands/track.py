@@ -1,64 +1,106 @@
-"""Command for tracking existing Git branches in the panqake stack."""
+"""Command for tracking existing Git branches in the panqake stack.
 
-import sys
+Uses dependency injection for testability.
+Core logic is pure - no sys.exit, no direct filesystem/git calls.
+"""
 
-from panqake.utils.config import add_to_stack
-from panqake.utils.git import get_current_branch, get_potential_parents
-from panqake.utils.questionary_prompt import print_formatted_text
-from panqake.utils.selection import select_parent_branch
-from panqake.utils.status import status
+from panqake.ports import (
+    BranchNotFoundError,
+    ConfigPort,
+    GitPort,
+    RealConfig,
+    RealGit,
+    RealUI,
+    TrackResult,
+    UIPort,
+    UserCancelledError,
+    run_command,
+)
+from panqake.utils.questionary_prompt import format_branch
+from panqake.utils.types import BranchName
 
 
-def track(branch_name=None):
+def track_branch_core(
+    git: GitPort,
+    config: ConfigPort,
+    ui: UIPort,
+    branch_name: BranchName | None = None,
+) -> TrackResult:
     """Track an existing Git branch in the panqake stack.
 
-    This command allows tracking branches that were created outside of panqake
-    (e.g., using vanilla git commands) by adding them to the stack tracking.
-    The user will be prompted to select a parent branch from potential parents
-    found in the branch's Git history.
+    This is the pure core logic that can be tested without mocking.
+    Raises PanqakeError subclasses on failure instead of calling sys.exit.
 
     Args:
-        branch_name: Optional branch name to track. If not provided, the current branch is used.
+        git: Git operations interface
+        config: Stack configuration interface
+        ui: User interaction interface
+        branch_name: Branch to track (uses current if None)
+
+    Returns:
+        TrackResult with branch and parent metadata
+
+    Raises:
+        BranchNotFoundError: If branch cannot be determined or no parents found
+        UserCancelledError: If user cancels parent selection
     """
-    # Get the branch to track (current branch if not specified)
     if not branch_name:
-        branch_name = get_current_branch()
+        branch_name = git.get_current_branch()
         if not branch_name:
-            print_formatted_text(
-                "[warning]Could not determine the current branch.[/warning]"
-            )
-            sys.exit(1)
+            raise BranchNotFoundError("Could not determine the current branch")
 
-    print_formatted_text(
-        f"[info]Tracking branch: [branch]{branch_name}[/branch][/info]"
+    ui.print_info(f"Tracking branch: {format_branch(branch_name)}")
+
+    potential_parents = git.get_potential_parents(branch_name)
+
+    if not potential_parents:
+        raise BranchNotFoundError(
+            f"No potential parent branches found in the history of '{branch_name}'"
+        )
+
+    selected_parent = ui.prompt_select_branch(
+        potential_parents,
+        "Select a parent branch:",
+        current_branch=branch_name,
+        exclude_protected=False,
+        enable_search=True,
     )
-
-    with status("Analyzing branch history for potential parents...") as s:
-        # Get potential parent branches from Git history
-        s.update("Searching Git history for parent candidates...")
-        potential_parents = get_potential_parents(branch_name)
-
-        if not potential_parents:
-            s.pause_and_print(
-                f"[warning]No potential parent branches found in the history of '{branch_name}'.[/warning]"
-            )
-            s.pause_and_print(
-                "[warning]Please ensure the branch you want to track has a suitable parent in its history.[/warning]"
-            )
-            sys.exit(1)
-
-    # Prompt user to select a parent branch
-    selected_parent = select_parent_branch(potential_parents)
 
     if not selected_parent:
-        print_formatted_text("[warning]No parent branch selected. Aborting.[/warning]")
-        sys.exit(1)
+        raise UserCancelledError()
 
-    # Add the branch to the stack with the selected parent
-    with status("Adding branch to stack metadata..."):
-        add_to_stack(branch_name, selected_parent)
+    config.add_to_stack(branch_name, selected_parent)
 
-    print_formatted_text(
-        f"[success]Successfully added branch '{branch_name}' to the stack "
-        f"with parent '{selected_parent}'.[/success]"
+    return TrackResult(
+        branch_name=branch_name,
+        parent_branch=selected_parent,
     )
+
+
+def track(branch_name: BranchName | None = None) -> None:
+    """CLI entrypoint that wraps core logic with real implementations.
+
+    This thin wrapper:
+    1. Instantiates real dependencies
+    2. Calls the core logic
+    3. Handles printing output
+    4. Converts exceptions to sys.exit via run_command
+    """
+    git = RealGit()
+    config = RealConfig()
+    ui = RealUI()
+
+    def core() -> None:
+        result = track_branch_core(
+            git=git,
+            config=config,
+            ui=ui,
+            branch_name=branch_name,
+        )
+
+        ui.print_success(
+            f"Successfully added branch '{result.branch_name}' to the stack "
+            f"with parent '{result.parent_branch}'"
+        )
+
+    run_command(ui, core)

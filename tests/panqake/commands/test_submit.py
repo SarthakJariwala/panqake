@@ -1,232 +1,224 @@
-"""Tests for submit.py command module."""
-
-from unittest.mock import MagicMock, patch
+"""Tests for submit command using the ports/fakes testing architecture."""
 
 import pytest
 
-from panqake.commands.submit import update_pull_request
+from panqake.commands.submit import submit_branch_core
+from panqake.ports import (
+    BranchNotFoundError,
+    GitHubCLINotFoundError,
+    PushError,
+    UserCancelledError,
+)
+from panqake.testing.fakes import FakeConfig, FakeGit, FakeGitHub, FakeUI
 
 
-@pytest.fixture
-def mock_git_utils():
-    """Mock all git utility functions."""
-    with (
-        patch("panqake.commands.submit.validate_branch") as mock_validate,
-        patch("panqake.commands.submit.push_branch_to_remote") as mock_push,
-        patch("panqake.commands.submit.is_last_commit_amended") as mock_is_amended,
-        patch("panqake.commands.submit.is_force_push_needed") as mock_force_needed,
-    ):
-        mock_validate.return_value = "feature-branch"
-        mock_push.return_value = True
-        mock_is_amended.return_value = False
-        mock_force_needed.return_value = False
-        yield {
-            "validate": mock_validate,
-            "push": mock_push,
-            "is_amended": mock_is_amended,
-            "force_needed": mock_force_needed,
-        }
+class TestSubmitBranchCore:
+    """Test submit_branch_core with fakes."""
+
+    def test_pushes_branch_to_remote(self):
+        """Should push branch to remote."""
+        git = FakeGit(current_branch="feature-x", branches=["main", "feature-x"])
+        github = FakeGitHub(branches_with_pr={"feature-x"})
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI(strict=False)
+
+        result = submit_branch_core(
+            git=git, github=github, config=config, ui=ui, branch_name="feature-x"
+        )
+
+        assert result.branch_name == "feature-x"
+        assert len(git.push_calls) == 1
+        assert git.push_calls[0] == ("feature-x", False)
+
+    def test_uses_current_branch_when_none_specified(self):
+        """Should use current branch if branch_name is None."""
+        git = FakeGit(current_branch="feature-y", branches=["main", "feature-y"])
+        github = FakeGitHub(branches_with_pr={"feature-y"})
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        result = submit_branch_core(git=git, github=github, config=config, ui=ui)
+
+        assert result.branch_name == "feature-y"
+        assert git.push_calls[0][0] == "feature-y"
+
+    def test_force_push_when_commit_amended(self):
+        """Should use force-with-lease when last commit was amended."""
+        git = FakeGit(
+            current_branch="feature-x",
+            branches=["main", "feature-x"],
+            last_commit_amended=True,
+        )
+        github = FakeGitHub(branches_with_pr={"feature-x"})
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        result = submit_branch_core(
+            git=git, github=github, config=config, ui=ui, branch_name="feature-x"
+        )
+
+        assert result.force_pushed is True
+        assert git.push_calls[0] == ("feature-x", True)
+
+    def test_force_push_when_non_fast_forward(self):
+        """Should use force-with-lease when non-fast-forward is detected."""
+        git = FakeGit(
+            current_branch="feature-x",
+            branches=["main", "feature-x"],
+            force_push_needed={"feature-x": True},
+        )
+        github = FakeGitHub(branches_with_pr={"feature-x"})
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        result = submit_branch_core(
+            git=git, github=github, config=config, ui=ui, branch_name="feature-x"
+        )
+
+        assert result.force_pushed is True
+        assert git.push_calls[0] == ("feature-x", True)
+        assert any("force" in msg.lower() for msg in ui.info_messages)
+
+    def test_returns_pr_url_when_pr_exists(self):
+        """Should return existing PR URL."""
+        git = FakeGit(current_branch="feature-x", branches=["main", "feature-x"])
+        github = FakeGitHub(
+            branches_with_pr={"feature-x"},
+            pr_urls={"feature-x": "https://github.com/org/repo/pull/42"},
+        )
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        result = submit_branch_core(
+            git=git, github=github, config=config, ui=ui, branch_name="feature-x"
+        )
+
+        assert result.pr_existed is True
+        assert result.pr_created is False
+        assert result.pr_url == "https://github.com/org/repo/pull/42"
+
+    def test_prompts_to_create_pr_when_none_exists(self):
+        """Should prompt user to create PR when none exists."""
+        git = FakeGit(current_branch="feature-x", branches=["main", "feature-x"])
+        github = FakeGitHub()
+        config = FakeConfig()
+        ui = FakeUI(confirm_responses=[True], strict=False)
+
+        result = submit_branch_core(
+            git=git, github=github, config=config, ui=ui, branch_name="feature-x"
+        )
+
+        assert result.pr_existed is False
+        assert result.pr_created is True
+        assert len(ui.confirm_calls) == 1
+
+    def test_no_pr_created_when_user_declines(self):
+        """Should not create PR when user declines."""
+        git = FakeGit(current_branch="feature-x", branches=["main", "feature-x"])
+        github = FakeGitHub()
+        config = FakeConfig()
+        ui = FakeUI(confirm_responses=[False], strict=False)
+
+        result = submit_branch_core(
+            git=git, github=github, config=config, ui=ui, branch_name="feature-x"
+        )
+
+        assert result.pr_existed is False
+        assert result.pr_created is False
+
+    def test_raises_when_github_cli_not_installed(self):
+        """Should raise GitHubCLINotFoundError when gh is missing."""
+        git = FakeGit(current_branch="feature-x", branches=["main", "feature-x"])
+        github = FakeGitHub(cli_installed=False)
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitHubCLINotFoundError) as exc_info:
+            submit_branch_core(
+                git=git, github=github, config=config, ui=ui, branch_name="feature-x"
+            )
+
+        assert "GitHub CLI" in exc_info.value.message
+
+    def test_raises_when_branch_not_found(self):
+        """Should raise BranchNotFoundError for non-existent branch."""
+        git = FakeGit(current_branch="main", branches=["main"])
+        github = FakeGitHub()
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(BranchNotFoundError):
+            submit_branch_core(
+                git=git, github=github, config=config, ui=ui, branch_name="nonexistent"
+            )
+
+    def test_raises_when_current_branch_cannot_be_determined(self):
+        """Should raise when no branch specified and current branch is None."""
+        git = FakeGit(current_branch=None, branches=["main"])
+        github = FakeGitHub()
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(BranchNotFoundError) as exc_info:
+            submit_branch_core(git=git, github=github, config=config, ui=ui)
+
+        assert "current branch" in exc_info.value.message.lower()
+
+    def test_raises_on_push_failure(self):
+        """Should raise PushError when push fails."""
+        git = FakeGit(current_branch="feature-x", branches=["main", "feature-x"])
+        git.fail_push = True
+        github = FakeGitHub()
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(PushError):
+            submit_branch_core(
+                git=git, github=github, config=config, ui=ui, branch_name="feature-x"
+            )
+
+    def test_user_cancelled_on_pr_prompt(self):
+        """Should raise UserCancelledError when user cancels PR prompt."""
+        git = FakeGit(current_branch="feature-x", branches=["main", "feature-x"])
+        github = FakeGitHub()
+        config = FakeConfig()
+        ui = FakeUI(cancel_on_confirm=True)
+
+        with pytest.raises(UserCancelledError):
+            submit_branch_core(
+                git=git, github=github, config=config, ui=ui, branch_name="feature-x"
+            )
+
+        assert len(git.push_calls) == 1
 
 
-@pytest.fixture
-def mock_github_utils():
-    """Mock GitHub utility functions."""
-    with (
-        patch("panqake.commands.submit.check_github_cli_installed") as mock_check_cli,
-        patch("panqake.commands.submit.branch_has_pr") as mock_has_pr,
-        patch("panqake.commands.submit.create_pr_for_branch") as mock_create_pr,
-    ):
-        mock_check_cli.return_value = True
-        mock_has_pr.return_value = False
-        mock_create_pr.return_value = True
-        yield {
-            "check_cli": mock_check_cli,
-            "has_pr": mock_has_pr,
-            "create_pr": mock_create_pr,
-        }
+class TestSubmitScenarios:
+    """Parametrized tests for various submit scenarios."""
 
-
-@pytest.fixture
-def mock_config_utils():
-    """Mock config utility functions."""
-    with patch("panqake.commands.submit.get_parent_branch") as mock_get_parent:
-        mock_get_parent.return_value = "main"
-        yield {
-            "get_parent": mock_get_parent,
-        }
-
-
-@pytest.fixture
-def mock_prompt():
-    """Mock questionary prompt functions."""
-    with (
-        patch("panqake.commands.submit.print_formatted_text") as mock_print,
-        patch("panqake.commands.submit.prompt_confirm") as mock_confirm,
-    ):
-        mock_confirm.return_value = True
-        yield {
-            "print": mock_print,
-            "confirm": mock_confirm,
-        }
-
-
-def test_update_pull_request_no_gh_cli(mock_github_utils, mock_prompt):
-    """Test update_pull_request when GitHub CLI is not installed."""
-    # Setup
-    mock_github_utils["check_cli"].return_value = False
-
-    # Execute and verify it exits with code 1
-    with pytest.raises(SystemExit) as e:
-        update_pull_request()
-    assert e.value.code == 1
-    # Verify error messages were printed
-    mock_prompt["print"].assert_any_call(
-        "[warning]Error: GitHub CLI (gh) is required but not installed.[/warning]"
+    @pytest.mark.parametrize(
+        "amended,force_needed,expected_force",
+        [
+            (True, False, True),
+            (False, True, True),
+            (True, True, True),
+            (False, False, False),
+        ],
     )
+    def test_force_push_decision_logic(self, amended, force_needed, expected_force):
+        """Test the decision logic for force push."""
+        git = FakeGit(
+            current_branch="feature-x",
+            branches=["main", "feature-x"],
+            last_commit_amended=amended,
+            force_push_needed={"feature-x": force_needed},
+        )
+        github = FakeGitHub(branches_with_pr={"feature-x"})
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
 
+        result = submit_branch_core(
+            git=git, github=github, config=config, ui=ui, branch_name="feature-x"
+        )
 
-def test_update_pull_request_existing_pr(
-    mock_git_utils, mock_github_utils, mock_prompt
-):
-    """Test updating a branch that has an existing PR."""
-    # Setup
-    mock_github_utils["has_pr"].return_value = True
-    mock_git_utils["is_amended"].return_value = False  # No amended commit
-    mock_git_utils["push"].return_value = True  # Assume push succeeds
-
-    # Execute
-    update_pull_request("feature-branch")
-
-    # Verify
-    mock_git_utils["push"].assert_called_once_with(
-        "feature-branch", force_with_lease=False
-    )
-    # Check the exact success message from submit.py
-    mock_prompt["print"].assert_any_call(
-        "[success]PR for feature-branch has been updated[/success]"
-    )
-
-
-def test_update_pull_request_no_pr_create_confirmed(
-    mock_git_utils, mock_github_utils, mock_config_utils, mock_prompt
-):
-    """Test updating a branch without PR and user confirms PR creation."""
-    # Setup
-    mock_github_utils["has_pr"].return_value = False
-    mock_git_utils["is_amended"].return_value = False  # No amended commit
-    mock_prompt["confirm"].return_value = True  # Create PR
-    mock_config_utils["get_parent"].return_value = "main"
-
-    # Execute
-    update_pull_request("feature-branch")
-
-    # Verify
-    mock_git_utils["push"].assert_called_once_with(
-        "feature-branch", force_with_lease=False
-    )
-    mock_github_utils["create_pr"].assert_called_once_with("feature-branch", "main")
-
-
-def test_update_pull_request_no_pr_create_declined(
-    mock_git_utils, mock_github_utils, mock_prompt
-):
-    """Test updating a branch without PR and user declines PR creation."""
-    # Setup
-    mock_github_utils["has_pr"].return_value = False
-    mock_git_utils["is_amended"].return_value = False  # No amended commit
-    mock_prompt["confirm"].return_value = False  # Decline create PR
-
-    # Execute
-    update_pull_request("feature-branch")
-
-    # Verify
-    mock_git_utils["push"].assert_called_once_with(
-        "feature-branch", force_with_lease=False
-    )
-    mock_prompt["print"].assert_any_call("[info]To create a PR, run: pq pr[/info]")
-
-
-def test_update_pull_request_with_amended_commit(
-    mock_git_utils, mock_github_utils, mock_prompt
-):
-    """Test when last commit was amended, should force push."""
-    # Setup
-    mock_github_utils["has_pr"].return_value = True
-    mock_git_utils["is_amended"].return_value = True  # Commit was amended
-    mock_git_utils["force_needed"].return_value = False  # Not used when amended is True
-
-    # Execute
-    update_pull_request("feature-branch")
-
-    # Verify
-    mock_git_utils["push"].assert_called_once_with(
-        "feature-branch", force_with_lease=True
-    )
-    # Make sure is_force_push_needed wasn't called since is_amended was True
-    mock_git_utils["force_needed"].assert_not_called()
-
-
-def test_update_pull_request_push_failed(
-    mock_git_utils, mock_github_utils, mock_prompt
-):
-    """Test when branch push fails."""
-    # Setup
-    mock_github_utils["has_pr"].return_value = True
-    mock_git_utils["push"].return_value = False  # Push fails
-    mock_git_utils["is_amended"].return_value = False  # No amended commit
-    mock_git_utils["force_needed"].return_value = False  # No force needed
-
-    # Execute
-    update_pull_request("feature-branch")
-
-    # Verify
-    mock_git_utils["push"].assert_called_once_with(
-        "feature-branch", force_with_lease=False
-    )
-    success_call_found = False
-    expected_success_message = (
-        "[success]PR for feature-branch has been updated[/success]"
-    )
-    for call_args, call_kwargs in mock_prompt["print"].call_args_list:
-        message = call_args[0]
-        if message == expected_success_message:
-            success_call_found = True
-
-    assert not success_call_found  # Should NOT print success message if push failed
-
-
-def test_update_pull_request_with_non_fast_forward(
-    mock_git_utils, mock_github_utils, mock_prompt
-):
-    """Test when non-fast-forward update is detected."""
-    # Setup
-    mock_github_utils["has_pr"].return_value = True
-    mock_git_utils["is_amended"].return_value = False  # No amended commit
-    mock_git_utils["force_needed"].return_value = True  # Force push is needed
-
-    # Mock the status context manager
-    mock_status_manager = MagicMock()
-    mock_status_instance = MagicMock()
-
-    # Make pause_and_print actually call print_formatted_text
-    def mock_pause_and_print(message):
-        mock_prompt["print"](message)
-
-    mock_status_instance.pause_and_print = mock_pause_and_print
-    mock_status_manager.return_value.__enter__.return_value = mock_status_instance
-    mock_status_manager.return_value.__exit__.return_value = None
-
-    # Mock the status context
-    with patch("panqake.commands.submit.status", mock_status_manager):
-        # Execute
-        update_pull_request("feature-branch")
-
-    # Verify
-    mock_git_utils["force_needed"].assert_called_once_with("feature-branch")
-    mock_git_utils["push"].assert_called_once_with(
-        "feature-branch", force_with_lease=True
-    )
-    # Check that the non-fast-forward info message was printed
-    mock_prompt["print"].assert_any_call(
-        "[info]Detected non-fast-forward update. Force push with lease will be used.[/info]"
-    )
+        assert result.force_pushed == expected_force
+        assert git.push_calls[0] == ("feature-x", expected_force)

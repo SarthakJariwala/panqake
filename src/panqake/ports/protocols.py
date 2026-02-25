@@ -4,13 +4,14 @@ These protocols define the boundaries between core logic and external effects,
 enabling pure unit tests without extensive mocking.
 """
 
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from panqake.utils.types import BranchName
 
 from .results import FileInfo, MergeMethod
 
 
+@runtime_checkable
 class GitPort(Protocol):
     """Interface for git operations.
 
@@ -298,6 +299,7 @@ class GitPort(Protocol):
         ...
 
 
+@runtime_checkable
 class GitHubPort(Protocol):
     """Interface for GitHub CLI operations."""
 
@@ -377,6 +379,7 @@ class GitHubPort(Protocol):
         ...
 
 
+@runtime_checkable
 class ConfigPort(Protocol):
     """Interface for stack configuration operations."""
 
@@ -452,6 +455,7 @@ class ConfigPort(Protocol):
         ...
 
 
+@runtime_checkable
 class UIPort(Protocol):
     """Interface for user interaction.
 
@@ -604,6 +608,7 @@ class UIPort(Protocol):
         ...
 
 
+@runtime_checkable
 class FilesystemPort(Protocol):
     """Interface for filesystem operations."""
 

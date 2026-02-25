@@ -1,5 +1,6 @@
 """Tests for cli.py module."""
 
+import json
 from unittest.mock import patch
 
 import pytest
@@ -71,8 +72,9 @@ def test_main_not_git_repo(mock_git_utils, mock_config, mock_rich):
     mock_git_utils["is_repo"].return_value = False
 
     # Execute
-    with pytest.raises(SystemExit) as exc_info:
-        main()
+    with patch("sys.argv", ["panqake", "list"]):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
 
     # Verify
     assert exc_info.value.code == 1
@@ -83,6 +85,34 @@ def test_main_not_git_repo(mock_git_utils, mock_config, mock_rich):
         for call in mock_rich["print"].call_args_list
     )
     mock_config.assert_called_once()
+    mock_git_utils["is_repo"].assert_called_once()
+    mock_git_utils["run_git"].assert_not_called()
+
+
+def test_main_not_git_repo_json_mode(mock_git_utils, mock_config, mock_rich, capsys):
+    """Test main() emits a JSON error envelope for startup failures in --json mode."""
+    mock_git_utils["run_git"].return_value = None
+
+    with patch("sys.argv", ["panqake", "list", "--json"]):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+    assert exc_info.value.code == 1
+    mock_config.assert_called_once()
+    mock_git_utils["run_git"].assert_called_once_with(
+        ["rev-parse", "--is-inside-work-tree"],
+        silent_fail=True,
+    )
+    mock_git_utils["is_repo"].assert_not_called()
+    mock_rich["print"].assert_not_called()
+    mock_rich["formatted_print"].assert_not_called()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+    assert payload["command"] == "list"
+    assert payload["error"]["type"] == "GitOperationError"
+    assert payload["error"]["message"] == "Not in a git repository"
+    assert payload["error"]["exit_code"] == 1
 
 
 def test_main_no_args(mock_git_utils, mock_config):
@@ -195,7 +225,7 @@ def test_pr_command_with_draft_flag(runner):
         result = runner.invoke(app, ["pr", "--draft"])
 
         assert result.exit_code == 0
-        mock_create_prs.assert_called_once_with(None, draft=True)
+        mock_create_prs.assert_called_once_with(None, draft=True, json_output=False)
 
 
 def test_pr_command_with_branch_and_draft(runner):
@@ -204,7 +234,9 @@ def test_pr_command_with_branch_and_draft(runner):
         result = runner.invoke(app, ["pr", "feature-branch", "--draft"])
 
         assert result.exit_code == 0
-        mock_create_prs.assert_called_once_with("feature-branch", draft=True)
+        mock_create_prs.assert_called_once_with(
+            "feature-branch", draft=True, json_output=False
+        )
 
 
 def test_pr_command_without_draft_flag(runner):
@@ -213,4 +245,118 @@ def test_pr_command_without_draft_flag(runner):
         result = runner.invoke(app, ["pr"])
 
         assert result.exit_code == 0
-        mock_create_prs.assert_called_once_with(None, draft=False)
+        mock_create_prs.assert_called_once_with(None, draft=False, json_output=False)
+
+
+def test_delete_command_with_yes_flag(runner):
+    """Test delete command with explicit confirmation override."""
+    with patch("panqake.cli.delete_branch") as mock_delete:
+        result = runner.invoke(app, ["delete", "feature-branch", "--yes"])
+
+        assert result.exit_code == 0
+        mock_delete.assert_called_once_with(
+            "feature-branch", assume_yes=True, json_output=False
+        )
+
+
+def test_update_command_with_yes_flag(runner):
+    """Test update command with explicit confirmation override."""
+    with patch("panqake.cli.update_branches") as mock_update:
+        result = runner.invoke(app, ["update", "feature-branch", "--yes"])
+
+        assert result.exit_code == 0
+        mock_update.assert_called_once_with(
+            "feature-branch",
+            skip_push=False,
+            assume_yes=True,
+            json_output=False,
+        )
+
+
+def test_submit_command_with_create_pr_flag(runner):
+    """Test submit command with explicit PR creation behavior."""
+    with patch("panqake.cli.update_pull_request") as mock_submit:
+        result = runner.invoke(app, ["submit", "feature-branch", "--create-pr"])
+
+        assert result.exit_code == 0
+        mock_submit.assert_called_once_with(
+            "feature-branch", create_pr=True, json_output=False
+        )
+
+
+def test_submit_command_with_no_create_pr_flag(runner):
+    """Test submit command with explicit PR non-creation behavior."""
+    with patch("panqake.cli.update_pull_request") as mock_submit:
+        result = runner.invoke(app, ["submit", "feature-branch", "--no-create-pr"])
+
+        assert result.exit_code == 0
+        mock_submit.assert_called_once_with(
+            "feature-branch", create_pr=False, json_output=False
+        )
+
+
+def test_merge_command_with_allow_failed_checks_flag(runner):
+    """Test merge command with failed-check override."""
+    with patch("panqake.cli.merge_branch") as mock_merge:
+        result = runner.invoke(
+            app, ["merge", "feature-branch", "--allow-failed-checks"]
+        )
+
+        assert result.exit_code == 0
+        mock_merge.assert_called_once_with(
+            "feature-branch",
+            True,
+            True,
+            allow_failed_checks=True,
+            assume_yes=False,
+            method=None,
+            json_output=False,
+        )
+
+
+def test_merge_command_with_yes_flag(runner):
+    """Test merge command with explicit confirmation override."""
+    with patch("panqake.cli.merge_branch") as mock_merge:
+        result = runner.invoke(app, ["merge", "feature-branch", "--yes"])
+
+        assert result.exit_code == 0
+        mock_merge.assert_called_once_with(
+            "feature-branch",
+            True,
+            True,
+            allow_failed_checks=False,
+            assume_yes=True,
+            method=None,
+            json_output=False,
+        )
+
+
+def test_merge_command_with_method_flag(runner):
+    """Test merge command with explicit merge method."""
+    with patch("panqake.cli.merge_branch") as mock_merge:
+        result = runner.invoke(app, ["merge", "feature-branch", "--method", "rebase"])
+
+        assert result.exit_code == 0
+        mock_merge.assert_called_once_with(
+            "feature-branch",
+            True,
+            True,
+            allow_failed_checks=False,
+            assume_yes=False,
+            method="rebase",
+            json_output=False,
+        )
+
+
+def test_sync_command_with_delete_merged_flag(runner):
+    """Test sync command with merged-branch deletion override."""
+    with patch("panqake.cli.sync_with_remote") as mock_sync:
+        result = runner.invoke(app, ["sync", "--delete-merged"])
+
+        assert result.exit_code == 0
+        mock_sync.assert_called_once_with(
+            "main",
+            skip_push=False,
+            delete_merged=True,
+            json_output=False,
+        )

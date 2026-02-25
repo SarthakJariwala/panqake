@@ -4,14 +4,18 @@ Uses dependency injection for testability.
 Core logic is pure - no sys.exit, no direct filesystem/git calls.
 """
 
+from typing import cast
+
 from panqake.ports import (
     ChildUpdateResult,
     ConfigPort,
     GitHubCLINotFoundError,
     GitHubPort,
     GitPort,
+    JsonUI,
     MergeMethod,
     MergeResult,
+    PanqakeError,
     PRBaseUpdateError,
     PRBaseUpdateResult,
     PRMergeError,
@@ -21,11 +25,27 @@ from panqake.ports import (
     RealUI,
     RebaseConflictError,
     UIPort,
+    emit_json_success,
     run_command,
 )
 from panqake.utils.questionary_prompt import format_branch
 from panqake.utils.selection import select_from_options
 from panqake.utils.types import BranchName
+
+
+_VALID_MERGE_METHODS: tuple[MergeMethod, ...] = ("squash", "rebase", "merge")
+
+
+def validate_merge_method(method: str) -> MergeMethod:
+    """Validate and normalize a merge method from user input."""
+    normalized = method.strip().lower()
+    if normalized in _VALID_MERGE_METHODS:
+        return cast(MergeMethod, normalized)
+    allowed = ", ".join(_VALID_MERGE_METHODS)
+    raise PanqakeError(
+        f"Invalid merge method '{method}'. Expected one of: {allowed}.",
+        exit_code=2,
+    )
 
 
 def update_pr_base_for_direct_children(
@@ -183,6 +203,7 @@ def merge_branch_core(
     merge_method: MergeMethod = "squash",
     delete_branch: bool = True,
     update_children: bool = True,
+    allow_failed_checks: bool = False,
 ) -> MergeResult:
     """Merge a PR and manage the branch stack after merge.
 
@@ -197,6 +218,7 @@ def merge_branch_core(
         merge_method: The merge method (squash, rebase, or merge)
         delete_branch: Whether to delete the branch after merge
         update_children: Whether to update child branches
+        allow_failed_checks: Continue even when required checks fail
 
     Returns:
         MergeResult with details of the merge operation
@@ -212,6 +234,8 @@ def merge_branch_core(
             "GitHub CLI (gh) is required but not installed. "
             "Please install GitHub CLI: https://cli.github.com"
         )
+
+    merge_method = validate_merge_method(merge_method)
 
     if not branch_name:
         branch_name = git.get_current_branch()
@@ -247,7 +271,9 @@ def merge_branch_core(
             ui.print_error("Failed checks:")
             for check in failed_checks:
                 ui.print_error(f"  - {check}")
-            if not ui.prompt_confirm("Do you want to proceed with the merge anyway?"):
+            if not allow_failed_checks and not ui.prompt_confirm(
+                "Do you want to proceed with the merge anyway?"
+            ):
                 from panqake.ports import UserCancelledError
 
                 raise UserCancelledError()
@@ -348,6 +374,11 @@ def merge_branch(
     branch_name: BranchName | None = None,
     delete_branch: bool = True,
     update_children: bool = True,
+    allow_failed_checks: bool = False,
+    assume_yes: bool = False,
+    method: str | None = None,
+    *,
+    json_output: bool = False,
 ) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
@@ -361,9 +392,12 @@ def merge_branch(
     git = RealGit()
     github = RealGitHub()
     config = RealConfig()
-    ui = RealUI()
+    ui = JsonUI() if json_output else RealUI()
 
-    def core() -> None:
+    # JSON mode always implies assume_yes
+    skip_confirm = assume_yes or json_output
+
+    def core() -> MergeResult | None:
         # Resolve branch name
         resolved_branch = branch_name
         if not resolved_branch:
@@ -377,15 +411,23 @@ def merge_branch(
         if not parent_branch:
             parent_branch = "main"
 
-        ui.print_info(
-            f"Preparing to merge PR: {format_branch(parent_branch)} ← {format_branch(resolved_branch)}"
-        )
+        if not skip_confirm:
+            ui.print_info(
+                f"Preparing to merge PR: {format_branch(parent_branch)} ← {format_branch(resolved_branch)}"
+            )
 
-        merge_method = get_merge_method()
+        # Resolve merge method: explicit flag > interactive prompt > default
+        if method is not None:
+            merge_method = validate_merge_method(method)
+        elif skip_confirm:
+            merge_method = "squash"
+        else:
+            merge_method = get_merge_method()
 
-        if not ui.prompt_confirm("Do you want to proceed with the merge?"):
-            ui.print_info("Merge cancelled.")
-            return
+        if not skip_confirm:
+            if not ui.prompt_confirm("Do you want to proceed with the merge?"):
+                ui.print_info("Merge cancelled.")
+                return None
 
         result = merge_branch_core(
             git=git,
@@ -396,17 +438,23 @@ def merge_branch(
             merge_method=merge_method,
             delete_branch=delete_branch,
             update_children=update_children,
+            allow_failed_checks=allow_failed_checks,
         )
 
-        ui.print_success("Merge and branch management completed.")
+        if not json_output:
+            ui.print_success("Merge and branch management completed.")
 
-        if result.child_updates:
-            updated = [r for r in result.child_updates if r.rebased]
-            failed = [r for r in result.child_updates if not r.rebased]
-            if updated:
-                ui.print_info(f"Updated {len(updated)} child branch(es)")
-            if failed:
-                ui.print_error(f"Failed to update {len(failed)} child branch(es)")
-                ui.print_info("You may need to resolve conflicts manually.")
+            if result.child_updates:
+                updated = [r for r in result.child_updates if r.rebased]
+                failed = [r for r in result.child_updates if not r.rebased]
+                if updated:
+                    ui.print_info(f"Updated {len(updated)} child branch(es)")
+                if failed:
+                    ui.print_error(f"Failed to update {len(failed)} child branch(es)")
+                    ui.print_info("You may need to resolve conflicts manually.")
 
-    run_command(ui, core)
+        return result
+
+    result = run_command(ui, core, json_output=json_output, command="merge")
+    if json_output and result is not None:
+        emit_json_success("merge", result)

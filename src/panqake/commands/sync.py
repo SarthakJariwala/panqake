@@ -9,12 +9,14 @@ from panqake.ports import (
     ConfigPort,
     GitOperationError,
     GitPort,
+    JsonUI,
     RebaseConflictError,
     RealConfig,
     RealGit,
     RealUI,
     SyncResult,
     UIPort,
+    emit_json_success,
     run_command,
 )
 from panqake.utils.questionary_prompt import format_branch
@@ -82,6 +84,7 @@ def handle_merged_branches_core(
     config: ConfigPort,
     ui: UIPort,
     main_branch: BranchName,
+    delete_merged: bool | None = None,
 ) -> list[BranchName]:
     """Handle merged branches by prompting user for deletion.
 
@@ -90,6 +93,8 @@ def handle_merged_branches_core(
         config: Stack configuration interface
         ui: User interaction interface
         main_branch: The main branch to check against
+        delete_merged: Whether to delete merged branches automatically.
+            None means prompt per branch.
 
     Returns:
         List of branch names that were deleted
@@ -101,9 +106,13 @@ def handle_merged_branches_core(
     deleted_branches: list[BranchName] = []
 
     for branch in branches_to_delete:
-        if ui.prompt_confirm(
-            f"{format_branch(branch)} is merged into {main_branch}. Delete it?"
-        ):
+        should_delete = delete_merged
+        if should_delete is None:
+            should_delete = ui.prompt_confirm(
+                f"{format_branch(branch)} is merged into {main_branch}. Delete it?"
+            )
+
+        if should_delete:
             git.delete_local_branch(branch, force=True)
             removed = config.remove_from_stack(branch)
             if not removed:
@@ -310,6 +319,7 @@ def sync_core(
     ui: UIPort,
     main_branch: BranchName = "main",
     skip_push: bool = False,
+    delete_merged: bool | None = None,
 ) -> SyncResult:
     """Sync local branches with remote repository changes.
 
@@ -321,6 +331,8 @@ def sync_core(
         ui: User interaction interface
         main_branch: Base branch to sync with (default: main)
         skip_push: If True, don't push changes to remote after updating
+        delete_merged: Whether to delete merged branches automatically.
+            None means prompt per branch.
 
     Returns:
         SyncResult with details of the sync operation
@@ -347,7 +359,9 @@ def sync_core(
         fetch_and_pull_main_core(git, ui, main_branch)
 
         # 3. Handle merged branches
-        deleted_branches = handle_merged_branches_core(git, config, ui, main_branch)
+        deleted_branches = handle_merged_branches_core(
+            git, config, ui, main_branch, delete_merged=delete_merged
+        )
 
         # 4. Update child branches with conflict handling
         children = config.get_child_branches(main_branch)
@@ -393,7 +407,13 @@ def sync_core(
     )
 
 
-def sync_with_remote(main_branch: str = "main", skip_push: bool = False) -> None:
+def sync_with_remote(
+    main_branch: str = "main",
+    skip_push: bool = False,
+    delete_merged: bool | None = None,
+    *,
+    json_output: bool = False,
+) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
     This thin wrapper:
@@ -404,15 +424,18 @@ def sync_with_remote(main_branch: str = "main", skip_push: bool = False) -> None
     """
     git = RealGit()
     config = RealConfig()
-    ui = RealUI()
+    ui = JsonUI() if json_output else RealUI()
 
-    def core() -> None:
-        sync_core(
+    def core() -> SyncResult:
+        return sync_core(
             git=git,
             config=config,
             ui=ui,
             main_branch=main_branch,
             skip_push=skip_push,
+            delete_merged=delete_merged,
         )
 
-    run_command(ui, core)
+    result = run_command(ui, core, json_output=json_output, command="sync")
+    if json_output and result is not None:
+        emit_json_success("sync", result)

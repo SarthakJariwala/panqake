@@ -8,11 +8,13 @@ from panqake.ports import (
     GitOperationError,
     GitPort,
     InWorktreeBeingDeletedError,
+    JsonUI,
     RealConfig,
     RealGit,
     RealUI,
     UIPort,
     UserCancelledError,
+    emit_json_success,
     run_command,
 )
 from panqake.utils.types import BranchName
@@ -24,6 +26,7 @@ def delete_branch_core(
     ui: UIPort,
     branch_name: BranchName | None = None,
     current_dir: str | None = None,
+    assume_yes: bool = False,
 ) -> DeleteResult:
     """Core logic for deleting a branch and relinking the stack.
 
@@ -33,6 +36,7 @@ def delete_branch_core(
         ui: User interaction port
         branch_name: Branch to delete (prompts if None)
         current_dir: Current working directory (for worktree detection)
+        assume_yes: Skip confirmation prompts when True
 
     Returns:
         DeleteResult with deletion details
@@ -94,7 +98,9 @@ def delete_branch_core(
         for child in child_branches:
             ui.print_muted(f"  {child}")
 
-    if not ui.prompt_confirm("Are you sure you want to delete this branch?"):
+    if not assume_yes and not ui.prompt_confirm(
+        "Are you sure you want to delete this branch?"
+    ):
         raise UserCancelledError()
 
     worktree_path = config.get_worktree_path(branch_name)
@@ -139,20 +145,31 @@ def delete_branch_core(
     )
 
 
-def delete_branch(branch_name: BranchName | None = None) -> None:
+def delete_branch(
+    branch_name: BranchName | None = None,
+    assume_yes: bool = False,
+    *,
+    json_output: bool = False,
+) -> None:
     """Delete a branch and relink the stack."""
     from pathlib import Path
 
     git = RealGit()
     config = RealConfig()
-    ui = RealUI()
+    ui = JsonUI() if json_output else RealUI()
     current_dir = str(Path.cwd().resolve())
 
     def _run() -> DeleteResult:
-        return delete_branch_core(git, config, ui, branch_name, current_dir)
+        return delete_branch_core(
+            git, config, ui, branch_name, current_dir, assume_yes=assume_yes
+        )
 
-    result = run_command(ui, _run)
+    result = run_command(ui, _run, json_output=json_output, command="delete")
     if result is None:
+        return
+
+    if json_output:
+        emit_json_success("delete", result)
         return
 
     if result.status == "skipped":

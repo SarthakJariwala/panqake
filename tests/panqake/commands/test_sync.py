@@ -153,6 +153,48 @@ class TestHandleMergedBranchesCore:
         with pytest.raises(UserCancelledError):
             handle_merged_branches_core(git, config, ui, "main")
 
+    def test_deletes_all_branches_when_delete_merged_true(self):
+        git = FakeGit(
+            branches=["main", "feature1", "feature2"],
+            merged_branches={"main": ["feature1", "feature2"]},
+        )
+        config = FakeConfig(
+            stack={
+                "feature1": {"parent": "main"},
+                "feature2": {"parent": "main"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        result = handle_merged_branches_core(
+            git, config, ui, "main", delete_merged=True
+        )
+
+        assert set(result) == {"feature1", "feature2"}
+        assert ui.confirm_calls == []
+
+    def test_keeps_all_branches_when_delete_merged_false(self):
+        git = FakeGit(
+            branches=["main", "feature1", "feature2"],
+            merged_branches={"main": ["feature1", "feature2"]},
+        )
+        config = FakeConfig(
+            stack={
+                "feature1": {"parent": "main"},
+                "feature2": {"parent": "main"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        result = handle_merged_branches_core(
+            git, config, ui, "main", delete_merged=False
+        )
+
+        assert result == []
+        assert "feature1" in git.branches
+        assert "feature2" in git.branches
+        assert ui.confirm_calls == []
+
 
 class TestUpdateBranchWithConflictDetectionCore:
     """Tests for update_branch_with_conflict_detection_core."""

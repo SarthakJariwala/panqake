@@ -142,6 +142,26 @@ def test_delete_branch_user_cancellation():
     assert "feature-branch" in config.stack
 
 
+def test_delete_branch_assume_yes_skips_confirmation():
+    """Test deletion proceeds without calling prompt when assume_yes=True."""
+    git = FakeGit(
+        branches=["main", "feature-branch"],
+        current_branch="main",
+    )
+    config = FakeConfig(
+        stack={
+            "feature-branch": {"parent": "main"},
+        }
+    )
+    ui = FakeUI(strict=False)
+
+    result = delete_branch_core(git, config, ui, "feature-branch", assume_yes=True)
+
+    assert result.deleted_branch == "feature-branch"
+    assert ui.confirm_calls == []
+    assert "feature-branch" in git.deleted_local_branches
+
+
 def test_delete_branch_no_branch_name_provided():
     """Test branch deletion when no branch name is provided."""
     git = FakeGit(

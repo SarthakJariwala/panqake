@@ -8,11 +8,13 @@ from panqake.ports import (
     BranchNotFoundError,
     ConfigPort,
     GitPort,
+    JsonUI,
     RealConfig,
     RealGit,
     RealUI,
     SwitchResult,
     UIPort,
+    emit_json_success,
     find_stack_root,
     run_command,
 )
@@ -126,7 +128,9 @@ def switch_branch_core(
     )
 
 
-def switch_branch(branch_name: BranchName | None = None) -> None:
+def switch_branch(
+    branch_name: BranchName | None = None, *, json_output: bool = False
+) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
     This thin wrapper:
@@ -137,9 +141,9 @@ def switch_branch(branch_name: BranchName | None = None) -> None:
     """
     git = RealGit()
     config = RealConfig()
-    ui = RealUI()
+    ui = JsonUI() if json_output else RealUI()
 
-    def core() -> None:
+    def core() -> SwitchResult:
         result = switch_branch_core(
             git=git,
             config=config,
@@ -147,9 +151,12 @@ def switch_branch(branch_name: BranchName | None = None) -> None:
             branch_name=branch_name,
         )
 
-        if result.switched:
+        if not json_output and result.switched:
             ui.print_success(
                 f"Switched to branch {format_branch(result.target_branch)}"
             )
+        return result
 
-    run_command(ui, core)
+    result = run_command(ui, core, json_output=json_output, command="switch")
+    if json_output and result is not None:
+        emit_json_success("switch", result)

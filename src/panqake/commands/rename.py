@@ -8,11 +8,13 @@ from panqake.ports import (
     BranchNotFoundError,
     ConfigPort,
     GitPort,
+    JsonUI,
     RealConfig,
     RealGit,
     RealUI,
     RenameResult,
     UIPort,
+    emit_json_success,
     run_command,
 )
 from panqake.utils.questionary_prompt import BranchNameValidator
@@ -81,7 +83,12 @@ def rename_core(
     )
 
 
-def rename(old_name: str | None = None, new_name: str | None = None) -> None:
+def rename(
+    old_name: str | None = None,
+    new_name: str | None = None,
+    *,
+    json_output: bool = False,
+) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
     This thin wrapper:
@@ -92,9 +99,9 @@ def rename(old_name: str | None = None, new_name: str | None = None) -> None:
     """
     git = RealGit()
     config = RealConfig()
-    ui = RealUI()
+    ui = JsonUI() if json_output else RealUI()
 
-    def core() -> None:
+    def core() -> RenameResult:
         result = rename_core(
             git=git,
             config=config,
@@ -103,14 +110,20 @@ def rename(old_name: str | None = None, new_name: str | None = None) -> None:
             new_name=new_name,
         )
 
-        ui.print_success(f"Renamed branch '{result.old_name}' to '{result.new_name}'")
+        if not json_output:
+            ui.print_success(
+                f"Renamed branch '{result.old_name}' to '{result.new_name}'"
+            )
 
-        if result.was_tracked:
-            ui.print_info("Stack references updated")
-        else:
-            ui.print_muted("Branch was not tracked by panqake")
+            if result.was_tracked:
+                ui.print_info("Stack references updated")
+            else:
+                ui.print_muted("Branch was not tracked by panqake")
 
-        if result.remote_updated:
-            ui.print_info("Remote branch updated")
+            if result.remote_updated:
+                ui.print_info("Remote branch updated")
+        return result
 
-    run_command(ui, core)
+    result = run_command(ui, core, json_output=json_output, command="rename")
+    if json_output and result is not None:
+        emit_json_success("rename", result)

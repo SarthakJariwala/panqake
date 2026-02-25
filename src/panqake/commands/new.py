@@ -12,6 +12,7 @@ from panqake.ports import (
     ConfigPort,
     FilesystemPort,
     GitPort,
+    JsonUI,
     NewBranchResult,
     RealConfig,
     RealFilesystem,
@@ -19,6 +20,7 @@ from panqake.ports import (
     RealUI,
     UIPort,
     WorktreeError,
+    emit_json_success,
     run_command,
 )
 from panqake.utils.questionary_prompt import BranchNameValidator, format_branch
@@ -137,6 +139,8 @@ def create_new_branch(
     base_branch: BranchName | None = None,
     use_worktree: bool = False,
     worktree_path: str | None = None,
+    *,
+    json_output: bool = False,
 ) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
@@ -148,10 +152,10 @@ def create_new_branch(
     """
     git = RealGit()
     config = RealConfig()
-    ui = RealUI()
+    ui = JsonUI() if json_output else RealUI()
     fs = RealFilesystem()
 
-    def core() -> None:
+    def core() -> NewBranchResult:
         result = create_new_branch_core(
             git=git,
             config=config,
@@ -163,19 +167,26 @@ def create_new_branch(
             worktree_path=worktree_path,
         )
 
-        # Print success output
-        if result.worktree_path:
-            ui.print_success(
-                f"Created new branch '{result.branch_name}' "
-                f"in worktree at '{result.worktree_path}'"
-            )
-        else:
-            ui.print_success(f"Created new branch '{result.branch_name}' in the stack")
+        if not json_output:
+            # Print success output
+            if result.worktree_path:
+                ui.print_success(
+                    f"Created new branch '{result.branch_name}' "
+                    f"in worktree at '{result.worktree_path}'"
+                )
+            else:
+                ui.print_success(
+                    f"Created new branch '{result.branch_name}' in the stack"
+                )
 
-        ui.print_info(f"Parent branch: {format_branch(result.base_branch)}")
+            ui.print_info(f"Parent branch: {format_branch(result.base_branch)}")
 
-        if result.worktree_path:
-            ui.print_info("\nTo switch to the new worktree, run:")
-            ui.print_info(f"cd {result.worktree_path}")
+            if result.worktree_path:
+                ui.print_info("\nTo switch to the new worktree, run:")
+                ui.print_info(f"cd {result.worktree_path}")
 
-    run_command(ui, core)
+        return result
+
+    result = run_command(ui, core, json_output=json_output, command="new")
+    if json_output and result is not None:
+        emit_json_success("new", result)

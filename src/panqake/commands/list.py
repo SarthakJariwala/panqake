@@ -5,14 +5,17 @@ Core logic is pure - no sys.exit, no direct filesystem/git calls.
 """
 
 from panqake.ports import (
+    BranchNode,
     BranchNotFoundError,
     ConfigPort,
     GitPort,
+    JsonUI,
     ListResult,
     RealConfig,
     RealGit,
     RealUI,
     UIPort,
+    emit_json_success,
     find_stack_root,
     run_command,
 )
@@ -56,14 +59,24 @@ def list_branches_core(
 
     ui.display_branch_tree(root_branch, current)
 
+    def build_tree(branch: BranchName) -> BranchNode:
+        children = config.get_child_branches(branch)
+        return BranchNode(
+            name=branch,
+            children=[build_tree(child) for child in sorted(children)],
+        )
+
     return ListResult(
         root_branch=root_branch,
         current_branch=current,
         target_branch=target,
+        tree=build_tree(root_branch),
     )
 
 
-def list_branches(branch_name: BranchName | None = None) -> None:
+def list_branches(
+    branch_name: BranchName | None = None, *, json_output: bool = False
+) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
     This thin wrapper:
@@ -73,14 +86,16 @@ def list_branches(branch_name: BranchName | None = None) -> None:
     """
     git = RealGit()
     config = RealConfig()
-    ui = RealUI()
+    ui = JsonUI() if json_output else RealUI()
 
-    def core() -> None:
-        list_branches_core(
+    def core() -> ListResult:
+        return list_branches_core(
             git=git,
             config=config,
             ui=ui,
             branch_name=branch_name,
         )
 
-    run_command(ui, core)
+    result = run_command(ui, core, json_output=json_output, command="list")
+    if json_output and result is not None:
+        emit_json_success("list", result)

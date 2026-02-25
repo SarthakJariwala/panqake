@@ -9,10 +9,12 @@ from panqake.ports import (
     ConfigPort,
     DownResult,
     GitPort,
+    JsonUI,
     RealConfig,
     RealGit,
     RealUI,
     UIPort,
+    emit_json_success,
     run_command,
 )
 from panqake.utils.questionary_prompt import format_branch
@@ -87,7 +89,7 @@ def down_core(
     )
 
 
-def down() -> None:
+def down(*, json_output: bool = False) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
     This thin wrapper:
@@ -98,14 +100,17 @@ def down() -> None:
     """
     git = RealGit()
     config = RealConfig()
-    ui = RealUI()
+    ui = JsonUI() if json_output else RealUI()
 
-    def core() -> None:
+    def core() -> DownResult:
         result = down_core(git=git, config=config, ui=ui)
 
-        if result.switched:
+        if not json_output and result.switched:
             ui.print_success(
                 f"Moved down to child branch {format_branch(result.target_branch)}"
             )
+        return result
 
-    run_command(ui, core)
+    result = run_command(ui, core, json_output=json_output, command="down")
+    if json_output and result is not None:
+        emit_json_success("down", result)

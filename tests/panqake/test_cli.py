@@ -1,7 +1,7 @@
 """Tests for cli.py module."""
 
 import json
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -147,6 +147,62 @@ def test_main_known_command(mock_git_utils, mock_config):
     mock_git_utils["is_repo"].assert_called_once()
     # Git command should not be called
     assert not mock_git_utils["run_git"].called
+
+
+def test_main_known_command_with_leading_option(mock_git_utils, mock_config):
+    """Leading options should not break panqake command dispatch."""
+    mock_git_utils["run_git"].return_value = "true"
+
+    with patch("sys.argv", ["panqake", "--json", "list"]):
+        with patch("panqake.cli.app") as mock_app:
+            main()
+            mock_app.assert_called_once_with(["list", "--json"])
+
+    mock_git_utils["run_git"].assert_called_once_with(
+        ["rev-parse", "--is-inside-work-tree"],
+        silent_fail=True,
+    )
+
+
+def test_main_unknown_command_with_leading_option_goes_to_git(
+    mock_git_utils, mock_config, mock_rich
+):
+    """Unknown commands still pass through even with leading options."""
+    mock_git_utils["run_git"].side_effect = ["true", "git output"]
+
+    with patch("sys.argv", ["panqake", "--json", "status"]):
+        main()
+
+    mock_git_utils["run_git"].assert_has_calls(
+        [
+            call(["rev-parse", "--is-inside-work-tree"], silent_fail=True),
+            call(["--json", "status"]),
+        ]
+    )
+    assert mock_git_utils["run_git"].call_count == 2
+    mock_rich["formatted_print"].assert_called_once_with(
+        "[info]Passing command to git...[/info]"
+    )
+
+
+def test_main_git_passthrough_with_option_argument_not_treated_as_command(
+    mock_git_utils, mock_config, mock_rich
+):
+    """Option arguments matching command names should still route to git."""
+    mock_git_utils["is_repo"].return_value = True
+    mock_git_utils["run_git"].return_value = "git output"
+
+    with patch("sys.argv", ["panqake", "-C", "list", "status"]):
+        with patch("panqake.cli.app") as mock_app:
+            main()
+            mock_app.assert_not_called()
+
+    mock_config.assert_called_once()
+    mock_git_utils["is_repo"].assert_called_once()
+    mock_git_utils["run_git"].assert_called_once_with(["-C", "list", "status"])
+    mock_rich["formatted_print"].assert_called_once_with(
+        "[info]Passing command to git...[/info]"
+    )
 
 
 def test_main_git_passthrough(mock_git_utils, mock_config, mock_rich):

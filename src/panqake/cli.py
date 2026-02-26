@@ -64,13 +64,48 @@ def _json_requested(argv: list[str]) -> bool:
     return "--json" in argv
 
 
+def _normalized_app_argv(argv: list[str]) -> list[str] | None:
+    """Normalize argv for Typer when dispatching a panqake command.
+
+    Supports command-first invocations directly and rewrites leading `--json`
+    invocations like `pq --json list` to `pq list --json`.
+    """
+    if not argv:
+        return None
+
+    first = argv[0]
+    if first in KNOWN_COMMANDS:
+        return argv
+
+    # Support leading JSON flags before a subcommand.
+    json_count = 0
+    while json_count < len(argv) and argv[json_count] == "--json":
+        json_count += 1
+
+    if json_count == 0 or json_count >= len(argv):
+        return None
+
+    command = argv[json_count]
+    if command not in KNOWN_COMMANDS:
+        return None
+
+    if command in {"-h", "--help"}:
+        return [command]
+
+    return [command, *argv[:json_count], *argv[json_count + 1 :]]
+
+
 def _requested_command(argv: list[str]) -> str | None:
-    """Extract the command name from argv (if present)."""
-    for arg in argv:
-        if arg.startswith("-"):
-            continue
-        return COMMAND_ALIASES.get(arg, arg)
-    return None
+    """Extract requested panqake command name from argv, if resolvable."""
+    normalized_argv = _normalized_app_argv(argv)
+    if not normalized_argv:
+        return None
+
+    command = normalized_argv[0]
+    if command.startswith("-"):
+        return None
+
+    return COMMAND_ALIASES.get(command, command)
 
 
 # Create Rich console for output
@@ -371,13 +406,12 @@ def main():
         app(["-h"])
         return
 
-    # Get the first argument (potential command)
-    potential_command = argv[0]
+    normalized_app_argv = _normalized_app_argv(argv)
 
-    # If the potential command is known, use Typer app
-    if potential_command in KNOWN_COMMANDS:
-        app()
-    # Otherwise, pass all arguments to git
+    # If this is a panqake command invocation, dispatch to Typer.
+    if normalized_app_argv is not None:
+        app(normalized_app_argv)
+    # Otherwise, pass all arguments to git.
     else:
         print_formatted_text("[info]Passing command to git...[/info]")
         result = run_git_command(argv)

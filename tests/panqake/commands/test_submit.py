@@ -4,7 +4,11 @@ import json
 
 import pytest
 
-from panqake.commands.submit import submit_branch_core, update_pull_request
+from panqake.commands.submit import (
+    submit_branch_core,
+    update_pull_request,
+    update_pull_request_core,
+)
 from panqake.ports import (
     BranchNotFoundError,
     GitHubCLINotFoundError,
@@ -469,3 +473,75 @@ def test_update_pull_request_json_create_pr_skips_when_no_commits(monkeypatch, c
     assert payload["result"]["pr_created"] is False
     assert payload["result"]["pr_url"] is None
     assert state["create_pr_calls"] == 0
+
+
+class FlakyPRVisibilityGitHub(FakeGitHub):
+    """Fake that simulates eventual consistency in PR visibility."""
+
+    def __init__(self, pr_url: str):
+        super().__init__(pr_urls={"feature-x": pr_url})
+        self._checks = 0
+
+    def branch_has_pr(self, branch: str) -> bool:
+        self._checks += 1
+        return self._checks >= 2
+
+
+class TestUpdatePullRequestCore:
+    """Tests for end-to-end submit + PR state normalization."""
+
+    def test_normalizes_flags_when_pr_appears_after_preflight(self):
+        """Should mark PR as existing when create step finds one already exists."""
+        git = FakeGit(
+            current_branch="feature-x",
+            branches=["main", "feature-x"],
+            branch_commits={"feature-x": True},
+            commit_subjects={"feature-x": "feat: test"},
+            pushed_branches={"main", "feature-x"},
+        )
+        github = FlakyPRVisibilityGitHub("https://github.com/org/repo/pull/42")
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI(confirm_responses=[True])
+
+        result = update_pull_request_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature-x",
+        )
+
+        assert result.pr_created is False
+        assert result.pr_existed is True
+        assert result.pr_url == "https://github.com/org/repo/pull/42"
+        assert len(github.create_pr_calls) == 0
+
+    def test_returns_created_flags_when_pr_is_created(self):
+        """Should preserve created flags when PR creation succeeds."""
+        git = FakeGit(
+            current_branch="feature-x",
+            branches=["main", "feature-x"],
+            branch_commits={"feature-x": True},
+            commit_subjects={"feature-x": "feat: test"},
+            pushed_branches={"main", "feature-x"},
+        )
+        github = FakeGitHub(potential_reviewers=[])
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI(
+            confirm_responses=[True, False, True],
+            input_responses=["Feature PR"],
+            input_multiline_responses=[""],
+            select_reviewers_responses=[[]],
+        )
+
+        result = update_pull_request_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature-x",
+        )
+
+        assert result.pr_created is True
+        assert result.pr_existed is False
+        assert result.pr_url == "https://github.com/test/repo/pull/1"

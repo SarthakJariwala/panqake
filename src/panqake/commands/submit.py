@@ -109,6 +109,56 @@ def submit_branch_core(
     )
 
 
+def update_pull_request_core(
+    git: GitPort,
+    github: GitHubPort,
+    config: ConfigPort,
+    ui: UIPort,
+    branch_name: BranchName | None = None,
+    create_pr: bool | None = None,
+) -> SubmitResult:
+    """Submit a branch and return normalized final PR state."""
+    result = submit_branch_core(
+        git=git,
+        github=github,
+        config=config,
+        ui=ui,
+        branch_name=branch_name,
+        create_pr=create_pr,
+    )
+
+    if not result.pr_created:
+        return result
+
+    parent = config.get_parent_branch(result.branch_name) or "main"
+    pr_result = create_pr_for_branch_core(
+        git=git,
+        github=github,
+        ui=ui,
+        branch=result.branch_name,
+        base=parent,
+        draft=False,
+    )
+
+    if pr_result.status == "created":
+        return replace(
+            result,
+            pr_existed=False,
+            pr_created=True,
+            pr_url=pr_result.pr_url or github.get_pr_url(result.branch_name),
+        )
+
+    if pr_result.status == "already_exists":
+        return replace(
+            result,
+            pr_existed=True,
+            pr_created=False,
+            pr_url=pr_result.pr_url or github.get_pr_url(result.branch_name),
+        )
+
+    return replace(result, pr_existed=False, pr_created=False, pr_url=None)
+
+
 def update_pull_request(
     branch_name: BranchName | None = None,
     create_pr: bool | None = None,
@@ -129,7 +179,7 @@ def update_pull_request(
     ui = PRJsonUI() if json_output else RealUI()
 
     def core() -> SubmitResult:
-        result = submit_branch_core(
+        result = update_pull_request_core(
             git=git,
             github=github,
             config=config,
@@ -138,49 +188,20 @@ def update_pull_request(
             create_pr=create_pr,
         )
 
-        if result.pr_existed:
-            if not json_output:
+        if not json_output:
+            if result.pr_existed:
                 ui.print_success(
                     f"PR for {format_branch(result.branch_name)} has been updated"
                 )
                 if result.pr_url:
                     ui.print_info(f"Pull request URL: {result.pr_url}")
-        elif result.pr_created:
-            parent = config.get_parent_branch(result.branch_name)
-            pr_result = create_pr_for_branch_core(
-                git=git,
-                github=github,
-                ui=ui,
-                branch=result.branch_name,
-                base=parent or "main",
-                draft=False,
-            )
-            if pr_result.status == "created":
-                result = replace(
-                    result,
-                    pr_url=pr_result.pr_url or github.get_pr_url(result.branch_name),
+            elif result.pr_created:
+                ui.print_success(
+                    f"PR created successfully for {format_branch(result.branch_name)}"
                 )
-                if not json_output:
-                    ui.print_success(
-                        f"PR created successfully for {format_branch(result.branch_name)}"
-                    )
-                    if result.pr_url:
-                        ui.print_info(f"Pull request URL: {result.pr_url}")
-            elif pr_result.status == "already_exists":
-                result = replace(
-                    result,
-                    pr_url=pr_result.pr_url or github.get_pr_url(result.branch_name),
-                )
-                if not json_output:
-                    ui.print_info(
-                        f"Branch {format_branch(result.branch_name)} already has an open PR"
-                    )
+                if result.pr_url:
+                    ui.print_info(f"Pull request URL: {result.pr_url}")
             else:
-                result = replace(result, pr_created=False, pr_url=None)
-                if not json_output:
-                    ui.print_info(f"PR creation skipped: {pr_result.skip_reason}")
-        else:
-            if not json_output:
                 ui.print_info(
                     f"Branch {format_branch(result.branch_name)} updated on remote. "
                     "No PR exists yet."

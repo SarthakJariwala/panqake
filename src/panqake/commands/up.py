@@ -8,11 +8,13 @@ from panqake.ports import (
     BranchNotFoundError,
     ConfigPort,
     GitPort,
+    JsonUI,
     RealConfig,
     RealGit,
     RealUI,
     UIPort,
     UpResult,
+    emit_json_success,
     run_command,
 )
 from panqake.utils.questionary_prompt import format_branch
@@ -66,7 +68,7 @@ def up_core(
     )
 
 
-def up() -> None:
+def up(*, json_output: bool = False) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
     This thin wrapper:
@@ -77,14 +79,17 @@ def up() -> None:
     """
     git = RealGit()
     config = RealConfig()
-    ui = RealUI()
+    ui = JsonUI() if json_output else RealUI()
 
-    def core() -> None:
+    def core() -> UpResult:
         result = up_core(git=git, config=config, ui=ui)
 
-        if result.switched:
+        if not json_output and result.switched:
             ui.print_success(
                 f"Moved up to parent branch {format_branch(result.target_branch)}"
             )
+        return result
 
-    run_command(ui, core)
+    result = run_command(ui, core, json_output=json_output, command="up")
+    if json_output and result is not None:
+        emit_json_success("up", result)

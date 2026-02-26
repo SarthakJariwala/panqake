@@ -104,6 +104,18 @@ class CannotDeleteCurrentBranchError(GitOperationError):
     pass
 
 
+class NonInteractiveError(PanqakeError):
+    """Raised when a prompt is attempted in non-interactive (--json) mode."""
+
+    def __init__(self, prompt_description: str = "user input"):
+        super().__init__(
+            f"--json requires non-interactive usage; "
+            f"this command needs {prompt_description}. "
+            f"Provide all required arguments or run without --json.",
+            exit_code=2,
+        )
+
+
 class InWorktreeBeingDeletedError(GitOperationError):
     """Raised when user is in the worktree being deleted."""
 

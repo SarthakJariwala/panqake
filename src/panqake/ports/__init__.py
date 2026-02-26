@@ -15,6 +15,7 @@ from .exceptions import (
     GitOperationError,
     InWorktreeBeingDeletedError,
     NoChangesError,
+    NonInteractiveError,
     PanqakeError,
     PRBaseUpdateError,
     PRCreationError,
@@ -25,8 +26,10 @@ from .exceptions import (
     UserCancelledError,
     WorktreeError,
 )
-from .helpers import find_stack_root, run_command
+from .helpers import emit_json_success, find_stack_root, run_command
 from .implementations import (
+    JsonUI,
+    PRJsonUI,
     RealConfig,
     RealFilesystem,
     RealGit,
@@ -41,6 +44,7 @@ from .protocols import (
     UIPort,
 )
 from .results import (
+    BranchNode,
     BranchPRResult,
     BranchPRStatus,
     BranchUpdateResult,
@@ -76,6 +80,7 @@ __all__ = [
     "GitOperationError",
     "InWorktreeBeingDeletedError",
     "NoChangesError",
+    "NonInteractiveError",
     "PanqakeError",
     "PRBaseUpdateError",
     "PRCreationError",
@@ -86,6 +91,7 @@ __all__ = [
     "UserCancelledError",
     "WorktreeError",
     # Results
+    "BranchNode",
     "BranchPRResult",
     "BranchPRStatus",
     "BranchUpdateResult",
@@ -116,12 +122,15 @@ __all__ = [
     "GitPort",
     "UIPort",
     # Implementations
+    "JsonUI",
+    "PRJsonUI",
     "RealConfig",
     "RealFilesystem",
     "RealGit",
     "RealGitHub",
     "RealUI",
     # Helpers
+    "emit_json_success",
     "find_stack_root",
     "run_command",
 ]

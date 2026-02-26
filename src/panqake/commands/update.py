@@ -10,11 +10,13 @@ from panqake.ports import (
     BranchNotFoundError,
     ConfigPort,
     GitPort,
+    JsonUI,
     RebaseConflictError,
     RealConfig,
     RealGit,
     RealUI,
     UIPort,
+    emit_json_success,
     run_command,
 )
 from panqake.utils.questionary_prompt import format_branch
@@ -248,6 +250,7 @@ def update_core(
     ui: UIPort,
     branch_name: BranchName | None = None,
     skip_push: bool = False,
+    assume_yes: bool = False,
 ) -> UpdateResult:
     """Update branches in the stack after changes.
 
@@ -259,6 +262,7 @@ def update_core(
         ui: User interaction interface
         branch_name: The branch to update children for, or None for current
         skip_push: If True, don't push changes to remote after updating
+        assume_yes: Skip confirmation prompts when True
 
     Returns:
         UpdateResult with details of the update operation
@@ -299,7 +303,9 @@ def update_core(
     for branch in affected_branches:
         ui.print_info(f"  {format_branch(branch)}")
 
-    if not ui.prompt_confirm("Do you want to proceed with the update?"):
+    if not assume_yes and not ui.prompt_confirm(
+        "Do you want to proceed with the update?"
+    ):
         ui.print_info("Update cancelled.")
         return UpdateResult(
             starting_branch=branch_name,
@@ -360,7 +366,11 @@ def update_core(
 
 
 def update_branches(
-    branch_name: BranchName | None = None, skip_push: bool = False
+    branch_name: BranchName | None = None,
+    skip_push: bool = False,
+    assume_yes: bool = False,
+    *,
+    json_output: bool = False,
 ) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
@@ -372,15 +382,18 @@ def update_branches(
     """
     git = RealGit()
     config = RealConfig()
-    ui = RealUI()
+    ui = JsonUI() if json_output else RealUI()
 
-    def core() -> None:
-        update_core(
+    def core() -> UpdateResult:
+        return update_core(
             git=git,
             config=config,
             ui=ui,
             branch_name=branch_name,
             skip_push=skip_push,
+            assume_yes=assume_yes,
         )
 
-    run_command(ui, core)
+    result = run_command(ui, core, json_output=json_output, command="update")
+    if json_output and result is not None:
+        emit_json_success("update", result)

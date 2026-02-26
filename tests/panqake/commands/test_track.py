@@ -1,8 +1,10 @@
 """Tests for track.py command module using dependency injection pattern."""
 
+import json
+
 import pytest
 
-from panqake.commands.track import track_branch_core
+from panqake.commands.track import track, track_branch_core
 from panqake.ports import BranchNotFoundError, UserCancelledError
 from panqake.testing.fakes import FakeConfig, FakeGit, FakeUI
 
@@ -98,3 +100,69 @@ class TestTrackBranchCore:
         track_branch_core(git=git, config=config, ui=ui)
 
         assert any("feature" in msg for msg in ui.info_messages)
+
+
+def test_track_json_auto_selects_single_parent(monkeypatch, capsys):
+    """JSON mode should auto-select the only available parent branch."""
+    state: dict[str, tuple[str, str] | None] = {"tracked": None}
+
+    class NoisyGit:
+        def get_current_branch(self):
+            return "feature-x"
+
+        def get_potential_parents(self, branch):
+            return ["main"]
+
+    class RecordingConfig:
+        def add_to_stack(self, branch_name, parent_branch, worktree_path=None):
+            state["tracked"] = (branch_name, parent_branch)
+
+    monkeypatch.setattr("panqake.commands.track.RealGit", NoisyGit)
+    monkeypatch.setattr("panqake.commands.track.RealConfig", RecordingConfig)
+
+    track(branch_name="feature-x", json_output=True)
+
+    stdout_lines = [
+        line for line in capsys.readouterr().out.strip().splitlines() if line
+    ]
+    assert len(stdout_lines) == 1
+
+    payload = json.loads(stdout_lines[0])
+    assert payload["ok"] is True
+    assert payload["command"] == "track"
+    assert payload["result"]["branch_name"] == "feature-x"
+    assert payload["result"]["parent_branch"] == "main"
+    assert state["tracked"] == ("feature-x", "main")
+
+
+def test_track_json_fails_when_parent_selection_is_ambiguous(monkeypatch, capsys):
+    """JSON mode should fail clearly when multiple parent branches exist."""
+
+    class NoisyGit:
+        def get_current_branch(self):
+            return "feature-x"
+
+        def get_potential_parents(self, branch):
+            return ["main", "develop"]
+
+    class NoopConfig:
+        def add_to_stack(self, branch_name, parent_branch, worktree_path=None):
+            return None
+
+    monkeypatch.setattr("panqake.commands.track.RealGit", NoisyGit)
+    monkeypatch.setattr("panqake.commands.track.RealConfig", NoopConfig)
+
+    with pytest.raises(SystemExit) as exc_info:
+        track(branch_name="feature-x", json_output=True)
+
+    assert exc_info.value.code == 2
+
+    stdout_lines = [
+        line for line in capsys.readouterr().out.strip().splitlines() if line
+    ]
+    assert len(stdout_lines) == 1
+    payload = json.loads(stdout_lines[0])
+    assert payload["ok"] is False
+    assert payload["command"] == "track"
+    assert payload["error"]["type"] == "NonInteractiveError"
+    assert "multiple candidates" in payload["error"]["message"]

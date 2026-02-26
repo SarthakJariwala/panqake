@@ -1,19 +1,41 @@
 """Tests for merge.py command module using dependency injection pattern."""
 
+from unittest.mock import patch
+
 import pytest
 
 from panqake.commands.merge import (
     cleanup_local_branch_core,
+    merge_branch,
     merge_branch_core,
     update_child_branches_core,
     update_pr_base_for_direct_children,
+    validate_merge_method,
 )
 from panqake.ports import (
     GitHubCLINotFoundError,
+    PanqakeError,
     PRMergeError,
     UserCancelledError,
 )
 from panqake.testing.fakes import FakeConfig, FakeGit, FakeGitHub, FakeUI
+
+
+class TestValidateMergeMethod:
+    """Tests for validate_merge_method."""
+
+    @pytest.mark.parametrize("method", ["squash", "rebase", "merge"])
+    def test_valid_methods(self, method):
+        assert validate_merge_method(method) == method
+
+    @pytest.mark.parametrize("method", ["SQUASH", " Rebase ", "MERGE"])
+    def test_normalizes_input(self, method):
+        result = validate_merge_method(method)
+        assert result == method.strip().lower()
+
+    def test_invalid_method_raises(self):
+        with pytest.raises(PanqakeError, match="Invalid merge method"):
+            validate_merge_method("rebse")
 
 
 class TestUpdatePRBaseForDirectChildren:
@@ -297,6 +319,30 @@ class TestMergeBranchCore:
         assert "CI failed" in result.failed_checks
         assert "feature" in github.merged_prs
 
+    def test_proceeds_with_failed_checks_when_allow_flag_set(self):
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        github = FakeGitHub(
+            branches_with_pr={"feature"},
+            pr_checks={"feature": (False, ["CI failed"])},
+        )
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
+
+        result = merge_branch_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature",
+            delete_branch=False,
+            update_children=False,
+            allow_failed_checks=True,
+        )
+
+        assert result.checks_passed is False
+        assert ui.confirm_calls == []
+        assert "feature" in github.merged_prs
+
     def test_updates_child_pr_bases(self):
         git = FakeGit(branches=["main", "feature", "child"], current_branch="main")
         github = FakeGitHub(branches_with_pr={"feature", "child"})
@@ -405,4 +451,165 @@ class TestUserCancellation:
                 config=config,
                 ui=ui,
                 branch_name="feature",
+            )
+
+
+class TestMergeBranchEntrypoint:
+    """Tests for the merge_branch entrypoint wrapper."""
+
+    def test_assume_yes_skips_confirmation(self):
+        """Merge proceeds without calling prompt when assume_yes=True."""
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        github = FakeGitHub(branches_with_pr={"feature"})
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+
+        with (
+            patch("panqake.commands.merge.RealGit", return_value=git),
+            patch("panqake.commands.merge.RealGitHub", return_value=github),
+            patch("panqake.commands.merge.RealConfig", return_value=config),
+            patch(
+                "panqake.commands.merge.merge_branch_core",
+                wraps=merge_branch_core,
+            ) as mock_core,
+        ):
+            merge_branch(
+                "feature",
+                delete_branch=False,
+                update_children=False,
+                assume_yes=True,
+            )
+
+            mock_core.assert_called_once()
+            call_kwargs = mock_core.call_args[1]
+            assert call_kwargs["merge_method"] == "squash"
+            # Confirm prompt should not have been called (FakeUI strict=False
+            # would raise if prompt was called without queued responses)
+
+    def test_method_flag_overrides_default(self):
+        """Explicit --method flag is forwarded to merge_branch_core."""
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        github = FakeGitHub(branches_with_pr={"feature"})
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+
+        with (
+            patch("panqake.commands.merge.RealGit", return_value=git),
+            patch("panqake.commands.merge.RealGitHub", return_value=github),
+            patch("panqake.commands.merge.RealConfig", return_value=config),
+            patch(
+                "panqake.commands.merge.merge_branch_core",
+                wraps=merge_branch_core,
+            ) as mock_core,
+        ):
+            merge_branch(
+                "feature",
+                delete_branch=False,
+                update_children=False,
+                assume_yes=True,
+                method="rebase",
+            )
+
+            mock_core.assert_called_once()
+            call_kwargs = mock_core.call_args[1]
+            assert call_kwargs["merge_method"] == "rebase"
+
+    def test_assume_yes_does_not_imply_allow_failed_checks(self):
+        """--yes alone should not bypass failed-check protection."""
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        github = FakeGitHub(branches_with_pr={"feature"})
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+
+        with (
+            patch("panqake.commands.merge.RealGit", return_value=git),
+            patch("panqake.commands.merge.RealGitHub", return_value=github),
+            patch("panqake.commands.merge.RealConfig", return_value=config),
+            patch("panqake.commands.merge.merge_branch_core") as mock_core,
+        ):
+            merge_branch(
+                "feature",
+                delete_branch=False,
+                update_children=False,
+                assume_yes=True,
+            )
+
+            mock_core.assert_called_once()
+            call_kwargs = mock_core.call_args[1]
+            assert call_kwargs["allow_failed_checks"] is False
+
+    def test_assume_yes_with_allow_failed_checks(self):
+        """--yes --allow-failed-checks should merge regardless of check status."""
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        github = FakeGitHub(branches_with_pr={"feature"})
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+
+        with (
+            patch("panqake.commands.merge.RealGit", return_value=git),
+            patch("panqake.commands.merge.RealGitHub", return_value=github),
+            patch("panqake.commands.merge.RealConfig", return_value=config),
+            patch("panqake.commands.merge.merge_branch_core") as mock_core,
+        ):
+            merge_branch(
+                "feature",
+                delete_branch=False,
+                update_children=False,
+                assume_yes=True,
+                allow_failed_checks=True,
+            )
+
+            mock_core.assert_called_once()
+            call_kwargs = mock_core.call_args[1]
+            assert call_kwargs["allow_failed_checks"] is True
+
+    def test_json_does_not_implicitly_allow_failed_checks(self):
+        """--json should not bypass failed-check protection by itself."""
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        github = FakeGitHub(branches_with_pr={"feature"})
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+
+        with (
+            patch("panqake.commands.merge.RealGit", return_value=git),
+            patch("panqake.commands.merge.RealGitHub", return_value=github),
+            patch("panqake.commands.merge.RealConfig", return_value=config),
+            patch(
+                "panqake.commands.merge.merge_branch_core",
+                wraps=merge_branch_core,
+            ) as mock_core,
+        ):
+            merge_branch(
+                "feature",
+                delete_branch=False,
+                update_children=False,
+                json_output=True,
+            )
+
+            mock_core.assert_called_once()
+            call_kwargs = mock_core.call_args[1]
+            assert call_kwargs["allow_failed_checks"] is False
+
+    def test_invalid_method_flag_fails_before_core(self):
+        """Invalid --method value should exit before merge side effects run."""
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        github = FakeGitHub(branches_with_pr={"feature"})
+        config = FakeConfig(stack={"feature": {"parent": "main"}})
+        ui = FakeUI(strict=False)
+
+        with (
+            patch("panqake.commands.merge.RealGit", return_value=git),
+            patch("panqake.commands.merge.RealGitHub", return_value=github),
+            patch("panqake.commands.merge.RealConfig", return_value=config),
+            patch("panqake.commands.merge.RealUI", return_value=ui),
+            patch("panqake.commands.merge.merge_branch_core") as mock_core,
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                merge_branch(
+                    "feature",
+                    delete_branch=False,
+                    update_children=True,
+                    assume_yes=True,
+                    method="rebse",
+                )
+
+            assert exc_info.value.code == 2
+            mock_core.assert_not_called()
+            assert any(
+                "Invalid merge method 'rebse'" in msg for msg in ui.error_messages
             )

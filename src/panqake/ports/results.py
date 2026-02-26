@@ -179,12 +179,21 @@ class DownResult:
 
 
 @dataclass(frozen=True)
+class BranchNode:
+    """A branch and its children, forming a tree structure."""
+
+    name: BranchName
+    children: list["BranchNode"]
+
+
+@dataclass(frozen=True)
 class ListResult:
     """Result of listing the branch stack."""
 
     root_branch: BranchName
     current_branch: BranchName
     target_branch: BranchName
+    tree: BranchNode | None = None
 
 
 DeleteStatus = Literal["deleted", "skipped"]

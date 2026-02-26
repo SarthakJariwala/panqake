@@ -8,12 +8,14 @@ from panqake.ports import (
     CommitError,
     ConfigPort,
     GitPort,
+    JsonUI,
     ModifyResult,
     NoChangesError,
     RealConfig,
     RealGit,
     RealUI,
     UIPort,
+    emit_json_success,
     run_command,
 )
 
@@ -134,7 +136,11 @@ def modify_commit_core(
 
 
 def modify_commit(
-    commit_flag: bool = False, message: str | None = None, no_amend: bool = False
+    commit_flag: bool = False,
+    message: str | None = None,
+    no_amend: bool = False,
+    *,
+    json_output: bool = False,
 ) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
@@ -146,9 +152,9 @@ def modify_commit(
     """
     git = RealGit()
     config = RealConfig()
-    ui = RealUI()
+    ui = JsonUI() if json_output else RealUI()
 
-    def core() -> None:
+    def core() -> ModifyResult:
         result = modify_commit_core(
             git=git,
             config=config,
@@ -158,14 +164,18 @@ def modify_commit(
             no_amend=no_amend,
         )
 
-        if result.amended:
-            ui.print_success("Commit amended successfully")
-        else:
-            ui.print_success("New commit created successfully")
+        if not json_output:
+            if result.amended:
+                ui.print_success("Commit amended successfully")
+            else:
+                ui.print_success("New commit created successfully")
 
-        ui.print_info(
-            "Changes have been committed. To update the remote branch and PR, run:"
-        )
-        ui.print_info(f"  pq submit {result.branch_name}")
+            ui.print_info(
+                "Changes have been committed. To update the remote branch and PR, run:"
+            )
+            ui.print_info(f"  pq submit {result.branch_name}")
+        return result
 
-    run_command(ui, core)
+    result = run_command(ui, core, json_output=json_output, command="modify")
+    if json_output and result is not None:
+        emit_json_success("modify", result)

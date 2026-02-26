@@ -11,6 +11,7 @@ from .exceptions import (
     BranchNotFoundError,
     CommitError,
     GitOperationError,
+    NonInteractiveError,
     PRBaseUpdateError,
     PRCreationError,
     PRMergeError,
@@ -621,3 +622,115 @@ class RealFilesystem:
 
     def resolve_path(self, path: str) -> str:
         return str(Path(path).expanduser().resolve())
+
+
+class JsonUI:
+    """UI implementation for --json mode.
+
+    All print methods are no-ops (output is suppressed).
+    All prompt methods raise NonInteractiveError since JSON mode is non-interactive.
+    """
+
+    def prompt_input(
+        self,
+        message: str,
+        default: str = "",
+        completer: list[str] | None = None,
+        validator: object | None = None,
+    ) -> str:
+        raise NonInteractiveError("text input")
+
+    def prompt_path(
+        self,
+        message: str,
+        default: str = "",
+    ) -> str:
+        raise NonInteractiveError("path input")
+
+    def print_success(self, message: str) -> None:
+        pass
+
+    def print_error(self, message: str) -> None:
+        pass
+
+    def print_info(self, message: str) -> None:
+        pass
+
+    def print_muted(self, message: str) -> None:
+        pass
+
+    def prompt_select_files(
+        self,
+        files: list[FileInfo],
+        message: str,
+        default_all: bool = False,
+    ) -> list[str]:
+        raise NonInteractiveError("file selection")
+
+    def prompt_confirm(self, message: str, default: bool = False) -> bool:
+        raise NonInteractiveError("confirmation")
+
+    def prompt_select_reviewers(
+        self, potential_reviewers: list[str], include_skip_option: bool = True
+    ) -> list[str]:
+        raise NonInteractiveError("reviewer selection")
+
+    def prompt_input_multiline(
+        self,
+        message: str,
+        default: str = "",
+    ) -> str:
+        raise NonInteractiveError("multiline input")
+
+    def prompt_select_branch(
+        self,
+        branches: list[str],
+        message: str,
+        current_branch: str | None = None,
+        exclude_protected: bool = False,
+        enable_search: bool = True,
+    ) -> str | None:
+        raise NonInteractiveError("branch selection")
+
+    def display_branch_tree(
+        self,
+        root_branch: str,
+        current_branch: str | None = None,
+    ) -> None:
+        pass
+
+
+class PRJsonUI(JsonUI):
+    """Non-interactive UI policy for JSON-mode PR creation.
+
+    Returns sensible defaults for prompts that PR creation requires,
+    while keeping all other prompts non-interactive.
+    """
+
+    def prompt_input(
+        self,
+        message: str,
+        default: str = "",
+        completer: list[str] | None = None,
+        validator: object | None = None,
+    ) -> str:
+        return default
+
+    def prompt_input_multiline(
+        self,
+        message: str,
+        default: str = "",
+    ) -> str:
+        return default
+
+    def prompt_confirm(self, message: str, default: bool = False) -> bool:
+        # In JSON mode, only auto-confirm the final create action.
+        # For preflight confirmations (for example push prompts), skip.
+        if message == "Create this pull request?":
+            return True
+        return False
+
+    def prompt_select_reviewers(
+        self, potential_reviewers: list[str], include_skip_option: bool = True
+    ) -> list[str]:
+        return []

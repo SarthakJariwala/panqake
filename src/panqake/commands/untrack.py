@@ -8,11 +8,13 @@ from panqake.ports import (
     BranchNotFoundError,
     ConfigPort,
     GitPort,
+    JsonUI,
     RealConfig,
     RealGit,
     RealUI,
     UIPort,
     UntrackResult,
+    emit_json_success,
     run_command,
 )
 from panqake.utils.questionary_prompt import format_branch
@@ -57,7 +59,9 @@ def untrack_branch_core(
     )
 
 
-def untrack(branch_name: BranchName | None = None) -> None:
+def untrack(
+    branch_name: BranchName | None = None, *, json_output: bool = False
+) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
     This thin wrapper:
@@ -68,9 +72,9 @@ def untrack(branch_name: BranchName | None = None) -> None:
     """
     git = RealGit()
     config = RealConfig()
-    ui = RealUI()
+    ui = JsonUI() if json_output else RealUI()
 
-    def core() -> None:
+    def core() -> UntrackResult:
         result = untrack_branch_core(
             git=git,
             config=config,
@@ -78,11 +82,18 @@ def untrack(branch_name: BranchName | None = None) -> None:
             branch_name=branch_name,
         )
 
-        if result.was_tracked:
-            ui.print_success(
-                f"Successfully removed branch '{result.branch_name}' from the stack"
-            )
-        else:
-            ui.print_error(f"Branch '{result.branch_name}' was not found in the stack")
+        if not json_output:
+            if result.was_tracked:
+                ui.print_success(
+                    f"Successfully removed branch '{result.branch_name}' from the stack"
+                )
+            else:
+                ui.print_error(
+                    f"Branch '{result.branch_name}' was not found in the stack"
+                )
 
-    run_command(ui, core)
+        return result
+
+    result = run_command(ui, core, json_output=json_output, command="untrack")
+    if json_output and result is not None:
+        emit_json_success("untrack", result)

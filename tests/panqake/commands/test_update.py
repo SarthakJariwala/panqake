@@ -293,6 +293,25 @@ class TestUpdateCore:
         assert result.updated_branches == []
         assert result.affected_branches == ["feature-2"]
 
+    def test_assume_yes_skips_confirmation(self):
+        git = FakeGit(
+            branches=["main", "feature-1", "feature-2"], current_branch="feature-1"
+        )
+        config = FakeConfig(
+            stack={
+                "feature-1": {"parent": "main"},
+                "feature-2": {"parent": "feature-1"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        result = update_core(
+            git, config, ui, branch_name="feature-1", assume_yes=True, skip_push=True
+        )
+
+        assert result.updated_branches == ["feature-2"]
+        assert ui.confirm_calls == []
+
     def test_raises_on_user_cancel(self):
         git = FakeGit(
             branches=["main", "feature-1", "feature-2"], current_branch="feature-1"

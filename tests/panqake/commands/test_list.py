@@ -120,3 +120,23 @@ class TestListBranchesCore:
         root, current = ui.display_tree_calls[0]
         assert root == "main"
         assert current == "other"  # Current branch passed for highlighting
+
+    def test_tree_always_populated(self):
+        """tree should always be populated, not just in json mode."""
+        git = FakeGit(branches=["main", "feature", "child"], current_branch="feature")
+        config = FakeConfig(
+            stack={
+                "feature": {"parent": "main"},
+                "child": {"parent": "feature"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        result = list_branches_core(git, config, ui)
+
+        assert result.tree is not None
+        assert result.tree.name == "main"
+        assert len(result.tree.children) == 1
+        assert result.tree.children[0].name == "feature"
+        assert len(result.tree.children[0].children) == 1
+        assert result.tree.children[0].children[0].name == "child"

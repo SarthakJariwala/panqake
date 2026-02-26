@@ -1,9 +1,12 @@
 """Tests for pr.py command module using dependency injection pattern."""
 
+import json
+
 import pytest
 
 from panqake.commands.pr import (
     compute_branch_path,
+    create_pull_requests,
     create_pr_for_branch_core,
     create_pull_requests_core,
     find_oldest_branch_without_pr_core,
@@ -463,3 +466,145 @@ class TestUserCancellation:
                 branch="feature",
                 base="main",
             )
+
+
+def test_create_pull_requests_json_creates_pr_non_interactive(monkeypatch, capsys):
+    """JSON mode should create PRs with deterministic defaults."""
+    state: dict[str, object] = {}
+
+    class NoisyGit:
+        def get_current_branch(self):
+            return "feature-x"
+
+        def branch_exists(self, branch):
+            return branch in {"main", "feature-x"}
+
+        def validate_branch(self, branch):
+            if not self.branch_exists(branch):
+                raise BranchNotFoundError(f"Branch '{branch}' does not exist")
+
+        def is_branch_pushed_to_remote(self, branch):
+            return branch in {"main", "feature-x"}
+
+        def branch_has_commits(self, branch, parent_branch):
+            return True
+
+        def get_last_commit_subject(self, branch):
+            return "Implement json PR flow"
+
+    class CreatingGitHub:
+        def is_cli_installed(self):
+            return True
+
+        def branch_has_pr(self, branch):
+            return False
+
+        def get_pr_url(self, branch):
+            return None
+
+        def get_potential_reviewers(self):
+            return ["alice"]
+
+        def create_pr(self, base, head, title, body="", reviewers=None, draft=False):
+            state["create_pr"] = (base, head, title, body, reviewers, draft)
+            return "https://github.com/org/repo/pull/101"
+
+    class NoopConfig:
+        def get_parent_branch(self, branch):
+            if branch == "feature-x":
+                return "main"
+            return None
+
+    monkeypatch.setattr("panqake.commands.pr.RealGit", NoisyGit)
+    monkeypatch.setattr("panqake.commands.pr.RealGitHub", CreatingGitHub)
+    monkeypatch.setattr("panqake.commands.pr.RealConfig", NoopConfig)
+
+    create_pull_requests(branch_name="feature-x", json_output=True)
+
+    stdout_lines = [
+        line for line in capsys.readouterr().out.strip().splitlines() if line
+    ]
+    assert len(stdout_lines) == 1
+
+    payload = json.loads(stdout_lines[0])
+    assert payload["ok"] is True
+    assert payload["command"] == "pr"
+    assert payload["result"]["results"][0]["status"] == "created"
+    assert (
+        payload["result"]["results"][0]["pr_url"]
+        == "https://github.com/org/repo/pull/101"
+    )
+    assert state["create_pr"] == (
+        "main",
+        "feature-x",
+        "[feature-x] Implement json PR flow",
+        "",
+        None,
+        False,
+    )
+
+
+def test_create_pull_requests_json_skips_when_no_commits(monkeypatch, capsys):
+    """JSON mode should preserve no-commits preflight skip semantics."""
+    state: dict[str, int] = {"create_pr_calls": 0}
+
+    class NoisyGit:
+        def get_current_branch(self):
+            return "feature-x"
+
+        def branch_exists(self, branch):
+            return branch in {"main", "feature-x"}
+
+        def validate_branch(self, branch):
+            if not self.branch_exists(branch):
+                raise BranchNotFoundError(f"Branch '{branch}' does not exist")
+
+        def is_branch_pushed_to_remote(self, branch):
+            return branch in {"main", "feature-x"}
+
+        def branch_has_commits(self, branch, parent_branch):
+            return False
+
+        def get_last_commit_subject(self, branch):
+            return "No-op change"
+
+    class CreatingGitHub:
+        def is_cli_installed(self):
+            return True
+
+        def branch_has_pr(self, branch):
+            return False
+
+        def get_pr_url(self, branch):
+            return None
+
+        def get_potential_reviewers(self):
+            return []
+
+        def create_pr(self, base, head, title, body="", reviewers=None, draft=False):
+            state["create_pr_calls"] += 1
+            return "https://github.com/org/repo/pull/102"
+
+    class NoopConfig:
+        def get_parent_branch(self, branch):
+            if branch == "feature-x":
+                return "main"
+            return None
+
+    monkeypatch.setattr("panqake.commands.pr.RealGit", NoisyGit)
+    monkeypatch.setattr("panqake.commands.pr.RealGitHub", CreatingGitHub)
+    monkeypatch.setattr("panqake.commands.pr.RealConfig", NoopConfig)
+
+    create_pull_requests(branch_name="feature-x", json_output=True)
+
+    stdout_lines = [
+        line for line in capsys.readouterr().out.strip().splitlines() if line
+    ]
+    assert len(stdout_lines) == 1
+
+    payload = json.loads(stdout_lines[0])
+    assert payload["ok"] is True
+    assert payload["command"] == "pr"
+    assert payload["result"]["results"][0]["status"] == "skipped"
+    assert payload["result"]["results"][0]["skip_reason"] == "no_commits"
+    assert state["create_pr_calls"] == 0

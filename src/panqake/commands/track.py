@@ -8,16 +8,46 @@ from panqake.ports import (
     BranchNotFoundError,
     ConfigPort,
     GitPort,
+    JsonUI,
+    NonInteractiveError,
     RealConfig,
     RealGit,
     RealUI,
     TrackResult,
     UIPort,
     UserCancelledError,
+    emit_json_success,
     run_command,
 )
 from panqake.utils.questionary_prompt import format_branch
 from panqake.utils.types import BranchName
+
+
+class _TrackJsonUI(JsonUI):
+    """Non-interactive UI policy for JSON-mode branch tracking."""
+
+    def prompt_select_branch(
+        self,
+        branches: list[str],
+        message: str,
+        current_branch: str | None = None,
+        exclude_protected: bool = False,
+        enable_search: bool = True,
+    ) -> str | None:
+        filtered = [b for b in branches if b != current_branch]
+        if exclude_protected:
+            filtered = [b for b in filtered if b not in ("main", "master")]
+
+        if len(filtered) == 1:
+            return filtered[0]
+
+        if not filtered:
+            raise NonInteractiveError("parent branch selection")
+
+        candidates = ", ".join(filtered)
+        raise NonInteractiveError(
+            f"parent branch selection (multiple candidates: {candidates})"
+        )
 
 
 def track_branch_core(
@@ -77,7 +107,7 @@ def track_branch_core(
     )
 
 
-def track(branch_name: BranchName | None = None) -> None:
+def track(branch_name: BranchName | None = None, *, json_output: bool = False) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
     This thin wrapper:
@@ -88,9 +118,9 @@ def track(branch_name: BranchName | None = None) -> None:
     """
     git = RealGit()
     config = RealConfig()
-    ui = RealUI()
+    ui = _TrackJsonUI() if json_output else RealUI()
 
-    def core() -> None:
+    def core() -> TrackResult:
         result = track_branch_core(
             git=git,
             config=config,
@@ -98,9 +128,14 @@ def track(branch_name: BranchName | None = None) -> None:
             branch_name=branch_name,
         )
 
-        ui.print_success(
-            f"Successfully added branch '{result.branch_name}' to the stack "
-            f"with parent '{result.parent_branch}'"
-        )
+        if not json_output:
+            ui.print_success(
+                f"Successfully added branch '{result.branch_name}' to the stack "
+                f"with parent '{result.parent_branch}'"
+            )
 
-    run_command(ui, core)
+        return result
+
+    result = run_command(ui, core, json_output=json_output, command="track")
+    if json_output and result is not None:
+        emit_json_success("track", result)

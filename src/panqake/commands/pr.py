@@ -13,11 +13,13 @@ from panqake.ports import (
     GitHubPort,
     GitPort,
     NoChangesError,
+    PRJsonUI,
     RealConfig,
     RealGit,
     RealGitHub,
     RealUI,
     UIPort,
+    emit_json_success,
     run_command,
 )
 from panqake.utils.questionary_prompt import PRTitleValidator, format_branch
@@ -301,7 +303,10 @@ def create_pull_requests_core(
 
 
 def create_pull_requests(
-    branch_name: BranchName | None = None, draft: bool = False
+    branch_name: BranchName | None = None,
+    draft: bool = False,
+    *,
+    json_output: bool = False,
 ) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
@@ -314,9 +319,9 @@ def create_pull_requests(
     git = RealGit()
     github = RealGitHub()
     config = RealConfig()
-    ui = RealUI()
+    ui = PRJsonUI() if json_output else RealUI()
 
-    def core() -> None:
+    def core() -> CreatePRStackResult:
         result = create_pull_requests_core(
             git=git,
             github=github,
@@ -326,22 +331,29 @@ def create_pull_requests(
             draft=draft,
         )
 
-        created_count = sum(1 for r in result.results if r.status == "created")
-        existing_count = sum(1 for r in result.results if r.status == "already_exists")
-        skipped_count = sum(1 for r in result.results if r.status == "skipped")
+        if not json_output:
+            created_count = sum(1 for r in result.results if r.status == "created")
+            existing_count = sum(
+                1 for r in result.results if r.status == "already_exists"
+            )
+            skipped_count = sum(1 for r in result.results if r.status == "skipped")
 
-        if created_count > 0:
-            ui.print_success(f"Created {created_count} pull request(s)")
-        if existing_count > 0:
-            ui.print_info(f"{existing_count} PR(s) already existed")
-        if skipped_count > 0:
-            ui.print_info(f"{skipped_count} branch(es) skipped")
+            if created_count > 0:
+                ui.print_success(f"Created {created_count} pull request(s)")
+            if existing_count > 0:
+                ui.print_info(f"{existing_count} PR(s) already existed")
+            if skipped_count > 0:
+                ui.print_info(f"{skipped_count} branch(es) skipped")
 
-        for r in result.results:
-            if r.status == "created" and r.pr_url:
-                ui.print_info(f"  {format_branch(r.branch)}: {r.pr_url}")
+            for r in result.results:
+                if r.status == "created" and r.pr_url:
+                    ui.print_info(f"  {format_branch(r.branch)}: {r.pr_url}")
 
-    run_command(ui, core)
+        return result
+
+    result = run_command(ui, core, json_output=json_output, command="pr")
+    if json_output and result is not None:
+        emit_json_success("pr", result)
 
 
 def create_pr_for_branch(

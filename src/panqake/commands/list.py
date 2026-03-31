@@ -27,6 +27,7 @@ def list_branches_core(
     config: ConfigPort,
     ui: UIPort,
     branch_name: BranchName | None = None,
+    show_files: bool = False,
 ) -> ListResult:
     """List the branch stack.
 
@@ -37,6 +38,7 @@ def list_branches_core(
         config: Stack configuration interface
         ui: User interaction interface
         branch_name: Target branch to show stack for (uses current if None)
+        show_files: Whether to show files changed per branch
 
     Returns:
         ListResult with the root, current, and target branches
@@ -57,25 +59,58 @@ def list_branches_core(
 
     root_branch = find_stack_root(target, config)
 
-    ui.display_branch_tree(root_branch, current)
+    # Build tree and metadata in one traversal
+    commit_info: dict[BranchName, tuple[str, str]] = {}
+    files_info: dict[BranchName, list[str]] | None = {} if show_files else None
 
     def build_tree(branch: BranchName) -> BranchNode:
         children = config.get_child_branches(branch)
+
+        commit_hash = git.get_commit_hash(branch) or ""
+        if commit_hash:
+            commit_info[branch] = (commit_hash, "")
+
+        files_changed: list[str] | None = None
+        if files_info is not None:
+            parent = config.get_parent_branch(branch)
+            if parent:
+                files_changed = git.get_files_changed_in_branch(branch, parent)
+                files_info[branch] = files_changed
+
         return BranchNode(
             name=branch,
             children=[build_tree(child) for child in sorted(children)],
+            commit_hash=commit_hash or None,
+            files_changed=files_changed,
         )
+
+    tree = build_tree(root_branch)
+
+    staged = git.get_staged_files() if show_files else None
+    unstaged = git.get_unstaged_files() if show_files else None
+
+    ui.display_branch_tree(
+        root_branch,
+        current,
+        commit_info=commit_info or None,
+        files_info=files_info or None,
+        staged_files=staged or None,
+        unstaged_files=unstaged or None,
+    )
 
     return ListResult(
         root_branch=root_branch,
         current_branch=current,
         target_branch=target,
-        tree=build_tree(root_branch),
+        tree=tree,
     )
 
 
 def list_branches(
-    branch_name: BranchName | None = None, *, json_output: bool = False
+    branch_name: BranchName | None = None,
+    *,
+    json_output: bool = False,
+    show_files: bool = False,
 ) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
@@ -94,6 +129,7 @@ def list_branches(
             config=config,
             ui=ui,
             branch_name=branch_name,
+            show_files=show_files,
         )
 
     result = run_command(ui, core, json_output=json_output, command="list")

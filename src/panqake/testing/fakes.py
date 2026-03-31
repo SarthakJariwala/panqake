@@ -44,6 +44,7 @@ class FakeGit:
         merged_branches: dict[BranchName, list[BranchName]] | None = None,
         unpushed_changes: dict[BranchName, bool] | None = None,
         commit_hashes: dict[BranchName, str] | None = None,
+        files_changed: dict[tuple[BranchName, BranchName], list[str]] | None = None,
     ):
         self.branches: set[BranchName] = set(
             branches if branches is not None else ["main"]
@@ -65,6 +66,9 @@ class FakeGit:
         )
         self._unpushed_changes: dict[BranchName, bool] = dict(unpushed_changes or {})
         self._commit_hashes: dict[BranchName, str] = dict(commit_hashes or {})
+        self._files_changed: dict[tuple[BranchName, BranchName], list[str]] = dict(
+            files_changed or {}
+        )
 
         # Track calls for verification
         self.created_branches: list[tuple[BranchName, BranchName]] = []
@@ -289,6 +293,11 @@ class FakeGit:
 
     def get_commit_hash(self, branch: BranchName) -> str | None:
         return self._commit_hashes.get(branch)
+
+    def get_files_changed_in_branch(
+        self, branch: BranchName, parent: BranchName
+    ) -> list[str]:
+        return self._files_changed.get((branch, parent), [])
 
     def rebase_onto_in_worktree(
         self, branch: BranchName, new_base: BranchName, abort_on_conflict: bool = True
@@ -682,6 +691,10 @@ class FakeUI:
         self,
         root_branch: str,
         current_branch: str | None = None,
+        commit_info: dict[str, tuple[str, str]] | None = None,
+        files_info: dict[str, list[str]] | None = None,
+        staged_files: list[FileInfo] | None = None,
+        unstaged_files: list[FileInfo] | None = None,
     ) -> None:
         self.display_tree_calls.append((root_branch, current_branch))
 

@@ -168,22 +168,32 @@ pq list
 pq ls
 ```
 
-This displays a tree view of all branches in your stack.
+This displays a tree view of all branches in your stack, including the short commit hash for each branch.
 
 Before merge:
 
 ```bash
 main
-└── auth-backend
-        └── auth-frontend
+└── auth-backend  a1b2c3d4
+        └── auth-frontend  e5f6a7b8
 ```
 
 After merge:
 
 ```bash
 main
-└── auth-frontend
+└── auth-frontend  e5f6a7b8
 ```
+
+To also see the files changed in each branch relative to its parent, use the `--files` / `-f` flag:
+
+```bash
+pq ls --files
+# or
+pq ls -f
+```
+
+This adds a file-by-file breakdown under each branch in the tree, plus a summary of your current staged and unstaged files.
 
 ## Navigating Your Stack
 

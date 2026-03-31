@@ -152,10 +152,13 @@ def list_command(
     branch_name: str | None = typer.Argument(
         None, help="Optional branch to start from"
     ),
+    files: bool = typer.Option(
+        False, "-f", "--files", help="Show files changed in each branch"
+    ),
     json: bool = JSON_OPTION,
 ):
     """List the branch stack."""
-    list_branches(branch_name, json_output=json)
+    list_branches(branch_name, json_output=json, show_files=files)
 
 
 @app.command(name="ls")
@@ -163,10 +166,13 @@ def ls_command(
     branch_name: str | None = typer.Argument(
         None, help="Optional branch to start from"
     ),
+    files: bool = typer.Option(
+        False, "-f", "--files", help="Show files changed in each branch"
+    ),
     json: bool = JSON_OPTION,
 ):
     """Alias for 'list' - List the branch stack."""
-    list_branches(branch_name, json_output=json)
+    list_branches(branch_name, json_output=json, show_files=files)
 
 
 @app.command()

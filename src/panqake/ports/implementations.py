@@ -298,6 +298,24 @@ class RealGit:
         result = run_git_command(["rev-parse", branch], silent_fail=True)
         return result.strip() if result else None
 
+    def get_files_changed_in_branch(
+        self, branch: BranchName, parent: BranchName
+    ) -> list[str]:
+        from panqake.utils.git import run_git_command
+
+        result = run_git_command(
+            ["diff", f"{parent}...{branch}", "--name-status"], silent_fail=True
+        )
+        if not result:
+            return []
+        entries: list[str] = []
+        for line in result.splitlines():
+            status, _, path = line.partition("\t")
+            if not status or not path:
+                continue
+            entries.append(f"{status[0]}\t{path}")
+        return entries
+
     def rebase_onto_in_worktree(
         self, branch: BranchName, new_base: BranchName, abort_on_conflict: bool = True
     ) -> None:
@@ -596,6 +614,10 @@ class RealUI:
         self,
         root_branch: str,
         current_branch: str | None = None,
+        commit_info: dict[str, tuple[str, str]] | None = None,
+        files_info: dict[str, list[str]] | None = None,
+        staged_files: list[FileInfo] | None = None,
+        unstaged_files: list[FileInfo] | None = None,
     ) -> None:
         from panqake.utils.questionary_prompt import format_branch, print_formatted_text
         from panqake.utils.stack import Stacks
@@ -605,9 +627,39 @@ class RealUI:
         )
         stacks = Stacks()
         tree_output = stacks.visualize_tree(
-            root=root_branch, current_branch=current_branch or ""
+            root=root_branch,
+            current_branch=current_branch or "",
+            commit_info=commit_info,
+            files_info=files_info,
         )
         print_formatted_text(tree_output)
+
+        status_map = {
+            "Modified": ("M", "yellow"),
+            "Added": ("A", "green"),
+            "Deleted": ("D", "red"),
+            "Renamed": ("R", "cyan"),
+            "Copied": ("C", "cyan"),
+        }
+
+        def _render_file_section(header: str, files: list[FileInfo]) -> None:
+            print_formatted_text("")
+            print_formatted_text(f"[info]{header}[/info]")
+            for file_info in files:
+                status, has_status, path = file_info.display.partition(": ")
+                style = status_map.get(status) if has_status else None
+                if style:
+                    letter, color = style
+                    print_formatted_text(
+                        f"  [{color}]{letter}[/{color}]  [muted]{path}[/muted]"
+                    )
+                else:
+                    print_formatted_text(f"  [muted]{file_info.display}[/muted]")
+
+        if staged_files:
+            _render_file_section("Staged:", staged_files)
+        if unstaged_files:
+            _render_file_section("Unstaged:", unstaged_files)
 
 
 class RealFilesystem:
@@ -696,6 +748,10 @@ class JsonUI:
         self,
         root_branch: str,
         current_branch: str | None = None,
+        commit_info: dict[str, tuple[str, str]] | None = None,
+        files_info: dict[str, list[str]] | None = None,
+        staged_files: list[FileInfo] | None = None,
+        unstaged_files: list[FileInfo] | None = None,
     ) -> None:
         pass
 

@@ -282,6 +282,16 @@ class GitPort(Protocol):
         """
         ...
 
+    def get_files_changed_in_branch(
+        self, branch: BranchName, parent: BranchName
+    ) -> list[str]:
+        """Get list of files changed in branch relative to parent.
+
+        Returns:
+            List of file paths changed in branch since parent
+        """
+        ...
+
     def rebase_onto_in_worktree(
         self, branch: BranchName, new_base: BranchName, abort_on_conflict: bool = True
     ) -> None:
@@ -598,12 +608,20 @@ class UIPort(Protocol):
         self,
         root_branch: str,
         current_branch: str | None = None,
+        commit_info: dict[str, tuple[str, str]] | None = None,
+        files_info: dict[str, list[str]] | None = None,
+        staged_files: list[FileInfo] | None = None,
+        unstaged_files: list[FileInfo] | None = None,
     ) -> None:
         """Display the branch stack tree.
 
         Args:
             root_branch: Root branch to start tree from
             current_branch: Current branch to highlight
+            commit_info: Optional mapping of branch -> (short_hash, subject)
+            files_info: Optional mapping of branch -> list of changed file paths
+            staged_files: Optional list of staged files to show below the tree
+            unstaged_files: Optional list of unstaged files to show below the tree
         """
         ...
 

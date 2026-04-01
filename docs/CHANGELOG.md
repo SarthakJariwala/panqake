@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## v0.27.0 - 2026-03-31
+
+### Added
+
+- `pq ls` / `pq list` now shows the short commit hash next to each branch in the tree
+- Added `--files` / `-f` flag to `pq ls` / `pq list` to show files changed per branch (relative to its parent), along with staged and unstaged files below the tree
+
 ## v0.25.1 - 2026-01-07
 
 ### Fixed

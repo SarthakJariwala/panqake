@@ -184,6 +184,9 @@ class BranchNode:
 
     name: BranchName
     children: list["BranchNode"]
+    commit_hash: str | None = None
+    commit_subject: str | None = None
+    files_changed: list[str] | None = None
 
 
 @dataclass(frozen=True)

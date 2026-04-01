@@ -468,13 +468,17 @@ class Stacks:
         return None
 
     def _format_branch_display(
-        self, branch: BranchName, current_branch: BranchName
+        self,
+        branch: BranchName,
+        current_branch: BranchName,
+        commit_info: dict[BranchName, tuple[str, str]] | None = None,
     ) -> str:
         """Format branch display with current branch indicator and worktree info.
 
         Args:
             branch: Branch name to format
             current_branch: Current branch name for highlighting
+            commit_info: Optional mapping of branch -> (full_hash, subject)
 
         Returns:
             Formatted branch display string
@@ -490,63 +494,83 @@ class Stacks:
             dir_name = Path(worktree_path).name
             branch_display += f" @ 📂 {dir_name}"
 
+        # Add commit hash if available
+        if commit_info and branch in commit_info:
+            short_hash, _ = commit_info[branch]
+            branch_display += f"  [muted]{short_hash[:8]}[/muted]"
+
         return branch_display
 
     def _print_branch_tree(
-        self, start_branch: BranchName, current_branch: BranchName
+        self,
+        start_branch: BranchName,
+        current_branch: BranchName,
+        commit_info: dict[BranchName, tuple[str, str]] | None = None,
+        files_info: dict[BranchName, list[str]] | None = None,
     ) -> List[str]:
         """Generate tree representation of branch hierarchy.
 
         Args:
             start_branch: Starting branch for the tree
             current_branch: Current branch name for highlighting
+            commit_info: Optional mapping of branch -> (full_hash, subject)
+            files_info: Optional mapping of branch -> list of changed file paths
 
         Returns:
             List of formatted lines for the tree
         """
         output: List[str] = []
 
-        # Track branches to process with their indent and last-sibling status
-        # Each item is (branch, indent, is_last_child)
-        queue: List[tuple[BranchName, str, bool]] = [(start_branch, "", True)]
+        status_colors = {
+            "M": "yellow",
+            "A": "green",
+            "D": "red",
+            "R": "cyan",
+            "C": "cyan",
+        }
 
-        while queue:
-            branch, indent, is_last = queue.pop(0)
-
-            # Determine the connector for this branch
-            if indent:  # Not the root
-                connector = "└── " if is_last else "├── "
-            else:  # Root branch
-                connector = ""
-
-            # Format and add the branch
+        def render_branch(branch: BranchName, indent: str, is_last: bool) -> None:
+            connector = "└── " if indent and is_last else "├── " if indent else ""
             output.append(
-                f"{indent}{connector}{self._format_branch_display(branch, current_branch)}"
+                f"{indent}{connector}{self._format_branch_display(branch, current_branch, commit_info)}"
             )
 
-            # Get children
-            children: List[BranchName] = sorted(self.get_children(branch))
-            child_count: int = len(children)
+            child_indent = indent + ("    " if is_last else "│   ")
 
-            if children:
-                # Calculate indent for children: add vertical line or space
-                child_indent: str = indent + ("    " if is_last else "│   ")
+            if files_info and branch in files_info:
+                for entry in files_info[branch]:
+                    if "\t" in entry:
+                        status, path = entry.split("\t", 1)
+                        color = status_colors.get(status, "muted")
+                        output.append(
+                            f"{child_indent}  [{color}]{status}[/{color}]  [muted]{path}[/muted]"
+                        )
+                    else:
+                        output.append(f"{child_indent}  [muted]{entry}[/muted]")
 
-                # Add children to queue
-                for i, child in enumerate(children):
-                    is_last_child: bool = i == child_count - 1
-                    queue.insert(i, (child, child_indent, is_last_child))
+            children = sorted(self.get_children(branch))
+            child_count = len(children)
+            for i, child in enumerate(children):
+                render_branch(child, child_indent, i == child_count - 1)
+
+        render_branch(start_branch, "", True)
 
         return output
 
     def visualize_tree(
-        self, root: BranchName = "", current_branch: BranchName = ""
+        self,
+        root: BranchName = "",
+        current_branch: BranchName = "",
+        commit_info: dict[BranchName, tuple[str, str]] | None = None,
+        files_info: dict[BranchName, list[str]] | None = None,
     ) -> str:
         """Generate a text representation of the branch tree with proper formatting.
 
         Args:
             root: The name of the root branch (defaults to empty for all roots)
             current_branch: The current branch name to highlight (defaults to empty)
+            commit_info: Optional mapping of branch -> (full_hash, subject)
+            files_info: Optional mapping of branch -> list of changed file paths
 
         Returns:
             A string visualization of the branch tree with proper tree connectors
@@ -562,7 +586,9 @@ class Stacks:
 
         if root:
             # Start from specific root
-            output.extend(self._print_branch_tree(root, current_branch))
+            output.extend(
+                self._print_branch_tree(root, current_branch, commit_info, files_info)
+            )
         else:
             # Find all root branches (branches with no parent)
             roots: List[BranchName] = []
@@ -577,7 +603,11 @@ class Stacks:
             for i, root_branch in enumerate(roots):
                 if i > 0:
                     output.append("")  # Add blank line between root trees
-                output.extend(self._print_branch_tree(root_branch, current_branch))
+                output.extend(
+                    self._print_branch_tree(
+                        root_branch, current_branch, commit_info, files_info
+                    )
+                )
 
         return "\n".join(output)
 

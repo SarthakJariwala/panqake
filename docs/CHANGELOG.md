@@ -6,6 +6,7 @@
 
 ### Added
 
+- Add `--json` flag for machine-readable output
 - `pq ls` / `pq list` now shows the short commit hash next to each branch in the tree
 - Added `--files` / `-f` flag to `pq ls` / `pq list` to show files changed per branch (relative to its parent), along with staged and unstaged files below the tree
 

@@ -383,6 +383,40 @@ class TestMoveBranchCore:
         # No rebase attempt on e
         assert all(c[0] != "e" for c in git.rebase_onto_calls)
 
+    def test_non_conflict_failure_rolls_back_metadata(self):
+        """A non-conflict rebase failure (e.g., checkout fails) rolls back metadata.
+
+        Stack parent is mutated before the rebase to keep the recovery path clean
+        for conflicts, but a non-conflict failure means the branch was NEVER
+        rebased onto the new parent — so leaving the stack pointing at the new
+        parent would lie. Verify metadata and PR base are restored.
+        """
+        git = FakeGit(branches=["main", "a", "b"], current_branch="main")
+
+        def failing_rebase(branch, new_base, abort_on_conflict=True, upstream=None):
+            raise GitOperationError(f"Failed to checkout branch '{branch}'")
+
+        git.rebase_onto = failing_rebase  # type: ignore[assignment]
+
+        config = FakeConfig(stack={"a": {"parent": "main"}, "b": {"parent": "a"}})
+        github = FakeGitHub(branches_with_pr={"b"})
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitOperationError):
+            move_branch_core(
+                git=git,
+                github=github,
+                config=config,
+                ui=ui,
+                branch_name="b",
+                new_parent="main",
+            )
+
+        # Metadata rolled back to original parent
+        assert config.get_parent_branch("b") == "a"
+        # PR base rolled back too (best-effort)
+        assert github.update_pr_base_calls[-1] == ("b", "a")
+
     def test_worktree_branch_uses_worktree_rebase(self):
         """A branch in a worktree gets rebased via the worktree-aware helper."""
         git = FakeGit(branches=["main", "a", "b"], current_branch="main")

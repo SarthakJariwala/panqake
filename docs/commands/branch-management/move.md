@@ -1,6 +1,6 @@
 # `move`
 
-The `move` command (alias `mv`) reparents a branch within the stack. It updates the panqake metadata, optionally updates the open PR's base on GitHub, then rebases the branch and its descendants onto the new parent so the entire subtree comes along.
+The `move` command (alias `reparent`) reparents a branch within the stack. It updates the panqake metadata, optionally updates the open PR's base on GitHub, then rebases the branch and its descendants onto the new parent so the entire subtree comes along.
 
 This is useful when you realize a branch should sit on top of a different prerequisite — for example, sliding a branch from `main` onto a feature that turned out to be a dependency, or moving a subtree to a sibling stack.
 
@@ -51,7 +51,7 @@ If the branch you move has descendants, they come along automatically — each d
 
 ## After Moving
 
-The rebased branches have new commit SHAs, so the remotes are stale. Run `pq submit` to force-push the rewritten branches.
+The rebased branches have new commit SHAs, so the remotes are stale. The command prints an explicit `pq submit <branch>` line for each rebased branch — run them to force-push.
 
 ## Handling Conflicts
 
@@ -59,9 +59,9 @@ If a rebase conflict occurs, git is left mid-rebase so you can resolve it:
 
 1. Resolve the conflicts in your editor.
 2. Run `git rebase --continue`.
-3. Run `pq update` to finish rebasing any remaining descendants.
+3. Run `pq update <moved-branch>` to finish rebasing any remaining descendants of the moved subtree.
 
-The stack metadata is updated before the rebase begins, so the recovery path is clean — you don't need to re-run `pq move`.
+The stack metadata is updated before the rebase begins, so the recovery path is clean — you don't need to re-run `pq move`. Note that `pq update` defaults to the current branch, which after a conflict is the conflicted descendant; passing the moved branch as an argument ensures all sibling descendants get rebased, not just the ones below where you ended up.
 
 ::: info
 Panqake prevents cycles: you cannot move a branch onto one of its own descendants.

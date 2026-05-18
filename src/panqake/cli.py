@@ -48,7 +48,7 @@ KNOWN_COMMANDS = [
     "submit",
     "merge",
     "move",
-    "mv",  # Alias for move
+    "reparent",  # Alias for move
     "sync",
     "up",
     "down",
@@ -59,7 +59,7 @@ KNOWN_COMMANDS = [
 COMMAND_ALIASES = {
     "ls": "list",
     "co": "switch",
-    "mv": "move",
+    "reparent": "move",
 }
 
 
@@ -378,8 +378,8 @@ def move(
     move_branch(branch_name, to, json_output=json)
 
 
-@app.command(name="mv")
-def mv_command(
+@app.command(name="reparent")
+def reparent_command(
     branch_name: str | None = typer.Argument(
         None, help="Branch to move (default: current branch)"
     ),

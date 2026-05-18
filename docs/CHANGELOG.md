@@ -4,7 +4,7 @@
 
 ### Added
 
-- Added `pq move <branch> --to <new-parent>` (alias `pq mv`) for reparenting a branch in the stack
+- Added `pq move <branch> --to <new-parent>` (alias `pq reparent`) for reparenting a branch in the stack
   - Updates stack metadata, rebases the branch onto the new parent using `git rebase --onto`, and carries descendants along by rebasing each onto its (rewritten) parent
   - Automatically updates the PR base on GitHub when the moved branch has an open PR; warns when the GitHub CLI is unavailable
   - Worktree-aware: branches in worktrees are rebased in-place via the worktree-aware variant

@@ -212,6 +212,8 @@ def move_branch_core(
     try:
         _rebase_branch(git, config, branch_name, new_parent, upstream=old_parent)
     except RebaseConflictError as e:
+        # Conflict left in place; metadata + PR base reflect the new parent so
+        # the user can resolve, `git rebase --continue`, then `pq update`.
         rebases.append(
             BranchRebaseResult(
                 branch=branch_name,
@@ -229,6 +231,19 @@ def move_branch_core(
             returned_to=None,
             warnings=warnings,
         )
+    except Exception:
+        # Non-conflict failure (e.g., checkout failed before rebase started).
+        # Roll back metadata + PR base so the user isn't left with a stack
+        # that points to a parent the branch was never actually rebased onto.
+        config.add_to_stack(
+            branch_name, old_parent, config.get_worktree_path(branch_name)
+        )
+        if pr_base_update and pr_base_update.updated:
+            try:
+                github.update_pr_base(branch_name, old_parent)
+            except PRBaseUpdateError:
+                pass
+        raise
 
     rebases.append(
         BranchRebaseResult(branch=branch_name, new_parent=new_parent, rebased=True)
@@ -294,22 +309,33 @@ def move_branch(
                 ui.print_info(
                     "The stack metadata has been updated, but git is mid-rebase. "
                     "Resolve the conflicts, run `git rebase --continue`, then "
-                    "`pq update` to finish rebasing any remaining descendants."
+                    f"`pq update {result.branch}` to finish rebasing any "
+                    "remaining descendants of the moved subtree."
                 )
             else:
                 ui.print_success(
                     f"Moved {format_branch(result.branch)} → "
                     f"{format_branch(result.new_parent)}"
                 )
-                rebased_count = sum(1 for r in result.rebases if r.rebased)
-                if rebased_count > 1:
-                    ui.print_info(f"Rebased {rebased_count - 1} descendant branch(es).")
+                rebased_branches = [r.branch for r in result.rebases if r.rebased]
+                if len(rebased_branches) > 1:
+                    ui.print_info(
+                        f"Rebased {len(rebased_branches) - 1} descendant branch(es)."
+                    )
                 if result.pr_base_update and result.pr_base_update.updated:
                     ui.print_info(
                         f"Updated PR base for {format_branch(result.branch)} → "
                         f"{format_branch(result.new_parent)}"
                     )
-                ui.print_info("Run `pq submit` to force-push the rewritten branches.")
+                if len(rebased_branches) == 1:
+                    ui.print_info(
+                        f"Force-push the rewritten branch with: "
+                        f"`pq submit {rebased_branches[0]}`"
+                    )
+                else:
+                    ui.print_info("Force-push the rewritten branches with:")
+                    for b in rebased_branches:
+                        ui.print_info(f"  pq submit {b}")
         return result
 
     result = run_command(ui, core, json_output=json_output, command="move")

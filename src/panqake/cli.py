@@ -14,6 +14,7 @@ from panqake.commands.down import down as down_command
 from panqake.commands.list import list_branches
 from panqake.commands.merge import merge_branch
 from panqake.commands.modify import modify_commit
+from panqake.commands.move import move_branch
 from panqake.commands.new import create_new_branch
 from panqake.commands.pr import create_pull_requests
 from panqake.commands.rename import rename as rename_branch
@@ -46,6 +47,8 @@ KNOWN_COMMANDS = [
     "modify",
     "submit",
     "merge",
+    "move",
+    "mv",  # Alias for move
     "sync",
     "up",
     "down",
@@ -56,6 +59,7 @@ KNOWN_COMMANDS = [
 COMMAND_ALIASES = {
     "ls": "list",
     "co": "switch",
+    "mv": "move",
 }
 
 
@@ -358,6 +362,34 @@ def rename(
 ):
     """Rename a branch while maintaining stack relationships."""
     rename_branch(old_name, new_name, json_output=json)
+
+
+@app.command()
+def move(
+    branch_name: str | None = typer.Argument(
+        None, help="Branch to move (default: current branch)"
+    ),
+    to: str | None = typer.Option(
+        None, "--to", help="New parent branch (if not provided, will prompt)"
+    ),
+    json: bool = JSON_OPTION,
+):
+    """Move a branch to a new parent, rebasing its subtree onto it."""
+    move_branch(branch_name, to, json_output=json)
+
+
+@app.command(name="mv")
+def mv_command(
+    branch_name: str | None = typer.Argument(
+        None, help="Branch to move (default: current branch)"
+    ),
+    to: str | None = typer.Option(
+        None, "--to", help="New parent branch (if not provided, will prompt)"
+    ),
+    json: bool = JSON_OPTION,
+):
+    """Alias for 'move' - Move a branch to a new parent."""
+    move_branch(branch_name, to, json_output=json)
 
 
 @app.command()

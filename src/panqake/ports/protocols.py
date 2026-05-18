@@ -186,7 +186,11 @@ class GitPort(Protocol):
         ...
 
     def rebase_onto(
-        self, branch: BranchName, new_base: BranchName, abort_on_conflict: bool = True
+        self,
+        branch: BranchName,
+        new_base: BranchName,
+        abort_on_conflict: bool = True,
+        upstream: BranchName | None = None,
     ) -> None:
         """Rebase a branch onto a new base.
 
@@ -194,6 +198,10 @@ class GitPort(Protocol):
             branch: The branch to rebase
             new_base: The new base branch
             abort_on_conflict: Whether to abort on conflict
+            upstream: If provided, runs `git rebase --onto NEW_BASE UPSTREAM BRANCH`
+                so that only commits in (upstream..branch] are replayed. Required
+                for reparenting when the old parent's tip has moved relative to
+                the branch's branch-point.
 
         Raises:
             RebaseConflictError: If rebase has conflicts
@@ -293,7 +301,11 @@ class GitPort(Protocol):
         ...
 
     def rebase_onto_in_worktree(
-        self, branch: BranchName, new_base: BranchName, abort_on_conflict: bool = True
+        self,
+        branch: BranchName,
+        new_base: BranchName,
+        abort_on_conflict: bool = True,
+        upstream: BranchName | None = None,
     ) -> None:
         """Rebase a branch onto a new base within its worktree.
 
@@ -301,6 +313,8 @@ class GitPort(Protocol):
             branch: The branch to rebase
             new_base: The new base branch
             abort_on_conflict: Whether to abort on conflict
+            upstream: If provided, runs `git rebase --onto NEW_BASE UPSTREAM` inside
+                the worktree so only commits in (upstream..branch] are replayed.
 
         Raises:
             RebaseConflictError: If rebase has conflicts

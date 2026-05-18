@@ -30,6 +30,7 @@ Used to create, delete, and manage branches in your stack:
 | [`new`](./branch-management/new.md) | Creates a new branch based on your current branch |
 | [`delete`](./branch-management/delete.md) | Deletes a branch while updating children stack relationships |
 | [`rename`](./branch-management/rename.md) | Renames a branch while preserving its stack relationships |
+| [`move`](./branch-management/move.md) | Moves a branch (and its descendants) to a new parent — alias `mv` |
 | [`track`](./branch-management/track.md) | Adds an existing git branch to your stack |
 | [`untrack`](./branch-management/untrack.md) | Removes a branch from the stack without deleting the Git branch |
 

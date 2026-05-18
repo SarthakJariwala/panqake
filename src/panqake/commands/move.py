@@ -55,7 +55,9 @@ def _rebase_descendants(
     """Recursively rebase descendants after their parent has been rewritten.
 
     For each child of `parent`, replays commits in (parent_old_sha..child] onto
-    the new tip of `parent`. Stops on the first conflict.
+    the new tip of `parent`. Stops on the first conflict — including conflicts
+    raised deeper in the subtree, so we don't leave git mid-rebase while
+    attempting to checkout the next sibling.
     """
     results: list[BranchRebaseResult] = []
     for child in config.get_child_branches(parent):
@@ -72,7 +74,10 @@ def _rebase_descendants(
         results.append(
             BranchRebaseResult(branch=child, new_parent=parent, rebased=True)
         )
-        results.extend(_rebase_descendants(git, config, child, child_old_sha))
+        sub_results = _rebase_descendants(git, config, child, child_old_sha)
+        results.extend(sub_results)
+        if any(not r.rebased for r in sub_results):
+            return results
     return results
 
 

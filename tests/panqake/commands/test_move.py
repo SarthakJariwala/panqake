@@ -325,6 +325,64 @@ class TestMoveBranchCore:
         # First two rebases (b and one descendant) succeeded
         assert len(succeeded) == 2
 
+    def test_conflict_in_subtree_stops_sibling_processing(self):
+        """A conflict deep in one subtree must stop processing of sibling subtrees.
+
+        Tree: main -> b -> c -> d, plus b -> e. Move b to feature.
+        Rebase d conflicts. The bug-fix ensures we don't continue on to e while
+        git is mid-rebase from d.
+        """
+        git = FakeGit(
+            branches=["main", "a", "b", "c", "d", "e", "feature"],
+            current_branch="main",
+        )
+
+        original_rebase = git.rebase_onto
+
+        def failing_rebase_for_d(
+            branch, new_base, abort_on_conflict=True, upstream=None
+        ):
+            if branch == "d":
+                from panqake.ports import RebaseConflictError
+
+                git.rebase_onto_calls.append((branch, new_base, upstream, False))
+                raise RebaseConflictError(f"Rebase conflict in branch '{branch}'")
+            return original_rebase(
+                branch, new_base, abort_on_conflict=abort_on_conflict, upstream=upstream
+            )
+
+        git.rebase_onto = failing_rebase_for_d  # type: ignore[assignment]
+
+        config = FakeConfig(
+            stack={
+                "a": {"parent": "main"},
+                "b": {"parent": "a"},
+                "c": {"parent": "b"},
+                "d": {"parent": "c"},
+                "e": {"parent": "b"},
+                "feature": {"parent": "main"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        result = move_branch_core(
+            git=git,
+            github=FakeGitHub(),
+            config=config,
+            ui=ui,
+            branch_name="b",
+            new_parent="feature",
+        )
+
+        # b and c rebased, d failed, e must NOT be attempted
+        rebased_branches = [r.branch for r in result.rebases if r.rebased]
+        failed_branches = [r.branch for r in result.rebases if not r.rebased]
+        assert "e" not in rebased_branches
+        assert "e" not in failed_branches
+        assert "d" in failed_branches
+        # No rebase attempt on e
+        assert all(c[0] != "e" for c in git.rebase_onto_calls)
+
     def test_worktree_branch_uses_worktree_rebase(self):
         """A branch in a worktree gets rebased via the worktree-aware helper."""
         git = FakeGit(branches=["main", "a", "b"], current_branch="main")

@@ -76,23 +76,26 @@ def _rebase_descendants(
     return results
 
 
+def _collect_descendants(config: ConfigPort, branch: BranchName) -> set[BranchName]:
+    """Return all branches in the subtree rooted at `branch` (excluding `branch`)."""
+    descendants: set[BranchName] = set()
+    to_visit = list(config.get_child_branches(branch))
+    while to_visit:
+        current = to_visit.pop()
+        if current in descendants:
+            continue
+        descendants.add(current)
+        to_visit.extend(config.get_child_branches(current))
+    return descendants
+
+
 def _would_create_cycle(
     config: ConfigPort, branch: BranchName, new_parent: BranchName
 ) -> bool:
     """Check whether reparenting `branch` to `new_parent` would create a cycle."""
     if new_parent == branch:
         return True
-    to_visit = list(config.get_child_branches(branch))
-    seen: set[BranchName] = set()
-    while to_visit:
-        current = to_visit.pop()
-        if current in seen:
-            continue
-        seen.add(current)
-        if current == new_parent:
-            return True
-        to_visit.extend(config.get_child_branches(current))
-    return False
+    return new_parent in _collect_descendants(config, branch)
 
 
 def move_branch_core(
@@ -127,13 +130,10 @@ def move_branch_core(
         )
 
     if not new_parent:
-        tracked = [
-            b
-            for b in git.list_all_branches()
-            if config.branch_exists(b) and b != branch_name
-        ]
+        excluded = _collect_descendants(config, branch_name) | {branch_name}
+        candidates = [b for b in git.list_all_branches() if b not in excluded]
         selected = ui.prompt_select_branch(
-            tracked or git.list_all_branches(),
+            candidates,
             f"Select new parent for '{branch_name}':",
             current_branch=branch_name,
             enable_search=True,

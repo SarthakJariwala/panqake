@@ -417,7 +417,7 @@ class TestMoveBranchCore:
         assert git.current_branch == "other"
 
     def test_prompts_for_new_parent_when_not_provided(self):
-        """When new_parent is None, the UI is prompted with tracked branches."""
+        """When new_parent is None, the UI is prompted with eligible branches."""
         git = FakeGit(branches=["main", "a", "b", "feature"], current_branch="main")
         config = FakeConfig(
             stack={
@@ -439,3 +439,35 @@ class TestMoveBranchCore:
 
         assert result.new_parent == "feature"
         assert len(ui.select_branch_calls) == 1
+
+    def test_prompt_includes_main_and_excludes_descendants(self):
+        """The interactive prompt offers untracked trunks (main) and hides descendants."""
+        git = FakeGit(
+            branches=["main", "trunk", "a", "b", "c", "feature"],
+            current_branch="main",
+        )
+        config = FakeConfig(
+            stack={
+                "a": {"parent": "main"},
+                "b": {"parent": "a"},
+                "c": {"parent": "b"},
+                "feature": {"parent": "main"},
+            }
+        )
+        ui = FakeUI(select_branch_responses=["main"])
+
+        move_branch_core(
+            git=git,
+            github=FakeGitHub(),
+            config=config,
+            ui=ui,
+            branch_name="b",
+            new_parent=None,
+        )
+
+        offered = ui.select_branch_calls[0][0]
+        assert "main" in offered  # untracked trunk is selectable
+        assert "trunk" in offered  # other untracked branch is selectable
+        assert "feature" in offered  # sibling stack is selectable
+        assert "b" not in offered  # the branch being moved is excluded
+        assert "c" not in offered  # descendants would create a cycle

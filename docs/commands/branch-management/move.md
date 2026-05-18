@@ -63,6 +63,6 @@ If a rebase conflict occurs, git is left mid-rebase so you can resolve it:
 
 The stack metadata is updated before the rebase begins, so the recovery path is clean — you don't need to re-run `pq move`.
 
-::: tip
+::: info
 Panqake prevents cycles: you cannot move a branch onto one of its own descendants.
 :::

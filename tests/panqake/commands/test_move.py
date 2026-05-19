@@ -2,11 +2,13 @@
 
 import pytest
 
-from panqake.commands.move import move_branch_core
+from panqake.commands.move import move_branch_core, move_continue_core
 from panqake.ports import (
     BranchNotFoundError,
     GitOperationError,
+    MoveContinueResult,
     MoveResult,
+    RebaseConflictError,
 )
 from panqake.testing import FakeConfig, FakeGit, FakeGitHub, FakeUI
 
@@ -176,6 +178,138 @@ class TestMoveBranchCore:
 
         assert result.no_op is True
         assert result.rebases == []
+        assert git.rebase_onto_calls == []
+
+    def test_no_op_target_with_pending_move_directs_to_continue(self):
+        """Rerunning the same move after a conflict must fail fast, not no-op."""
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        config = FakeConfig(
+            stack={
+                "feature": {
+                    "parent": "main",
+                    "pending_rebase_from": "sha-feature-old",
+                }
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitOperationError) as exc_info:
+            move_branch_core(
+                git=git,
+                github=FakeGitHub(),
+                config=config,
+                ui=ui,
+                branch_name="feature",
+                new_parent="main",
+            )
+
+        assert "move --continue" in str(exc_info.value)
+        assert git.rebase_onto_calls == []
+        assert config.get_pending_rebase_from("feature") == "sha-feature-old"
+
+    def test_second_move_with_pending_target_to_different_parent_is_rejected(self):
+        """Pending move state blocks new moves, not only no-op retries."""
+        git = FakeGit(branches=["main", "feature", "other"], current_branch="main")
+        config = FakeConfig(
+            stack={
+                "feature": {
+                    "parent": "main",
+                    "pending_rebase_from": "sha-feature-old",
+                }
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitOperationError) as exc_info:
+            move_branch_core(
+                git=git,
+                github=FakeGitHub(),
+                config=config,
+                ui=ui,
+                branch_name="feature",
+                new_parent="other",
+            )
+
+        assert "move --continue" in str(exc_info.value)
+        assert config.get_parent_branch("feature") == "main"
+        assert config.get_pending_rebase_from("feature") == "sha-feature-old"
+        assert git.rebase_onto_calls == []
+
+    def test_pending_state_in_subtree_or_ancestor_blocks_new_move(self):
+        """A move touching pending descendants or ancestors must fail fast."""
+        git = FakeGit(branches=["main", "a", "b", "c", "other"], current_branch="main")
+        ui = FakeUI(strict=False)
+
+        descendant_pending = FakeConfig(
+            stack={
+                "a": {"parent": "main"},
+                "b": {"parent": "a"},
+                "c": {"parent": "b", "pending_rebase_from": "sha-c-old"},
+                "other": {"parent": "main"},
+            }
+        )
+        with pytest.raises(GitOperationError) as descendant_exc:
+            move_branch_core(
+                git=git,
+                github=FakeGitHub(),
+                config=descendant_pending,
+                ui=ui,
+                branch_name="b",
+                new_parent="other",
+            )
+        assert "move --continue" in str(descendant_exc.value)
+        assert descendant_pending.get_parent_branch("b") == "a"
+
+        ancestor_pending = FakeConfig(
+            stack={
+                "a": {"parent": "main", "pending_rebase_from": "sha-a-old"},
+                "b": {"parent": "a"},
+                "other": {"parent": "main"},
+            }
+        )
+        with pytest.raises(GitOperationError) as ancestor_exc:
+            move_branch_core(
+                git=git,
+                github=FakeGitHub(),
+                config=ancestor_pending,
+                ui=ui,
+                branch_name="b",
+                new_parent="other",
+            )
+        assert "move --continue" in str(ancestor_exc.value)
+        assert ancestor_pending.get_parent_branch("b") == "a"
+
+    def test_unrelated_pending_state_blocks_new_move(self):
+        """Because continue has no branch selector, any pending move blocks new ones."""
+        git = FakeGit(
+            branches=["main", "a", "b", "other", "pending"], current_branch="main"
+        )
+        config = FakeConfig(
+            stack={
+                "a": {"parent": "main"},
+                "b": {"parent": "a"},
+                "other": {"parent": "main"},
+                "pending": {
+                    "parent": "main",
+                    "pending_rebase_from": "sha-pending-old",
+                },
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitOperationError) as exc_info:
+            move_branch_core(
+                git=git,
+                github=FakeGitHub(),
+                config=config,
+                ui=ui,
+                branch_name="b",
+                new_parent="other",
+            )
+
+        assert "move --continue" in str(exc_info.value)
+        assert "pending" in str(exc_info.value)
+        assert config.get_parent_branch("b") == "a"
         assert git.rebase_onto_calls == []
 
     def test_branch_not_tracked_raises(self):
@@ -481,6 +615,85 @@ class TestMoveBranchCore:
         assert github.update_pr_base_calls == []
         assert git.rebase_onto_calls == []
 
+    def test_rewritten_parent_uses_fork_point_as_move_upstream(self):
+        """If the current parent tip no longer anchors the child, use fork-point."""
+        git = FakeGit(
+            branches=["main", "a", "b", "other"],
+            current_branch="main",
+            ancestor_results={("a", "b"): False, ("sha-a-old", "b"): True},
+            fork_points={("a", "b"): "sha-a-old"},
+        )
+        config = FakeConfig(stack={"a": {"parent": "main"}, "b": {"parent": "a"}})
+        ui = FakeUI(strict=False)
+
+        move_branch_core(
+            git=git,
+            github=FakeGitHub(),
+            config=config,
+            ui=ui,
+            branch_name="b",
+            new_parent="other",
+        )
+
+        assert ("b", "other", "sha-a-old", False) in git.rebase_onto_calls
+        assert ("b", "other", "a", False) not in git.rebase_onto_calls
+
+    def test_rewritten_parent_without_fork_point_fails_before_mutation(self):
+        """If the safe upstream cannot be found, tell the user to update first."""
+        git = FakeGit(
+            branches=["main", "a", "b", "other"],
+            current_branch="main",
+            ancestor_results={("a", "b"): False},
+            fork_points={("a", "b"): None},
+        )
+        config = FakeConfig(stack={"a": {"parent": "main"}, "b": {"parent": "a"}})
+        github = FakeGitHub(branches_with_pr={"b"})
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitOperationError) as exc_info:
+            move_branch_core(
+                git=git,
+                github=github,
+                config=config,
+                ui=ui,
+                branch_name="b",
+                new_parent="other",
+            )
+
+        assert "pq update" in str(exc_info.value)
+        assert config.get_parent_branch("b") == "a"
+        assert github.update_pr_base_calls == []
+        assert git.rebase_onto_calls == []
+
+    def test_missing_descendant_fails_before_partial_move(self):
+        """Stale descendant metadata must be detected before metadata/rebase mutation."""
+        git = FakeGit(branches=["main", "a", "b", "other"], current_branch="main")
+        config = FakeConfig(
+            stack={
+                "a": {"parent": "main"},
+                "b": {"parent": "a"},
+                "c": {"parent": "b"},
+                "other": {"parent": "main"},
+            }
+        )
+        github = FakeGitHub(branches_with_pr={"b"})
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(BranchNotFoundError) as exc_info:
+            move_branch_core(
+                git=git,
+                github=github,
+                config=config,
+                ui=ui,
+                branch_name="b",
+                new_parent="other",
+            )
+
+        assert "descendant" in str(exc_info.value).lower()
+        assert config.get_parent_branch("b") == "a"
+        assert github.update_pr_base_calls == []
+        assert git.rebase_onto_calls == []
+
     def test_worktree_branch_uses_worktree_rebase(self):
         """A branch in a worktree gets rebased via the worktree-aware helper."""
         git = FakeGit(branches=["main", "a", "b"], current_branch="main")
@@ -627,3 +840,457 @@ class TestMoveBranchCore:
         assert "feature" in offered  # sibling stack is selectable
         assert "b" not in offered  # the branch being moved is excluded
         assert "c" not in offered  # descendants would create a cycle
+
+
+class TestMoveConflictPersistsPendingRebase:
+    """Verify that a conflicted move persists enough state to resume safely.
+
+    Regression for P1: previously, a move that conflicted before descendants
+    were rebased left descendants based on the moved branch's pre-rebase
+    SHA, and the recommended `pq update` recovery used a plain rebase that
+    replayed commits from the *old parent's* history into descendants.
+    """
+
+    def test_conflict_on_moved_branch_persists_old_sha(self):
+        """When the moved branch's own rebase conflicts, persist its old SHA."""
+        git = FakeGit(branches=["main", "a", "b", "c"], current_branch="main")
+        git._commit_hashes = {"b": "sha-b-old", "c": "sha-c-old"}
+        git.fail_rebase = True
+
+        config = FakeConfig(
+            stack={
+                "a": {"parent": "main"},
+                "b": {"parent": "a"},
+                "c": {"parent": "b"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        result = move_branch_core(
+            git=git,
+            github=FakeGitHub(),
+            config=config,
+            ui=ui,
+            branch_name="b",
+            new_parent="main",
+        )
+
+        assert isinstance(result, MoveResult)
+        assert result.rebases[0].rebased is False
+        # The moved branch's old SHA must be persisted so the resume flow
+        # knows what `--onto` upstream to use when rebasing descendants.
+        assert config.get_pending_rebase_from("b") == "sha-b-old"
+
+    def test_conflict_on_descendant_persists_its_old_sha(self):
+        """A conflict deeper in the chain persists *that* branch's old SHA."""
+        git = FakeGit(branches=["main", "a", "b", "c", "d"], current_branch="main")
+        git._commit_hashes = {
+            "b": "sha-b-old",
+            "c": "sha-c-old",
+            "d": "sha-d-old",
+        }
+
+        original_rebase = git.rebase_onto
+
+        def fail_on_d(branch, new_base, abort_on_conflict=True, upstream=None):
+            if branch == "d":
+                git.rebase_onto_calls.append((branch, new_base, upstream, False))
+                raise RebaseConflictError(f"Rebase conflict in branch '{branch}'")
+            return original_rebase(
+                branch, new_base, abort_on_conflict=abort_on_conflict, upstream=upstream
+            )
+
+        git.rebase_onto = fail_on_d  # type: ignore[assignment]
+
+        config = FakeConfig(
+            stack={
+                "a": {"parent": "main"},
+                "b": {"parent": "a"},
+                "c": {"parent": "b"},
+                "d": {"parent": "c"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        move_branch_core(
+            git=git,
+            github=FakeGitHub(),
+            config=config,
+            ui=ui,
+            branch_name="b",
+            new_parent="main",
+        )
+
+        # d's pre-rebase SHA is persisted so a continue can resume at d
+        # with the right upstream.
+        assert config.get_pending_rebase_from("d") == "sha-d-old"
+
+    def test_successful_move_clears_pending_state(self):
+        """After a fully successful move, no pending_rebase_from remains."""
+        git = FakeGit(branches=["main", "a", "b", "c"], current_branch="main")
+        git._commit_hashes = {"b": "sha-b-old", "c": "sha-c-old"}
+
+        config = FakeConfig(
+            stack={
+                "a": {"parent": "main"},
+                "b": {"parent": "a"},
+                "c": {"parent": "b"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        move_branch_core(
+            git=git,
+            github=FakeGitHub(),
+            config=config,
+            ui=ui,
+            branch_name="b",
+            new_parent="main",
+        )
+
+        assert config.get_pending_rebase_from("b") is None
+        assert config.get_pending_rebase_from("c") is None
+
+
+class TestMoveContinueCore:
+    """Tests for the `pq move --continue` resume command."""
+
+    def test_no_pending_state_is_no_op(self):
+        """With no persisted pending state, continue is a no-op."""
+        git = FakeGit(branches=["main", "a"], current_branch="main")
+        config = FakeConfig(stack={"a": {"parent": "main"}})
+        ui = FakeUI(strict=False)
+
+        result = move_continue_core(git=git, config=config, ui=ui)
+
+        assert isinstance(result, MoveContinueResult)
+        assert result.no_op is True
+        assert result.rebases == []
+
+    def test_refuses_while_git_mid_rebase(self):
+        """If git is still mid-rebase, refuse with a clear message."""
+        git = FakeGit(branches=["main", "a"], current_branch="main")
+        git.rebase_in_progress = True
+        config = FakeConfig(
+            stack={"a": {"parent": "main", "pending_rebase_from": "sha"}}
+        )
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitOperationError) as exc_info:
+            move_continue_core(git=git, config=config, ui=ui)
+        msg = str(exc_info.value)
+        assert "mid-rebase" in msg
+        assert "git rebase --continue" in msg
+        assert "git rebase --abort" not in msg
+
+    def test_refuses_when_resume_root_still_at_old_sha(self):
+        """If the user never ran `git rebase --continue`, refuse."""
+        git = FakeGit(branches=["main", "a"], current_branch="main")
+        git._commit_hashes = {"a": "sha-a-old"}
+        config = FakeConfig(
+            stack={"a": {"parent": "main", "pending_rebase_from": "sha-a-old"}}
+        )
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitOperationError) as exc_info:
+            move_continue_core(git=git, config=config, ui=ui)
+        assert "pre-move SHA" in str(exc_info.value)
+
+    def test_resumes_descendants_with_onto_old_sha(self):
+        """Regression for the corruption bug.
+
+        Setup: `pq move b main` conflicted on b. User resolved and ran
+        `git rebase --continue` so b is now at a new SHA. Descendant c is
+        still based on b's old SHA. `pq move --continue` MUST rebase c
+        with `git rebase --onto b <b's old SHA> c` — not a plain rebase.
+        """
+        git = FakeGit(branches=["main", "a", "b", "c"], current_branch="b")
+        git._commit_hashes = {"b": "sha-b-new", "c": "sha-c-old"}
+        config = FakeConfig(
+            stack={
+                "a": {"parent": "main"},
+                # `pq move b main` already updated parent metadata.
+                "b": {"parent": "main", "pending_rebase_from": "sha-b-old"},
+                "c": {"parent": "b"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        result = move_continue_core(git=git, config=config, ui=ui)
+
+        assert result.resumed_branch == "b"
+        assert any(r.branch == "c" and r.rebased for r in result.rebases)
+
+        # The critical assertion: c was rebased with upstream=b's OLD SHA,
+        # not None. Without this, descendants are rebased with a plain
+        # `git rebase b c`, which would replay commits from b's old
+        # history (including commits from its old parent) into c.
+        c_calls = [call for call in git.rebase_onto_calls if call[0] == "c"]
+        assert len(c_calls) == 1
+        branch, new_base, upstream, _ = c_calls[0]
+        assert new_base == "b"
+        assert upstream == "sha-b-old"
+
+        # Pending state is cleared on success.
+        assert config.get_pending_rebase_from("b") is None
+        assert config.get_pending_rebase_from("c") is None
+
+    def test_resume_with_descendant_conflict_persists_new_state(self):
+        """If the resume itself conflicts on a deeper descendant, that
+        descendant's own pre-rebase SHA must be persisted so a second
+        `pq move --continue` picks up at the right place.
+        """
+        git = FakeGit(branches=["main", "b", "c", "d"], current_branch="b")
+        git._commit_hashes = {
+            "b": "sha-b-new",
+            "c": "sha-c-old",
+            "d": "sha-d-old",
+        }
+
+        original_rebase = git.rebase_onto
+
+        def fail_on_d(branch, new_base, abort_on_conflict=True, upstream=None):
+            if branch == "d":
+                git.rebase_onto_calls.append((branch, new_base, upstream, False))
+                raise RebaseConflictError(f"Rebase conflict in branch '{branch}'")
+            return original_rebase(
+                branch, new_base, abort_on_conflict=abort_on_conflict, upstream=upstream
+            )
+
+        git.rebase_onto = fail_on_d  # type: ignore[assignment]
+
+        config = FakeConfig(
+            stack={
+                "b": {"parent": "main", "pending_rebase_from": "sha-b-old"},
+                "c": {"parent": "b"},
+                "d": {"parent": "c"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        result = move_continue_core(git=git, config=config, ui=ui)
+
+        failed = [r for r in result.rebases if not r.rebased]
+        assert len(failed) == 1
+        assert failed[0].branch == "d"
+
+        # b's state stays set (its subtree isn't done yet), AND d now has
+        # its own pre-rebase SHA persisted so a second resume can run
+        # `git rebase --onto c <d's old SHA> d` after the user fixes d.
+        assert config.get_pending_rebase_from("b") == "sha-b-old"
+        assert config.get_pending_rebase_from("d") == "sha-d-old"
+
+    def test_later_sibling_conflict_keeps_completed_sibling_pending_for_resume(self):
+        """If one child rebases before a later sibling conflicts, keep its
+        saved pre-rebase SHA so resume can skip it instead of rebasing it again.
+        """
+        git = FakeGit(branches=["main", "a", "b", "c", "d"], current_branch="main")
+        git._commit_hashes = {
+            "b": "sha-b-old",
+            "c": "sha-c-old",
+            "d": "sha-d-old",
+        }
+
+        original_rebase = git.rebase_onto
+
+        def fail_on_d(branch, new_base, abort_on_conflict=True, upstream=None):
+            if branch == "d":
+                git.rebase_onto_calls.append((branch, new_base, upstream, False))
+                raise RebaseConflictError(f"Rebase conflict in branch '{branch}'")
+            original_rebase(
+                branch, new_base, abort_on_conflict=abort_on_conflict, upstream=upstream
+            )
+            git._commit_hashes[branch] = {
+                "b": "sha-b-new",
+                "c": "sha-c-new",
+            }.get(branch, git._commit_hashes[branch])
+
+        git.rebase_onto = fail_on_d  # type: ignore[assignment]
+
+        config = FakeConfig(
+            stack={
+                "a": {"parent": "main"},
+                "b": {"parent": "a"},
+                "c": {"parent": "b"},
+                "d": {"parent": "b"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        move_branch_core(
+            git=git,
+            github=FakeGitHub(),
+            config=config,
+            ui=ui,
+            branch_name="b",
+            new_parent="main",
+        )
+
+        assert config.get_pending_rebase_from("b") == "sha-b-old"
+        assert config.get_pending_rebase_from("c") == "sha-c-old"
+        assert config.get_pending_rebase_from("d") == "sha-d-old"
+
+        git.rebase_onto = original_rebase  # type: ignore[assignment]
+        git.rebase_onto_calls.clear()
+        git._commit_hashes["d"] = "sha-d-new"
+
+        result = move_continue_core(git=git, config=config, ui=ui)
+
+        assert result.resumed_branch == "b"
+        assert not any(call[0] == "c" for call in git.rebase_onto_calls)
+        assert not any(call[0] == "d" for call in git.rebase_onto_calls)
+        assert config.get_pending_rebase_from("b") is None
+        assert config.get_pending_rebase_from("c") is None
+        assert config.get_pending_rebase_from("d") is None
+
+    def test_resume_root_is_topmost_pending(self):
+        """When multiple pending entries exist, resume from the topmost."""
+        git = FakeGit(branches=["main", "b", "c"], current_branch="main")
+        git._commit_hashes = {"b": "sha-b-new", "c": "sha-c-new"}
+        config = FakeConfig(
+            stack={
+                # b is an ancestor of c; resume should pick b.
+                "b": {"parent": "main", "pending_rebase_from": "sha-b-old"},
+                "c": {"parent": "b", "pending_rebase_from": "sha-c-old"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        result = move_continue_core(git=git, config=config, ui=ui)
+
+        assert result.resumed_branch == "b"
+
+    def test_resumed_root_appears_in_rebases_for_force_push(self):
+        """The resume root was rewritten by `git rebase --continue` and must
+        be force-pushed, so it has to appear in the result's `rebases` list
+        for JSON consumers and the CLI's `pq submit` instructions to include
+        it.
+        """
+        git = FakeGit(branches=["main", "b", "c"], current_branch="b")
+        git._commit_hashes = {"b": "sha-b-new", "c": "sha-c-old"}
+        config = FakeConfig(
+            stack={
+                "b": {"parent": "main", "pending_rebase_from": "sha-b-old"},
+                "c": {"parent": "b"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        result = move_continue_core(git=git, config=config, ui=ui)
+
+        rebased = [r.branch for r in result.rebases if r.rebased]
+        # Both the resume root (b) and the descendant (c) must be present
+        # so the user is told to `pq submit` both.
+        assert "b" in rebased
+        assert "c" in rebased
+
+    def test_missing_pending_descendant_fails_continue_without_clearing_state(self):
+        """A deleted pending descendant must not be treated as already rebased."""
+        git = FakeGit(branches=["main", "b"], current_branch="b")
+        git._commit_hashes = {"b": "sha-b-new"}
+        config = FakeConfig(
+            stack={
+                "b": {"parent": "main", "pending_rebase_from": "sha-b-old"},
+                "c": {"parent": "b", "pending_rebase_from": "sha-c-old"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(BranchNotFoundError) as exc_info:
+            move_continue_core(git=git, config=config, ui=ui)
+
+        assert "c" in str(exc_info.value)
+        assert config.get_pending_rebase_from("b") == "sha-b-old"
+        assert config.get_pending_rebase_from("c") == "sha-c-old"
+        assert git.rebase_onto_calls == []
+
+    def test_abort_suggestion_not_in_pre_move_sha_error(self):
+        """Finding P2: don't advertise `pq move --continue` as a recovery
+        path after `git rebase --abort` — once aborted, the branch SHA is
+        back to pending_rebase_from and continue rejects it, leaving the
+        user stuck. Make sure the error message no longer suggests it.
+        """
+        git = FakeGit(branches=["main", "a"], current_branch="main")
+        git._commit_hashes = {"a": "sha-a-old"}
+        config = FakeConfig(
+            stack={"a": {"parent": "main", "pending_rebase_from": "sha-a-old"}}
+        )
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitOperationError) as exc_info:
+            move_continue_core(git=git, config=config, ui=ui)
+        msg = str(exc_info.value).lower()
+        assert "after aborting" not in msg
+        assert "pre-move sha" in msg
+
+    def test_resume_after_descendant_conflict_preserves_saved_old_sha(self):
+        """Regression: a resume must not recompute a child's old SHA from
+        its now-rebased tip.
+
+        Setup: `pq move b X` rebased b OK, then conflicted on c. The user
+        resolved and ran `git rebase --continue` so c is now at its new
+        SHA. c's child d is still based on c's old SHA.
+
+        Resume starts at b (topmost pending). When rebase_subtree walks
+        into c, it must NOT overwrite c's persisted `pending_rebase_from`
+        with c's now-rebased tip — otherwise d gets rebased with
+        `--onto c <c_new_sha>` instead of `--onto c <c_old_sha>`, which
+        can silently drop conflict resolutions baked into c_new during
+        patch-id dedup.
+        """
+        git = FakeGit(branches=["main", "b", "c", "d"], current_branch="b")
+        git._commit_hashes = {
+            # b was rebased successfully before the move conflicted.
+            "b": "sha-b-new",
+            # c was the conflict point; after `git rebase --continue` it's
+            # at a new SHA, but d is still based on c's old SHA.
+            "c": "sha-c-new",
+            "d": "sha-d-old",
+        }
+
+        original_rebase = git.rebase_onto
+
+        def track_rebases(branch, new_base, abort_on_conflict=True, upstream=None):
+            return original_rebase(
+                branch,
+                new_base,
+                abort_on_conflict=abort_on_conflict,
+                upstream=upstream,
+            )
+
+        git.rebase_onto = track_rebases  # type: ignore[assignment]
+
+        config = FakeConfig(
+            stack={
+                "b": {"parent": "main", "pending_rebase_from": "sha-b-old"},
+                "c": {"parent": "b", "pending_rebase_from": "sha-c-old"},
+                "d": {"parent": "c"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        result = move_continue_core(git=git, config=config, ui=ui)
+
+        # b and c are already at their post-rebase tips; they should NOT
+        # be rebased again. Only d needs rebasing.
+        assert not any(call[0] == "b" for call in git.rebase_onto_calls)
+        assert not any(call[0] == "c" for call in git.rebase_onto_calls)
+
+        d_calls = [c for c in git.rebase_onto_calls if c[0] == "d"]
+        assert len(d_calls) == 1
+        branch, new_base, upstream, _ = d_calls[0]
+        assert new_base == "c"
+        # The critical assertion: d is rebased with c's SAVED pre-rebase
+        # SHA, not c's current (already-rebased) tip.
+        assert upstream == "sha-c-old"
+        assert upstream != "sha-c-new"
+
+        # Resume root, the in-flight child, and the freshly-rebased
+        # grandchild all surface as rebased so the user knows to submit.
+        rebased = {r.branch for r in result.rebases if r.rebased}
+        assert {"b", "c", "d"} <= rebased
+
+        # Pending state cleared throughout on success.
+        assert config.get_pending_rebase_from("b") is None
+        assert config.get_pending_rebase_from("c") is None
+        assert config.get_pending_rebase_from("d") is None

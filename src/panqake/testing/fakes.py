@@ -45,6 +45,8 @@ class FakeGit:
         unpushed_changes: dict[BranchName, bool] | None = None,
         commit_hashes: dict[BranchName, str] | None = None,
         files_changed: dict[tuple[BranchName, BranchName], list[str]] | None = None,
+        ancestor_results: dict[tuple[str, BranchName], bool] | None = None,
+        fork_points: dict[tuple[BranchName, BranchName], str | None] | None = None,
     ):
         self.branches: set[BranchName] = set(
             branches if branches is not None else ["main"]
@@ -69,6 +71,12 @@ class FakeGit:
         self._files_changed: dict[tuple[BranchName, BranchName], list[str]] = dict(
             files_changed or {}
         )
+        self._ancestor_results: dict[tuple[str, BranchName], bool] = dict(
+            ancestor_results or {}
+        )
+        self._fork_points: dict[tuple[BranchName, BranchName], str | None] = dict(
+            fork_points or {}
+        )
 
         # Track calls for verification
         self.created_branches: list[tuple[BranchName, BranchName]] = []
@@ -92,6 +100,9 @@ class FakeGit:
 
         # Track rename calls
         self.rename_calls: list[tuple[BranchName, BranchName]] = []
+
+        # Simulated mid-rebase state for is_rebase_in_progress()
+        self.rebase_in_progress: bool = False
 
         # Configure failures
         self.fail_create_branch: bool = False
@@ -302,6 +313,12 @@ class FakeGit:
     def get_commit_hash(self, branch: BranchName) -> str | None:
         return self._commit_hashes.get(branch)
 
+    def is_ancestor(self, ancestor: str, branch: BranchName) -> bool:
+        return self._ancestor_results.get((ancestor, branch), True)
+
+    def get_fork_point(self, parent: BranchName, branch: BranchName) -> str | None:
+        return self._fork_points.get((parent, branch))
+
     def get_files_changed_in_branch(
         self, branch: BranchName, parent: BranchName
     ) -> list[str]:
@@ -322,6 +339,9 @@ class FakeGit:
             raise GitOperationError(f"Base branch '{new_base}' does not exist")
         self.rebase_calls.append((branch, new_base))
         self.rebase_onto_calls.append((branch, new_base, upstream, True))
+
+    def is_rebase_in_progress(self) -> bool:
+        return self.rebase_in_progress
 
 
 class FakeGitHub:
@@ -480,6 +500,31 @@ class FakeConfig:
 
     def branch_exists(self, branch: BranchName) -> bool:
         return branch in self.stack
+
+    def get_pending_rebase_from(self, branch: BranchName) -> str | None:
+        entry = self.stack.get(branch)
+        if entry:
+            sha = entry.get("pending_rebase_from")
+            return sha if sha else None
+        return None
+
+    def set_pending_rebase_from(self, branch: BranchName, sha: str) -> None:
+        if branch not in self.stack:
+            return
+        if sha:
+            self.stack[branch]["pending_rebase_from"] = sha
+        elif "pending_rebase_from" in self.stack[branch]:
+            del self.stack[branch]["pending_rebase_from"]
+
+    def clear_pending_rebase_from(self, branch: BranchName) -> None:
+        self.set_pending_rebase_from(branch, "")
+
+    def get_branches_with_pending_rebase(self) -> list[BranchName]:
+        return [
+            name
+            for name, entry in self.stack.items()
+            if entry.get("pending_rebase_from")
+        ]
 
 
 @dataclass

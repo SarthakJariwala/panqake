@@ -2,8 +2,10 @@
 
 Updates stack metadata, optionally updates an open PR's base on GitHub, then
 rebases the branch and all of its descendants onto the new parent. On a rebase
-conflict, git is left mid-rebase so the user can resolve and continue manually
-with `git rebase --continue`, then run `pq update` to finish the chain.
+conflict, git is left mid-rebase and the branch's pre-rebase SHA is persisted
+in `stacks.json` so the user can resolve, `git rebase --continue`, then run
+`pq move --continue` to finish the chain with the same `--onto OLD_SHA`
+semantics as the success path.
 """
 
 from panqake.ports import (
@@ -14,6 +16,7 @@ from panqake.ports import (
     GitOperationError,
     GitPort,
     JsonUI,
+    MoveContinueResult,
     MoveResult,
     PRBaseUpdateError,
     PRBaseUpdateResult,
@@ -27,63 +30,8 @@ from panqake.ports import (
     run_command,
 )
 from panqake.utils.questionary_prompt import format_branch
+from panqake.utils.rebase import rebase_subtree
 from panqake.utils.types import BranchName
-
-
-def _rebase_branch(
-    git: GitPort,
-    branch: BranchName,
-    new_base: BranchName,
-    upstream: BranchName | None,
-) -> None:
-    """Rebase a branch onto a new base, picking worktree-aware variant when needed.
-
-    Uses git's actual worktree state rather than panqake stack metadata, since
-    stored worktree paths can be stale (e.g., after a worktree was removed
-    outside of panqake) and routing through the worktree path without an
-    explicit checkout would rewrite the wrong branch.
-    """
-    if git.is_branch_worktree(branch):
-        git.rebase_onto_in_worktree(
-            branch, new_base, abort_on_conflict=False, upstream=upstream
-        )
-    else:
-        git.rebase_onto(branch, new_base, abort_on_conflict=False, upstream=upstream)
-
-
-def _rebase_descendants(
-    git: GitPort,
-    config: ConfigPort,
-    parent: BranchName,
-    parent_old_sha: BranchName | None,
-) -> list[BranchRebaseResult]:
-    """Recursively rebase descendants after their parent has been rewritten.
-
-    For each child of `parent`, replays commits in (parent_old_sha..child] onto
-    the new tip of `parent`. Stops on the first conflict — including conflicts
-    raised deeper in the subtree, so we don't leave git mid-rebase while
-    attempting to checkout the next sibling.
-    """
-    results: list[BranchRebaseResult] = []
-    for child in config.get_child_branches(parent):
-        child_old_sha = git.get_commit_hash(child)
-        try:
-            _rebase_branch(git, child, parent, upstream=parent_old_sha)
-        except RebaseConflictError as e:
-            results.append(
-                BranchRebaseResult(
-                    branch=child, new_parent=parent, rebased=False, error=str(e)
-                )
-            )
-            return results
-        results.append(
-            BranchRebaseResult(branch=child, new_parent=parent, rebased=True)
-        )
-        sub_results = _rebase_descendants(git, config, child, child_old_sha)
-        results.extend(sub_results)
-        if any(not r.rebased for r in sub_results):
-            return results
-    return results
 
 
 def _collect_descendants(config: ConfigPort, branch: BranchName) -> set[BranchName]:
@@ -97,6 +45,60 @@ def _collect_descendants(config: ConfigPort, branch: BranchName) -> set[BranchNa
         descendants.add(current)
         to_visit.extend(config.get_child_branches(current))
     return descendants
+
+
+def _clear_completed_rebase_state(
+    config: ConfigPort, rebases: list[BranchRebaseResult]
+) -> None:
+    """Clear saved rebase SHAs once the whole move/continue has succeeded."""
+    for branch in {result.branch for result in rebases if result.rebased}:
+        config.clear_pending_rebase_from(branch)
+
+
+def _find_pending_rebase_state(config: ConfigPort) -> BranchName | None:
+    """Find any pending move state.
+
+    `pq move --continue` has no branch selector, so allowing another move while
+    any pending state exists can make independent recovery paths block each other.
+    """
+    pending = config.get_branches_with_pending_rebase()
+    return pending[0] if pending else None
+
+
+def _validate_descendants_exist(
+    git: GitPort, config: ConfigPort, branch: BranchName
+) -> None:
+    """Fail before mutating state if tracked descendants are stale/missing."""
+    for descendant in _collect_descendants(config, branch):
+        if not git.branch_exists(descendant):
+            raise BranchNotFoundError(
+                f"Tracked descendant '{descendant}' of branch '{branch}' does not "
+                "exist in git. The stack metadata is stale; retrack or untrack "
+                f"'{descendant}' before moving '{branch}'."
+            )
+
+
+def _determine_move_upstream(
+    git: GitPort, branch: BranchName, old_parent: BranchName
+) -> BranchName:
+    """Return the safe upstream commit/ref for reparenting `branch`.
+
+    If the tracked parent still anchors the branch, the parent ref is safe.
+    If the parent ref was rewritten, use Git's reflog-aware fork-point. Without
+    a fork-point, moving would replay old parent commits as branch commits.
+    """
+    if git.is_ancestor(old_parent, branch):
+        return old_parent
+
+    fork_point = git.get_fork_point(old_parent, branch)
+    if fork_point and git.is_ancestor(fork_point, branch):
+        return fork_point
+
+    raise GitOperationError(
+        f"Tracked parent '{old_parent}' of branch '{branch}' has moved, and "
+        "panqake could not determine the branch's original fork point. Run "
+        f"`pq update {branch}` first, then retry `pq move`."
+    )
 
 
 def _would_create_cycle(
@@ -137,6 +139,15 @@ def move_branch_core(
     if not old_parent:
         raise GitOperationError(
             f"Cannot move root branch '{branch_name}': it has no parent."
+        )
+
+    pending_branch = _find_pending_rebase_state(config)
+    if pending_branch:
+        raise GitOperationError(
+            f"A move affecting {format_branch(branch_name)} is already in progress "
+            f"({format_branch(pending_branch)} has pending rebase state). Resolve "
+            "the conflicts, run `git rebase --continue`, then run "
+            "`pq move --continue`."
         )
 
     # Validate the tracked parent actually exists in git. If it doesn't (e.g.,
@@ -191,12 +202,21 @@ def move_branch_core(
             no_op=True,
         )
 
-    original_branch = git.get_current_branch()
-    branch_old_sha = git.get_commit_hash(branch_name)
+    _validate_descendants_exist(git, config, branch_name)
 
-    # Update stack metadata first so a mid-rebase abort still leaves a consistent
-    # view of the graph for the user to recover via `pq update`.
+    original_branch = git.get_current_branch()
+    branch_old_sha = git.get_commit_hash(branch_name) or ""
+    rebase_upstream = _determine_move_upstream(git, branch_name, old_parent)
+
+    # Update stack metadata first so a conflict leaves the intended graph in
+    # place for recovery after the user finishes `git rebase --continue`.
     config.add_to_stack(branch_name, new_parent, config.get_worktree_path(branch_name))
+
+    # Persist the pre-rebase SHA before any rebase that could conflict. If the
+    # rebase fails, descendants are still based on this SHA and `pq move
+    # --continue` will use it as the `--onto` upstream so commits from the
+    # old parent's history don't get replayed into descendants.
+    config.set_pending_rebase_from(branch_name, branch_old_sha)
 
     pr_base_update: PRBaseUpdateResult | None = None
     if github.is_cli_installed():
@@ -226,10 +246,24 @@ def move_branch_core(
 
     rebases: list[BranchRebaseResult] = []
     try:
-        _rebase_branch(git, branch_name, new_parent, upstream=old_parent)
+        if git.is_branch_worktree(branch_name):
+            git.rebase_onto_in_worktree(
+                branch_name,
+                new_parent,
+                abort_on_conflict=False,
+                upstream=rebase_upstream,
+            )
+        else:
+            git.rebase_onto(
+                branch_name,
+                new_parent,
+                abort_on_conflict=False,
+                upstream=rebase_upstream,
+            )
     except RebaseConflictError as e:
-        # Conflict left in place; metadata + PR base reflect the new parent so
-        # the user can resolve, `git rebase --continue`, then `pq update`.
+        # Conflict left in place; metadata + PR base reflect the new parent and
+        # pending_rebase_from is persisted so `pq move --continue` can resume
+        # with the same --onto OLD_SHA semantics as the success path.
         rebases.append(
             BranchRebaseResult(
                 branch=branch_name,
@@ -251,6 +285,7 @@ def move_branch_core(
         # Non-conflict failure (e.g., checkout failed before rebase started).
         # Roll back metadata + PR base so the user isn't left with a stack
         # that points to a parent the branch was never actually rebased onto.
+        config.clear_pending_rebase_from(branch_name)
         config.add_to_stack(
             branch_name, old_parent, config.get_worktree_path(branch_name)
         )
@@ -264,9 +299,13 @@ def move_branch_core(
     rebases.append(
         BranchRebaseResult(branch=branch_name, new_parent=new_parent, rebased=True)
     )
-    rebases.extend(_rebase_descendants(git, config, branch_name, branch_old_sha))
+    rebases.extend(rebase_subtree(git, config, branch_name, branch_old_sha))
 
     had_conflict = any(not r.rebased for r in rebases)
+
+    if not had_conflict:
+        # The entire move finished; clear the saved SHAs for every completed branch.
+        _clear_completed_rebase_state(config, rebases)
 
     returned_to: BranchName | None = None
     if not had_conflict and original_branch:
@@ -325,8 +364,8 @@ def move_branch(
                 ui.print_info(
                     "The stack metadata has been updated, but git is mid-rebase. "
                     "Resolve the conflicts, run `git rebase --continue`, then "
-                    f"`pq update {result.branch}` to finish rebasing any "
-                    "remaining descendants of the moved subtree."
+                    "`pq move --continue` to finish rebasing any remaining "
+                    "descendants of the moved subtree."
                 )
             else:
                 ui.print_success(
@@ -357,3 +396,153 @@ def move_branch(
     result = run_command(ui, core, json_output=json_output, command="move")
     if json_output and result is not None:
         emit_json_success("move", result)
+
+
+def _find_resume_root(
+    config: ConfigPort, pending: list[BranchName]
+) -> BranchName | None:
+    """Pick the topmost branch with pending_rebase_from set.
+
+    A branch is the resume root iff none of its tracked ancestors are also
+    in the pending set, so we always resume from the highest affected
+    branch first (and recursion handles its descendants).
+    """
+    pending_set = set(pending)
+    for branch in pending:
+        current = config.get_parent_branch(branch)
+        is_root = True
+        while current:
+            if current in pending_set:
+                is_root = False
+                break
+            current = config.get_parent_branch(current)
+        if is_root:
+            return branch
+    return None
+
+
+def move_continue_core(
+    git: GitPort,
+    config: ConfigPort,
+    ui: UIPort,
+) -> MoveContinueResult:
+    """Resume a previously conflicted `pq move`.
+
+    Picks up where the original move left off using the persisted
+    `pending_rebase_from` SHAs so descendants are reattached with the
+    same `--onto OLD_SHA` semantics the success path uses.
+    """
+    if git.is_rebase_in_progress():
+        raise GitOperationError(
+            "Git is still mid-rebase. Resolve the conflicts, run "
+            "`git rebase --continue`, then re-run `pq move --continue`."
+        )
+
+    pending = config.get_branches_with_pending_rebase()
+    if not pending:
+        ui.print_info("No move in progress; nothing to continue.")
+        return MoveContinueResult(
+            resumed_branch=None,
+            rebases=[],
+            returned_to=git.get_current_branch(),
+            no_op=True,
+        )
+
+    resume_root = _find_resume_root(config, pending)
+    if resume_root is None:
+        # Should be unreachable given pending is non-empty, but guard anyway.
+        raise GitOperationError(
+            "Found pending rebase state but could not determine a resume root."
+        )
+
+    old_sha = config.get_pending_rebase_from(resume_root) or ""
+    current_sha = git.get_commit_hash(resume_root)
+    if not current_sha:
+        raise GitOperationError(
+            f"Branch '{resume_root}' does not have a commit hash; cannot resume."
+        )
+    if current_sha == old_sha:
+        raise GitOperationError(
+            f"Branch '{resume_root}' is still at its pre-move SHA — the "
+            "original rebase was not completed. Run `git rebase --continue` "
+            "to finish it before re-running `pq move --continue`."
+        )
+
+    original_branch = git.get_current_branch()
+    # The resume root itself was rewritten by `git rebase --continue` and
+    # needs to be force-pushed. Surface it in the result so callers (CLI
+    # and JSON consumers) include it in `pq submit` instructions.
+    resume_root_parent = config.get_parent_branch(resume_root) or ""
+    rebases: list[BranchRebaseResult] = [
+        BranchRebaseResult(
+            branch=resume_root,
+            new_parent=resume_root_parent,
+            rebased=True,
+        )
+    ]
+    rebases.extend(rebase_subtree(git, config, resume_root, old_sha))
+    had_conflict = any(not r.rebased for r in rebases)
+
+    if not had_conflict:
+        _clear_completed_rebase_state(config, rebases)
+
+    returned_to: BranchName | None = None
+    if not had_conflict and original_branch and git.branch_exists(original_branch):
+        try:
+            git.checkout_branch(original_branch)
+            returned_to = original_branch
+        except Exception:
+            pass
+
+    return MoveContinueResult(
+        resumed_branch=resume_root,
+        rebases=rebases,
+        returned_to=returned_to,
+    )
+
+
+def move_continue(*, json_output: bool = False) -> None:
+    """CLI entrypoint to resume a conflicted move."""
+    git = RealGit()
+    config = RealConfig()
+    ui = JsonUI() if json_output else RealUI()
+
+    def core() -> MoveContinueResult:
+        result = move_continue_core(git=git, config=config, ui=ui)
+
+        if not json_output and not result.no_op:
+            failed = [r for r in result.rebases if not r.rebased]
+            if failed:
+                conflicted = failed[0]
+                ui.print_error(
+                    f"Rebase conflict on {format_branch(conflicted.branch)}: "
+                    f"{conflicted.error or 'unknown error'}"
+                )
+                ui.print_info(
+                    "Resolve the conflicts, run `git rebase --continue`, then "
+                    "`pq move --continue` again to finish rebasing the "
+                    "remaining descendants."
+                )
+            else:
+                rebased = [r.branch for r in result.rebases if r.rebased]
+                descendant_count = max(len(rebased) - 1, 0)
+                if descendant_count:
+                    ui.print_success(
+                        f"Resumed move from {format_branch(result.resumed_branch)}; "
+                        f"rebased {descendant_count} descendant branch(es)."
+                    )
+                else:
+                    ui.print_success(
+                        f"Resumed move from "
+                        f"{format_branch(result.resumed_branch)}; "
+                        "no descendants needed rebasing."
+                    )
+                if rebased:
+                    ui.print_info("Force-push the rewritten branches with:")
+                    for b in rebased:
+                        ui.print_info(f"  pq submit {b}")
+        return result
+
+    result = run_command(ui, core, json_output=json_output, command="move-continue")
+    if json_output and result is not None:
+        emit_json_success("move-continue", result)

@@ -8,7 +8,7 @@
   - Updates stack metadata, rebases the branch onto the new parent using `git rebase --onto`, and carries descendants along by rebasing each onto its (rewritten) parent
   - Automatically updates the PR base on GitHub when the moved branch has an open PR; warns when the GitHub CLI is unavailable
   - Worktree-aware: branches in worktrees are rebased in-place via the worktree-aware variant
-  - On rebase conflict, leaves git mid-rebase and prints recovery instructions (`git rebase --continue`, then `pq update` to finish the chain)
+  - On rebase conflict, leaves git mid-rebase and persists the branch's pre-rebase SHA; recover with `git rebase --continue` then `pq move --continue`, which replays descendants with the same `--onto OLD_SHA` semantics as the success path
 
 ## v0.27.0 - 2026-03-31
 

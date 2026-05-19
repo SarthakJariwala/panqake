@@ -64,3 +64,27 @@ def set_worktree_path(branch: BranchName, path: str) -> bool:
     """Set the worktree path for a branch."""
     stacks = Stacks()
     return stacks.set_worktree(branch, path)
+
+
+def get_pending_rebase_from(branch: BranchName) -> str:
+    """Get the persisted pre-rebase SHA for a branch, or empty string."""
+    stacks = Stacks()
+    return stacks.get_pending_rebase_from(branch)
+
+
+def set_pending_rebase_from(branch: BranchName, sha: str) -> bool:
+    """Persist the pre-rebase SHA for a branch."""
+    stacks = Stacks()
+    return stacks.set_pending_rebase_from(branch, sha)
+
+
+def clear_pending_rebase_from(branch: BranchName) -> bool:
+    """Clear the persisted pre-rebase SHA for a branch."""
+    stacks = Stacks()
+    return stacks.clear_pending_rebase_from(branch)
+
+
+def get_branches_with_pending_rebase() -> list[BranchName]:
+    """Return tracked branches with a non-empty pending_rebase_from."""
+    stacks = Stacks()
+    return stacks.get_branches_with_pending_rebase()

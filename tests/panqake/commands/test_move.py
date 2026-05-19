@@ -279,6 +279,39 @@ class TestMoveBranchCore:
         assert "move --continue" in str(ancestor_exc.value)
         assert ancestor_pending.get_parent_branch("b") == "a"
 
+    def test_unrelated_pending_state_blocks_new_move(self):
+        """Because continue has no branch selector, any pending move blocks new ones."""
+        git = FakeGit(
+            branches=["main", "a", "b", "other", "pending"], current_branch="main"
+        )
+        config = FakeConfig(
+            stack={
+                "a": {"parent": "main"},
+                "b": {"parent": "a"},
+                "other": {"parent": "main"},
+                "pending": {
+                    "parent": "main",
+                    "pending_rebase_from": "sha-pending-old",
+                },
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitOperationError) as exc_info:
+            move_branch_core(
+                git=git,
+                github=FakeGitHub(),
+                config=config,
+                ui=ui,
+                branch_name="b",
+                new_parent="other",
+            )
+
+        assert "move --continue" in str(exc_info.value)
+        assert "pending" in str(exc_info.value)
+        assert config.get_parent_branch("b") == "a"
+        assert git.rebase_onto_calls == []
+
     def test_branch_not_tracked_raises(self):
         """Moving an untracked branch is an error."""
         git = FakeGit(branches=["main", "feature"], current_branch="main")
@@ -1150,6 +1183,26 @@ class TestMoveContinueCore:
         # so the user is told to `pq submit` both.
         assert "b" in rebased
         assert "c" in rebased
+
+    def test_missing_pending_descendant_fails_continue_without_clearing_state(self):
+        """A deleted pending descendant must not be treated as already rebased."""
+        git = FakeGit(branches=["main", "b"], current_branch="b")
+        git._commit_hashes = {"b": "sha-b-new"}
+        config = FakeConfig(
+            stack={
+                "b": {"parent": "main", "pending_rebase_from": "sha-b-old"},
+                "c": {"parent": "b", "pending_rebase_from": "sha-c-old"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(BranchNotFoundError) as exc_info:
+            move_continue_core(git=git, config=config, ui=ui)
+
+        assert "c" in str(exc_info.value)
+        assert config.get_pending_rebase_from("b") == "sha-b-old"
+        assert config.get_pending_rebase_from("c") == "sha-c-old"
+        assert git.rebase_onto_calls == []
 
     def test_abort_suggestion_not_in_pre_move_sha_error(self):
         """Finding P2: don't advertise `pq move --continue` as a recovery

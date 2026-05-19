@@ -55,24 +55,14 @@ def _clear_completed_rebase_state(
         config.clear_pending_rebase_from(branch)
 
 
-def _find_pending_rebase_state(
-    config: ConfigPort, branch: BranchName
-) -> BranchName | None:
-    """Find pending move state on `branch`, its descendants, or ancestors."""
-    if config.get_pending_rebase_from(branch):
-        return branch
+def _find_pending_rebase_state(config: ConfigPort) -> BranchName | None:
+    """Find any pending move state.
 
-    for descendant in _collect_descendants(config, branch):
-        if config.get_pending_rebase_from(descendant):
-            return descendant
-
-    current = config.get_parent_branch(branch)
-    while current:
-        if config.get_pending_rebase_from(current):
-            return current
-        current = config.get_parent_branch(current)
-
-    return None
+    `pq move --continue` has no branch selector, so allowing another move while
+    any pending state exists can make independent recovery paths block each other.
+    """
+    pending = config.get_branches_with_pending_rebase()
+    return pending[0] if pending else None
 
 
 def _validate_descendants_exist(
@@ -151,7 +141,7 @@ def move_branch_core(
             f"Cannot move root branch '{branch_name}': it has no parent."
         )
 
-    pending_branch = _find_pending_rebase_state(config, branch_name)
+    pending_branch = _find_pending_rebase_state(config)
     if pending_branch:
         raise GitOperationError(
             f"A move affecting {format_branch(branch_name)} is already in progress "

@@ -9,6 +9,7 @@ already-completed branches again.
 """
 
 from panqake.ports import (
+    BranchNotFoundError,
     BranchRebaseResult,
     ConfigPort,
     GitPort,
@@ -69,7 +70,15 @@ def rebase_subtree(
         # instead of the required pre-move SHA — silently replaying or
         # dropping commits via patch-id dedup.
         persisted = config.get_pending_rebase_from(child)
-        current_sha = git.get_commit_hash(child) or ""
+        current_sha = git.get_commit_hash(child)
+        if current_sha is None:
+            if not git.branch_exists(child):
+                raise BranchNotFoundError(
+                    f"Tracked descendant '{child}' of branch '{parent}' does not "
+                    "exist in git. The stack metadata is stale; retrack or untrack "
+                    f"'{child}' before running `pq move --continue` again."
+                )
+            current_sha = ""
         if persisted and persisted != current_sha:
             # Already rebased (by an earlier rebase_subtree pass or by the
             # user via `git rebase --continue`). Don't redo the work; just

@@ -417,6 +417,70 @@ class TestMoveBranchCore:
         # PR base rolled back too (best-effort)
         assert github.update_pr_base_calls[-1] == ("b", "a")
 
+    def test_stale_worktree_metadata_uses_regular_rebase(self):
+        """Stale worktree metadata must not route to the worktree rebase path.
+
+        The worktree-aware rebase doesn't checkout the target branch — it relies
+        on the branch's worktree directory. If stack metadata says a branch has
+        a worktree but git disagrees (e.g., the worktree was removed outside
+        panqake), routing through that path would rebase whichever branch is
+        checked out in the current directory rather than the requested one.
+        """
+        git = FakeGit(branches=["main", "a", "b"], current_branch="main")
+        # NOTE: git.worktrees is intentionally empty — git's actual state says
+        # `b` is NOT in a worktree.
+        config = FakeConfig(
+            stack={
+                "a": {"parent": "main"},
+                # Stale metadata: stack still records a worktree path
+                "b": {"parent": "a", "worktree": "/stale/worktree/path"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        move_branch_core(
+            git=git,
+            github=FakeGitHub(),
+            config=config,
+            ui=ui,
+            branch_name="b",
+            new_parent="main",
+        )
+
+        # The 4th tuple element marks worktree-aware rebases. b should NOT
+        # have used the worktree path despite the stale metadata.
+        b_rebases = [c for c in git.rebase_onto_calls if c[0] == "b"]
+        assert b_rebases == [("b", "main", "a", False)]
+
+    def test_validates_old_parent_exists_in_git(self):
+        """If the tracked parent has been deleted from git, fail early.
+
+        Otherwise the rebase would die with an opaque 'invalid upstream'
+        error reported as a misleading conflict, AFTER metadata has been
+        mutated.
+        """
+        git = FakeGit(branches=["main", "b"], current_branch="main")
+        # `a` is tracked as b's parent but doesn't exist in git
+        config = FakeConfig(stack={"a": {"parent": "main"}, "b": {"parent": "a"}})
+        github = FakeGitHub(branches_with_pr={"b"})
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(BranchNotFoundError) as exc_info:
+            move_branch_core(
+                git=git,
+                github=github,
+                config=config,
+                ui=ui,
+                branch_name="b",
+                new_parent="main",
+            )
+        assert "stale" in str(exc_info.value).lower()
+
+        # Nothing should have been mutated
+        assert config.get_parent_branch("b") == "a"
+        assert github.update_pr_base_calls == []
+        assert git.rebase_onto_calls == []
+
     def test_worktree_branch_uses_worktree_rebase(self):
         """A branch in a worktree gets rebased via the worktree-aware helper."""
         git = FakeGit(branches=["main", "a", "b"], current_branch="main")

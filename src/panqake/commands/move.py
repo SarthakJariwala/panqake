@@ -32,13 +32,18 @@ from panqake.utils.types import BranchName
 
 def _rebase_branch(
     git: GitPort,
-    config: ConfigPort,
     branch: BranchName,
     new_base: BranchName,
     upstream: BranchName | None,
 ) -> None:
-    """Rebase a branch onto a new base, picking worktree-aware variant when needed."""
-    if config.get_worktree_path(branch):
+    """Rebase a branch onto a new base, picking worktree-aware variant when needed.
+
+    Uses git's actual worktree state rather than panqake stack metadata, since
+    stored worktree paths can be stale (e.g., after a worktree was removed
+    outside of panqake) and routing through the worktree path without an
+    explicit checkout would rewrite the wrong branch.
+    """
+    if git.is_branch_worktree(branch):
         git.rebase_onto_in_worktree(
             branch, new_base, abort_on_conflict=False, upstream=upstream
         )
@@ -63,7 +68,7 @@ def _rebase_descendants(
     for child in config.get_child_branches(parent):
         child_old_sha = git.get_commit_hash(child)
         try:
-            _rebase_branch(git, config, child, parent, upstream=parent_old_sha)
+            _rebase_branch(git, child, parent, upstream=parent_old_sha)
         except RebaseConflictError as e:
             results.append(
                 BranchRebaseResult(
@@ -132,6 +137,17 @@ def move_branch_core(
     if not old_parent:
         raise GitOperationError(
             f"Cannot move root branch '{branch_name}': it has no parent."
+        )
+
+    # Validate the tracked parent actually exists in git. If it doesn't (e.g.,
+    # the parent was deleted or renamed outside panqake), the `--onto OLD_PARENT`
+    # form of git rebase would fail with an opaque "invalid upstream" error
+    # that gets surfaced as a misleading conflict — fail early instead.
+    if not git.branch_exists(old_parent):
+        raise BranchNotFoundError(
+            f"Tracked parent '{old_parent}' of branch '{branch_name}' does not "
+            f"exist in git. The stack metadata is stale; retrack '{branch_name}' "
+            f"with `pq track {branch_name}` against an existing parent first."
         )
 
     if not new_parent:
@@ -210,7 +226,7 @@ def move_branch_core(
 
     rebases: list[BranchRebaseResult] = []
     try:
-        _rebase_branch(git, config, branch_name, new_parent, upstream=old_parent)
+        _rebase_branch(git, branch_name, new_parent, upstream=old_parent)
     except RebaseConflictError as e:
         # Conflict left in place; metadata + PR base reflect the new parent so
         # the user can resolve, `git rebase --continue`, then `pq update`.

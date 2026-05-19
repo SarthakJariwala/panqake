@@ -56,6 +56,7 @@ export default defineConfig({
               { text: "new", link: "/commands/branch-management/new" },
               { text: "delete", link: "/commands/branch-management/delete" },
               { text: "rename", link: "/commands/branch-management/rename" },
+              { text: "move", link: "/commands/branch-management/move" },
               { text: "track", link: "/commands/branch-management/track" },
               { text: "untrack", link: "/commands/branch-management/untrack" },
             ],

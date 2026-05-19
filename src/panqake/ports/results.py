@@ -226,6 +226,30 @@ class RenameResult:
 
 
 @dataclass(frozen=True)
+class BranchRebaseResult:
+    """Result of rebasing a single branch during a move operation."""
+
+    branch: BranchName
+    new_parent: BranchName
+    rebased: bool
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class MoveResult:
+    """Result of moving a branch to a new parent."""
+
+    branch: BranchName
+    old_parent: BranchName
+    new_parent: BranchName
+    rebases: list[BranchRebaseResult]
+    pr_base_update: PRBaseUpdateResult | None
+    returned_to: BranchName | None
+    warnings: list[str]
+    no_op: bool = False
+
+
+@dataclass(frozen=True)
 class BranchUpdateResult:
     """Result of updating a single branch during sync."""
 

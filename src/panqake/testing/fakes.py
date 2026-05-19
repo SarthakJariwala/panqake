@@ -84,6 +84,9 @@ class FakeGit:
         self.deleted_remote_branches: list[BranchName] = []
         self.removed_worktrees: list[str] = []
         self.rebase_calls: list[tuple[BranchName, BranchName]] = []
+        self.rebase_onto_calls: list[
+            tuple[BranchName, BranchName, BranchName | None, bool]
+        ] = []  # (branch, new_base, upstream, in_worktree)
         self.fetch_calls: int = 0
         self.pull_calls: list[BranchName] = []
 
@@ -228,7 +231,11 @@ class FakeGit:
         self.removed_worktrees.append(path)
 
     def rebase_onto(
-        self, branch: BranchName, new_base: BranchName, abort_on_conflict: bool = True
+        self,
+        branch: BranchName,
+        new_base: BranchName,
+        abort_on_conflict: bool = True,
+        upstream: BranchName | None = None,
     ) -> None:
         if self.fail_rebase:
             raise RebaseConflictError(f"Rebase conflict in branch '{branch}'")
@@ -238,6 +245,7 @@ class FakeGit:
             raise GitOperationError(f"Base branch '{new_base}' does not exist")
         self.current_branch = branch
         self.rebase_calls.append((branch, new_base))
+        self.rebase_onto_calls.append((branch, new_base, upstream, False))
 
     def fetch_from_remote(self) -> None:
         if self.fail_fetch:
@@ -300,7 +308,11 @@ class FakeGit:
         return self._files_changed.get((branch, parent), [])
 
     def rebase_onto_in_worktree(
-        self, branch: BranchName, new_base: BranchName, abort_on_conflict: bool = True
+        self,
+        branch: BranchName,
+        new_base: BranchName,
+        abort_on_conflict: bool = True,
+        upstream: BranchName | None = None,
     ) -> None:
         if self.fail_rebase:
             raise RebaseConflictError(f"Rebase conflict in branch '{branch}'")
@@ -309,6 +321,7 @@ class FakeGit:
         if new_base not in self.branches:
             raise GitOperationError(f"Base branch '{new_base}' does not exist")
         self.rebase_calls.append((branch, new_base))
+        self.rebase_onto_calls.append((branch, new_base, upstream, True))
 
 
 class FakeGitHub:

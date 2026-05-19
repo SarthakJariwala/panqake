@@ -209,12 +209,21 @@ class RealGit:
             raise WorktreeError(f"Failed to remove worktree at '{path}'")
 
     def rebase_onto(
-        self, branch: BranchName, new_base: BranchName, abort_on_conflict: bool = True
+        self,
+        branch: BranchName,
+        new_base: BranchName,
+        abort_on_conflict: bool = True,
+        upstream: BranchName | None = None,
     ) -> None:
         from panqake.utils.git import run_git_command
 
         self.checkout_branch(branch)
-        result = run_git_command(["rebase", "--autostash", new_base], silent_fail=True)
+        cmd = ["rebase", "--autostash"]
+        if upstream is not None:
+            cmd.extend(["--onto", new_base, upstream])
+        else:
+            cmd.append(new_base)
+        result = run_git_command(cmd, silent_fail=True)
         if result is None:
             if abort_on_conflict:
                 run_git_command(["rebase", "--abort"], silent_fail=True)
@@ -317,13 +326,20 @@ class RealGit:
         return entries
 
     def rebase_onto_in_worktree(
-        self, branch: BranchName, new_base: BranchName, abort_on_conflict: bool = True
+        self,
+        branch: BranchName,
+        new_base: BranchName,
+        abort_on_conflict: bool = True,
+        upstream: BranchName | None = None,
     ) -> None:
         from panqake.utils.git import run_git_command_for_branch_context
 
-        result = run_git_command_for_branch_context(
-            branch, ["rebase", "--autostash", new_base]
-        )
+        cmd = ["rebase", "--autostash"]
+        if upstream is not None:
+            cmd.extend(["--onto", new_base, upstream])
+        else:
+            cmd.append(new_base)
+        result = run_git_command_for_branch_context(branch, cmd)
         if result is None:
             if abort_on_conflict:
                 run_git_command_for_branch_context(branch, ["rebase", "--abort"])

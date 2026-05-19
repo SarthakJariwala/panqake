@@ -925,3 +925,75 @@ class TestMoveContinueCore:
         msg = str(exc_info.value).lower()
         assert "after aborting" not in msg
         assert "pre-move sha" in msg
+
+    def test_resume_after_descendant_conflict_preserves_saved_old_sha(self):
+        """Regression: a resume must not recompute a child's old SHA from
+        its now-rebased tip.
+
+        Setup: `pq move b X` rebased b OK, then conflicted on c. The user
+        resolved and ran `git rebase --continue` so c is now at its new
+        SHA. c's child d is still based on c's old SHA.
+
+        Resume starts at b (topmost pending). When rebase_subtree walks
+        into c, it must NOT overwrite c's persisted `pending_rebase_from`
+        with c's now-rebased tip — otherwise d gets rebased with
+        `--onto c <c_new_sha>` instead of `--onto c <c_old_sha>`, which
+        can silently drop conflict resolutions baked into c_new during
+        patch-id dedup.
+        """
+        git = FakeGit(branches=["main", "b", "c", "d"], current_branch="b")
+        git._commit_hashes = {
+            # b was rebased successfully before the move conflicted.
+            "b": "sha-b-new",
+            # c was the conflict point; after `git rebase --continue` it's
+            # at a new SHA, but d is still based on c's old SHA.
+            "c": "sha-c-new",
+            "d": "sha-d-old",
+        }
+
+        original_rebase = git.rebase_onto
+
+        def track_rebases(branch, new_base, abort_on_conflict=True, upstream=None):
+            return original_rebase(
+                branch,
+                new_base,
+                abort_on_conflict=abort_on_conflict,
+                upstream=upstream,
+            )
+
+        git.rebase_onto = track_rebases  # type: ignore[assignment]
+
+        config = FakeConfig(
+            stack={
+                "b": {"parent": "main", "pending_rebase_from": "sha-b-old"},
+                "c": {"parent": "b", "pending_rebase_from": "sha-c-old"},
+                "d": {"parent": "c"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        result = move_continue_core(git=git, config=config, ui=ui)
+
+        # b and c are already at their post-rebase tips; they should NOT
+        # be rebased again. Only d needs rebasing.
+        assert not any(call[0] == "b" for call in git.rebase_onto_calls)
+        assert not any(call[0] == "c" for call in git.rebase_onto_calls)
+
+        d_calls = [c for c in git.rebase_onto_calls if c[0] == "d"]
+        assert len(d_calls) == 1
+        branch, new_base, upstream, _ = d_calls[0]
+        assert new_base == "c"
+        # The critical assertion: d is rebased with c's SAVED pre-rebase
+        # SHA, not c's current (already-rebased) tip.
+        assert upstream == "sha-c-old"
+        assert upstream != "sha-c-new"
+
+        # Resume root, the in-flight child, and the freshly-rebased
+        # grandchild all surface as rebased so the user knows to submit.
+        rebased = {r.branch for r in result.rebases if r.rebased}
+        assert {"b", "c", "d"} <= rebased
+
+        # Pending state cleared throughout on success.
+        assert config.get_pending_rebase_from("b") is None
+        assert config.get_pending_rebase_from("c") is None
+        assert config.get_pending_rebase_from("d") is None

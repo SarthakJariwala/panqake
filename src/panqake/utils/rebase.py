@@ -58,20 +58,39 @@ def rebase_subtree(
     """
     results: list[BranchRebaseResult] = []
     for child in config.get_child_branches(parent):
-        child_old_sha = git.get_commit_hash(child) or ""
-        config.set_pending_rebase_from(child, child_old_sha)
-        try:
-            _rebase_branch(git, child, parent, upstream=parent_old_sha or None)
-        except RebaseConflictError as e:
+        # If a prior attempt persisted this child's pre-rebase SHA, that
+        # value — not the current tip — is what its descendants are still
+        # based on. Recomputing here would clobber the saved SHA after
+        # `git rebase --continue` advanced the child's tip, and the next
+        # recursion would rebase grandchildren with --onto <new-sha>
+        # instead of the required pre-move SHA — silently replaying or
+        # dropping commits via patch-id dedup.
+        persisted = config.get_pending_rebase_from(child)
+        current_sha = git.get_commit_hash(child) or ""
+        if persisted and persisted != current_sha:
+            # Already rebased (by an earlier rebase_subtree pass or by the
+            # user via `git rebase --continue`). Don't redo the work; just
+            # record it and propagate the saved old SHA to descendants.
+            child_old_sha = persisted
             results.append(
-                BranchRebaseResult(
-                    branch=child, new_parent=parent, rebased=False, error=str(e)
-                )
+                BranchRebaseResult(branch=child, new_parent=parent, rebased=True)
             )
-            return results
-        results.append(
-            BranchRebaseResult(branch=child, new_parent=parent, rebased=True)
-        )
+        else:
+            child_old_sha = persisted or current_sha
+            if not persisted:
+                config.set_pending_rebase_from(child, child_old_sha)
+            try:
+                _rebase_branch(git, child, parent, upstream=parent_old_sha or None)
+            except RebaseConflictError as e:
+                results.append(
+                    BranchRebaseResult(
+                        branch=child, new_parent=parent, rebased=False, error=str(e)
+                    )
+                )
+                return results
+            results.append(
+                BranchRebaseResult(branch=child, new_parent=parent, rebased=True)
+            )
         sub_results = rebase_subtree(git, config, child, child_old_sha)
         results.extend(sub_results)
         if any(not r.rebased for r in sub_results):

@@ -21,6 +21,7 @@ pq move [BRANCH_NAME] --to <NEW_PARENT>
 | Option | Description |
 |--------|-------------|
 | `--to` | New parent branch (if not provided, will prompt) |
+| `--continue` | Resume a previously conflicted move after running `git rebase --continue` |
 | `--json` | Output machine-readable JSON |
 
 ## Examples
@@ -59,9 +60,9 @@ If a rebase conflict occurs, git is left mid-rebase so you can resolve it:
 
 1. Resolve the conflicts in your editor.
 2. Run `git rebase --continue`.
-3. Run `pq update <moved-branch>` to finish rebasing any remaining descendants of the moved subtree.
+3. Run `pq move --continue` to finish rebasing any remaining descendants of the moved subtree.
 
-The stack metadata is updated before the rebase begins, so the recovery path is clean — you don't need to re-run `pq move`. Note that `pq update` defaults to the current branch, which after a conflict is the conflicted descendant; passing the moved branch as an argument ensures all sibling descendants get rebased, not just the ones below where you ended up.
+The stack metadata and the moved branch's pre-rebase SHA are persisted before the rebase begins. `pq move --continue` uses the persisted SHA as the `--onto` upstream when rebasing each descendant, so the recovery path preserves the same `git rebase --onto NEW_PARENT OLD_SHA <descendant>` semantics as the success path — descendants never replay commits from the old parent's history.
 
 ::: info
 Panqake prevents cycles: you cannot move a branch onto one of its own descendants.

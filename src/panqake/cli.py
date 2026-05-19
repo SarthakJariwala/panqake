@@ -384,11 +384,15 @@ def move(
     """Move a branch to a new parent, rebasing its subtree onto it."""
     if continue_:
         if branch_name is not None or to is not None:
-            console.print(
-                "Error: --continue does not take a branch name or --to argument.",
-                style="bold red",
+            err = GitOperationError(
+                "--continue does not take a branch name or --to argument.",
+                exit_code=1,
             )
-            raise typer.Exit(code=1)
+            if json:
+                _emit_json_error("move", err)
+            else:
+                console.print(f"Error: {err.message}", style="bold red")
+            raise typer.Exit(code=err.exit_code)
         move_continue(json_output=json)
     else:
         move_branch(branch_name, to, json_output=json)
@@ -414,11 +418,15 @@ def reparent_command(
     """Alias for 'move' - Move a branch to a new parent."""
     if continue_:
         if branch_name is not None or to is not None:
-            console.print(
-                "Error: --continue does not take a branch name or --to argument.",
-                style="bold red",
+            err = GitOperationError(
+                "--continue does not take a branch name or --to argument.",
+                exit_code=1,
             )
-            raise typer.Exit(code=1)
+            if json:
+                _emit_json_error("reparent", err)
+            else:
+                console.print(f"Error: {err.message}", style="bold red")
+            raise typer.Exit(code=err.exit_code)
         move_continue(json_output=json)
     else:
         move_branch(branch_name, to, json_output=json)

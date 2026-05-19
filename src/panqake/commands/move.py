@@ -393,11 +393,22 @@ def move_continue_core(
         raise GitOperationError(
             f"Branch '{resume_root}' is still at its pre-move SHA — the "
             "original rebase was not completed. Run `git rebase --continue` "
-            "to finish it, or `pq move --continue` again after aborting."
+            "to finish it before re-running `pq move --continue`."
         )
 
     original_branch = git.get_current_branch()
-    rebases = rebase_subtree(git, config, resume_root, old_sha)
+    # The resume root itself was rewritten by `git rebase --continue` and
+    # needs to be force-pushed. Surface it in the result so callers (CLI
+    # and JSON consumers) include it in `pq submit` instructions.
+    resume_root_parent = config.get_parent_branch(resume_root) or ""
+    rebases: list[BranchRebaseResult] = [
+        BranchRebaseResult(
+            branch=resume_root,
+            new_parent=resume_root_parent,
+            rebased=True,
+        )
+    ]
+    rebases.extend(rebase_subtree(git, config, resume_root, old_sha))
     had_conflict = any(not r.rebased for r in rebases)
 
     if not had_conflict:
@@ -442,20 +453,22 @@ def move_continue(*, json_output: bool = False) -> None:
                 )
             else:
                 rebased = [r.branch for r in result.rebases if r.rebased]
-                if rebased:
+                descendant_count = max(len(rebased) - 1, 0)
+                if descendant_count:
                     ui.print_success(
                         f"Resumed move from {format_branch(result.resumed_branch)}; "
-                        f"rebased {len(rebased)} descendant branch(es)."
+                        f"rebased {descendant_count} descendant branch(es)."
                     )
-                    ui.print_info("Force-push the rewritten branches with:")
-                    for b in rebased:
-                        ui.print_info(f"  pq submit {b}")
                 else:
                     ui.print_success(
                         f"Resumed move from "
                         f"{format_branch(result.resumed_branch)}; "
                         "no descendants needed rebasing."
                     )
+                if rebased:
+                    ui.print_info("Force-push the rewritten branches with:")
+                    for b in rebased:
+                        ui.print_info(f"  pq submit {b}")
         return result
 
     result = run_command(ui, core, json_output=json_output, command="move-continue")

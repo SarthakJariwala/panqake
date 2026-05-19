@@ -882,3 +882,46 @@ class TestMoveContinueCore:
         result = move_continue_core(git=git, config=config, ui=ui)
 
         assert result.resumed_branch == "b"
+
+    def test_resumed_root_appears_in_rebases_for_force_push(self):
+        """The resume root was rewritten by `git rebase --continue` and must
+        be force-pushed, so it has to appear in the result's `rebases` list
+        for JSON consumers and the CLI's `pq submit` instructions to include
+        it.
+        """
+        git = FakeGit(branches=["main", "b", "c"], current_branch="b")
+        git._commit_hashes = {"b": "sha-b-new", "c": "sha-c-old"}
+        config = FakeConfig(
+            stack={
+                "b": {"parent": "main", "pending_rebase_from": "sha-b-old"},
+                "c": {"parent": "b"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        result = move_continue_core(git=git, config=config, ui=ui)
+
+        rebased = [r.branch for r in result.rebases if r.rebased]
+        # Both the resume root (b) and the descendant (c) must be present
+        # so the user is told to `pq submit` both.
+        assert "b" in rebased
+        assert "c" in rebased
+
+    def test_abort_suggestion_not_in_pre_move_sha_error(self):
+        """Finding P2: don't advertise `pq move --continue` as a recovery
+        path after `git rebase --abort` — once aborted, the branch SHA is
+        back to pending_rebase_from and continue rejects it, leaving the
+        user stuck. Make sure the error message no longer suggests it.
+        """
+        git = FakeGit(branches=["main", "a"], current_branch="main")
+        git._commit_hashes = {"a": "sha-a-old"}
+        config = FakeConfig(
+            stack={"a": {"parent": "main", "pending_rebase_from": "sha-a-old"}}
+        )
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitOperationError) as exc_info:
+            move_continue_core(git=git, config=config, ui=ui)
+        msg = str(exc_info.value).lower()
+        assert "after aborting" not in msg
+        assert "pre-move sha" in msg

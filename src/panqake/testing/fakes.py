@@ -93,6 +93,9 @@ class FakeGit:
         # Track rename calls
         self.rename_calls: list[tuple[BranchName, BranchName]] = []
 
+        # Simulated mid-rebase state for is_rebase_in_progress()
+        self.rebase_in_progress: bool = False
+
         # Configure failures
         self.fail_create_branch: bool = False
         self.fail_add_worktree: bool = False
@@ -323,6 +326,9 @@ class FakeGit:
         self.rebase_calls.append((branch, new_base))
         self.rebase_onto_calls.append((branch, new_base, upstream, True))
 
+    def is_rebase_in_progress(self) -> bool:
+        return self.rebase_in_progress
+
 
 class FakeGitHub:
     """In-memory fake for GitHubPort."""
@@ -480,6 +486,31 @@ class FakeConfig:
 
     def branch_exists(self, branch: BranchName) -> bool:
         return branch in self.stack
+
+    def get_pending_rebase_from(self, branch: BranchName) -> str | None:
+        entry = self.stack.get(branch)
+        if entry:
+            sha = entry.get("pending_rebase_from")
+            return sha if sha else None
+        return None
+
+    def set_pending_rebase_from(self, branch: BranchName, sha: str) -> None:
+        if branch not in self.stack:
+            return
+        if sha:
+            self.stack[branch]["pending_rebase_from"] = sha
+        elif "pending_rebase_from" in self.stack[branch]:
+            del self.stack[branch]["pending_rebase_from"]
+
+    def clear_pending_rebase_from(self, branch: BranchName) -> None:
+        self.set_pending_rebase_from(branch, "")
+
+    def get_branches_with_pending_rebase(self) -> list[BranchName]:
+        return [
+            name
+            for name, entry in self.stack.items()
+            if entry.get("pending_rebase_from")
+        ]
 
 
 @dataclass

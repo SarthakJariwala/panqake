@@ -300,6 +300,15 @@ class GitPort(Protocol):
         """
         ...
 
+    def is_rebase_in_progress(self) -> bool:
+        """Check whether git is currently mid-rebase in the working directory.
+
+        Returns:
+            True if a rebase is in progress (rebase-merge or rebase-apply
+            directory exists under .git), False otherwise.
+        """
+        ...
+
     def rebase_onto_in_worktree(
         self,
         branch: BranchName,
@@ -476,6 +485,30 @@ class ConfigPort(Protocol):
         Returns:
             True if the branch is in the stack
         """
+        ...
+
+    def get_pending_rebase_from(self, branch: BranchName) -> str | None:
+        """Get the persisted pre-rebase SHA for a branch.
+
+        Returns the SHA the branch was at before an in-flight move-rebase
+        began. Descendants of the branch are still based on this SHA and
+        must be reattached via `git rebase --onto <branch> <sha>`.
+
+        Returns:
+            The SHA, or None when no pending state is set.
+        """
+        ...
+
+    def set_pending_rebase_from(self, branch: BranchName, sha: str) -> None:
+        """Persist the pre-rebase SHA for a branch."""
+        ...
+
+    def clear_pending_rebase_from(self, branch: BranchName) -> None:
+        """Clear any persisted pre-rebase SHA for a branch."""
+        ...
+
+    def get_branches_with_pending_rebase(self) -> list[BranchName]:
+        """Return tracked branches with a non-empty pending_rebase_from."""
         ...
 
 

@@ -24,7 +24,11 @@ class Branch:
     """Represents a branch in a stack with its relationships."""
 
     def __init__(
-        self, name: BranchName, parent: ParentBranchName = "", worktree: str = ""
+        self,
+        name: BranchName,
+        parent: ParentBranchName = "",
+        worktree: str = "",
+        pending_rebase_from: str = "",
     ) -> None:
         """Initialize a branch with its name, parent, and optional worktree.
 
@@ -32,10 +36,16 @@ class Branch:
             name: The name of the branch
             parent: The name of the parent branch (empty string for root branches)
             worktree: The path to the worktree (empty string if no worktree)
+            pending_rebase_from: SHA the branch was at before an in-flight
+                rebase began. Set transiently by `pq move`; descendants are
+                still based on this SHA and must be reattached via
+                `git rebase --onto <branch> <pending_rebase_from>`. Empty when
+                no rebase is in flight.
         """
         self.name = name
         self.parent = parent
         self.worktree = worktree
+        self.pending_rebase_from = pending_rebase_from
 
     def to_dict(self) -> BranchMetadata:
         """Convert branch to dictionary for serialization.
@@ -46,6 +56,8 @@ class Branch:
         result = {"parent": self.parent}
         if self.worktree:
             result["worktree"] = self.worktree
+        if self.pending_rebase_from:
+            result["pending_rebase_from"] = self.pending_rebase_from
         return result
 
     @classmethod
@@ -59,7 +71,12 @@ class Branch:
         Returns:
             A new Branch instance
         """
-        return cls(name, data.get("parent", ""), data.get("worktree", ""))
+        return cls(
+            name,
+            data.get("parent", ""),
+            data.get("worktree", ""),
+            data.get("pending_rebase_from", ""),
+        )
 
 
 class Stacks:
@@ -269,6 +286,67 @@ class Stacks:
         self._branches[repo_id][branch].worktree = path
         return self.save()
 
+    def get_pending_rebase_from(self, branch: BranchName) -> str:
+        """Get the persisted pre-rebase SHA for the given branch.
+
+        Returns:
+            The SHA, or empty string when no pending rebase state is set.
+        """
+        if not self._ensure_loaded() or not self._ensure_repo_id():
+            return ""
+
+        if (
+            self._current_repo_id is not None
+            and self._current_repo_id in self._branches
+            and branch in self._branches[self._current_repo_id]
+        ):
+            return self._branches[self._current_repo_id][branch].pending_rebase_from
+        return ""
+
+    def set_pending_rebase_from(self, branch: BranchName, sha: str) -> bool:
+        """Persist the pre-rebase SHA for a branch.
+
+        Returns:
+            True if the field was set, False otherwise.
+        """
+        if not self._ensure_loaded() or not self._ensure_repo_exists():
+            return False
+
+        repo_id: RepoId | None = self._current_repo_id
+        if (
+            repo_id is None
+            or repo_id not in self._branches
+            or branch not in self._branches[repo_id]
+        ):
+            return False
+
+        self._branches[repo_id][branch].pending_rebase_from = sha
+        return self.save()
+
+    def clear_pending_rebase_from(self, branch: BranchName) -> bool:
+        """Clear any persisted pre-rebase SHA for a branch.
+
+        Returns:
+            True if the field was cleared (or was already empty), False if the
+            branch is not tracked.
+        """
+        return self.set_pending_rebase_from(branch, "")
+
+    def get_branches_with_pending_rebase(self) -> List[BranchName]:
+        """Return tracked branches that have a non-empty pending_rebase_from."""
+        if not self._ensure_loaded() or not self._ensure_repo_id():
+            return []
+
+        repo_id: RepoId | None = self._current_repo_id
+        if repo_id is None or repo_id not in self._branches:
+            return []
+
+        return [
+            name
+            for name, branch in self._branches[repo_id].items()
+            if branch.pending_rebase_from
+        ]
+
     def add_branch(
         self, branch: BranchName, parent: ParentBranchName, worktree: str = ""
     ) -> bool:
@@ -286,8 +364,10 @@ class Stacks:
             return False
 
         if self._current_repo_id is not None:
+            existing = self._branches[self._current_repo_id].get(branch)
+            pending = existing.pending_rebase_from if existing else ""
             self._branches[self._current_repo_id][branch] = Branch(
-                branch, parent, worktree
+                branch, parent, worktree, pending
             )
         return self.save()
 
@@ -679,7 +759,10 @@ class Stacks:
 
         # Create new branch entry with the same parent and worktree
         self._branches[repo_id][new_name] = Branch(
-            new_name, branch_data.parent, branch_data.worktree
+            new_name,
+            branch_data.parent,
+            branch_data.worktree,
+            branch_data.pending_rebase_from,
         )
 
         # Remove the old branch entry

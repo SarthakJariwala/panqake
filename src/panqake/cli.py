@@ -14,7 +14,7 @@ from panqake.commands.down import down as down_command
 from panqake.commands.list import list_branches
 from panqake.commands.merge import merge_branch
 from panqake.commands.modify import modify_commit
-from panqake.commands.move import move_branch
+from panqake.commands.move import move_branch, move_continue
 from panqake.commands.new import create_new_branch
 from panqake.commands.pr import create_pull_requests
 from panqake.commands.rename import rename as rename_branch
@@ -372,10 +372,26 @@ def move(
     to: str | None = typer.Option(
         None, "--to", help="New parent branch (if not provided, will prompt)"
     ),
+    continue_: bool = typer.Option(
+        False,
+        "--continue",
+        help=(
+            "Resume a previously conflicted move after running `git rebase --continue`."
+        ),
+    ),
     json: bool = JSON_OPTION,
 ):
     """Move a branch to a new parent, rebasing its subtree onto it."""
-    move_branch(branch_name, to, json_output=json)
+    if continue_:
+        if branch_name is not None or to is not None:
+            console.print(
+                "Error: --continue does not take a branch name or --to argument.",
+                style="bold red",
+            )
+            raise typer.Exit(code=1)
+        move_continue(json_output=json)
+    else:
+        move_branch(branch_name, to, json_output=json)
 
 
 @app.command(name="reparent")
@@ -386,10 +402,26 @@ def reparent_command(
     to: str | None = typer.Option(
         None, "--to", help="New parent branch (if not provided, will prompt)"
     ),
+    continue_: bool = typer.Option(
+        False,
+        "--continue",
+        help=(
+            "Resume a previously conflicted move after running `git rebase --continue`."
+        ),
+    ),
     json: bool = JSON_OPTION,
 ):
     """Alias for 'move' - Move a branch to a new parent."""
-    move_branch(branch_name, to, json_output=json)
+    if continue_:
+        if branch_name is not None or to is not None:
+            console.print(
+                "Error: --continue does not take a branch name or --to argument.",
+                style="bold red",
+            )
+            raise typer.Exit(code=1)
+        move_continue(json_output=json)
+    else:
+        move_branch(branch_name, to, json_output=json)
 
 
 @app.command()

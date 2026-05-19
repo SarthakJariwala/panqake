@@ -325,6 +325,17 @@ class RealGit:
             entries.append(f"{status[0]}\t{path}")
         return entries
 
+    def is_rebase_in_progress(self) -> bool:
+        from panqake.utils.git import run_git_command
+
+        git_dir = run_git_command(["rev-parse", "--git-dir"], silent_fail=True)
+        if not git_dir:
+            return False
+        from pathlib import Path
+
+        base = Path(git_dir)
+        return (base / "rebase-merge").exists() or (base / "rebase-apply").exists()
+
     def rebase_onto_in_worktree(
         self,
         branch: BranchName,
@@ -460,6 +471,27 @@ class RealConfig:
 
         stacks = Stacks()
         return stacks.branch_exists(branch)
+
+    def get_pending_rebase_from(self, branch: BranchName) -> str | None:
+        from panqake.utils.config import get_pending_rebase_from
+
+        sha = get_pending_rebase_from(branch)
+        return sha if sha else None
+
+    def set_pending_rebase_from(self, branch: BranchName, sha: str) -> None:
+        from panqake.utils.config import set_pending_rebase_from
+
+        set_pending_rebase_from(branch, sha)
+
+    def clear_pending_rebase_from(self, branch: BranchName) -> None:
+        from panqake.utils.config import clear_pending_rebase_from
+
+        clear_pending_rebase_from(branch)
+
+    def get_branches_with_pending_rebase(self) -> list[BranchName]:
+        from panqake.utils.config import get_branches_with_pending_rebase
+
+        return get_branches_with_pending_rebase()
 
 
 class RealUI:

@@ -250,6 +250,16 @@ class MoveResult:
 
 
 @dataclass(frozen=True)
+class MoveContinueResult:
+    """Result of resuming a previously conflicted `pq move`."""
+
+    resumed_branch: BranchName | None
+    rebases: list[BranchRebaseResult]
+    returned_to: BranchName | None
+    no_op: bool = False
+
+
+@dataclass(frozen=True)
 class BranchUpdateResult:
     """Result of updating a single branch during sync."""
 

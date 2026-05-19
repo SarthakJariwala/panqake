@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.28.0 - 2026-05-19
+
 ### Added
 
 - Added `pq move <branch> --to <new-parent>` (alias `pq reparent`) for reparenting a branch in the stack

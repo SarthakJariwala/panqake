@@ -55,13 +55,59 @@ def _clear_completed_rebase_state(
         config.clear_pending_rebase_from(branch)
 
 
-def _has_pending_rebase_state(config: ConfigPort, branch: BranchName) -> bool:
-    """Return whether branch or its descendants have saved rebase state."""
+def _find_pending_rebase_state(
+    config: ConfigPort, branch: BranchName
+) -> BranchName | None:
+    """Find pending move state on `branch`, its descendants, or ancestors."""
     if config.get_pending_rebase_from(branch):
-        return True
-    return any(
-        config.get_pending_rebase_from(descendant)
-        for descendant in _collect_descendants(config, branch)
+        return branch
+
+    for descendant in _collect_descendants(config, branch):
+        if config.get_pending_rebase_from(descendant):
+            return descendant
+
+    current = config.get_parent_branch(branch)
+    while current:
+        if config.get_pending_rebase_from(current):
+            return current
+        current = config.get_parent_branch(current)
+
+    return None
+
+
+def _validate_descendants_exist(
+    git: GitPort, config: ConfigPort, branch: BranchName
+) -> None:
+    """Fail before mutating state if tracked descendants are stale/missing."""
+    for descendant in _collect_descendants(config, branch):
+        if not git.branch_exists(descendant):
+            raise BranchNotFoundError(
+                f"Tracked descendant '{descendant}' of branch '{branch}' does not "
+                "exist in git. The stack metadata is stale; retrack or untrack "
+                f"'{descendant}' before moving '{branch}'."
+            )
+
+
+def _determine_move_upstream(
+    git: GitPort, branch: BranchName, old_parent: BranchName
+) -> BranchName:
+    """Return the safe upstream commit/ref for reparenting `branch`.
+
+    If the tracked parent still anchors the branch, the parent ref is safe.
+    If the parent ref was rewritten, use Git's reflog-aware fork-point. Without
+    a fork-point, moving would replay old parent commits as branch commits.
+    """
+    if git.is_ancestor(old_parent, branch):
+        return old_parent
+
+    fork_point = git.get_fork_point(old_parent, branch)
+    if fork_point and git.is_ancestor(fork_point, branch):
+        return fork_point
+
+    raise GitOperationError(
+        f"Tracked parent '{old_parent}' of branch '{branch}' has moved, and "
+        "panqake could not determine the branch's original fork point. Run "
+        f"`pq update {branch}` first, then retry `pq move`."
     )
 
 
@@ -105,6 +151,15 @@ def move_branch_core(
             f"Cannot move root branch '{branch_name}': it has no parent."
         )
 
+    pending_branch = _find_pending_rebase_state(config, branch_name)
+    if pending_branch:
+        raise GitOperationError(
+            f"A move affecting {format_branch(branch_name)} is already in progress "
+            f"({format_branch(pending_branch)} has pending rebase state). Resolve "
+            "the conflicts, run `git rebase --continue`, then run "
+            "`pq move --continue`."
+        )
+
     # Validate the tracked parent actually exists in git. If it doesn't (e.g.,
     # the parent was deleted or renamed outside panqake), the `--onto OLD_PARENT`
     # form of git rebase would fail with an opaque "invalid upstream" error
@@ -142,12 +197,6 @@ def move_branch_core(
     warnings: list[str] = []
 
     if new_parent == old_parent:
-        if _has_pending_rebase_state(config, branch_name):
-            raise GitOperationError(
-                f"A move for {format_branch(branch_name)} is already in progress. "
-                "Resolve the conflicts, run `git rebase --continue`, then "
-                "run `pq move --continue`."
-            )
         ui.print_info(
             f"Branch {format_branch(branch_name)} is already parented to "
             f"{format_branch(new_parent)}; nothing to do."
@@ -163,8 +212,11 @@ def move_branch_core(
             no_op=True,
         )
 
+    _validate_descendants_exist(git, config, branch_name)
+
     original_branch = git.get_current_branch()
     branch_old_sha = git.get_commit_hash(branch_name) or ""
+    rebase_upstream = _determine_move_upstream(git, branch_name, old_parent)
 
     # Update stack metadata first so a conflict leaves the intended graph in
     # place for recovery after the user finishes `git rebase --continue`.
@@ -206,11 +258,17 @@ def move_branch_core(
     try:
         if git.is_branch_worktree(branch_name):
             git.rebase_onto_in_worktree(
-                branch_name, new_parent, abort_on_conflict=False, upstream=old_parent
+                branch_name,
+                new_parent,
+                abort_on_conflict=False,
+                upstream=rebase_upstream,
             )
         else:
             git.rebase_onto(
-                branch_name, new_parent, abort_on_conflict=False, upstream=old_parent
+                branch_name,
+                new_parent,
+                abort_on_conflict=False,
+                upstream=rebase_upstream,
             )
     except RebaseConflictError as e:
         # Conflict left in place; metadata + PR base reflect the new parent and

@@ -307,6 +307,22 @@ class RealGit:
         result = run_git_command(["rev-parse", branch], silent_fail=True)
         return result.strip() if result else None
 
+    def is_ancestor(self, ancestor: str, branch: BranchName) -> bool:
+        from panqake.utils.git import run_git_command
+
+        result = run_git_command(
+            ["merge-base", "--is-ancestor", ancestor, branch], silent_fail=True
+        )
+        return result is not None
+
+    def get_fork_point(self, parent: BranchName, branch: BranchName) -> str | None:
+        from panqake.utils.git import run_git_command
+
+        result = run_git_command(
+            ["merge-base", "--fork-point", parent, branch], silent_fail=True
+        )
+        return result.strip() if result else None
+
     def get_files_changed_in_branch(
         self, branch: BranchName, parent: BranchName
     ) -> list[str]:

@@ -290,6 +290,26 @@ class GitPort(Protocol):
         """
         ...
 
+    def is_ancestor(self, ancestor: str, branch: BranchName) -> bool:
+        """Check whether `ancestor` is in `branch` history.
+
+        Args:
+            ancestor: Commit/ref that might be an ancestor
+            branch: Branch/ref to inspect
+
+        Returns:
+            True if ancestor is reachable from branch, False otherwise
+        """
+        ...
+
+    def get_fork_point(self, parent: BranchName, branch: BranchName) -> str | None:
+        """Find branch's reflog-aware fork point from parent.
+
+        Returns:
+            Fork-point commit SHA, or None if Git cannot determine one
+        """
+        ...
+
     def get_files_changed_in_branch(
         self, branch: BranchName, parent: BranchName
     ) -> list[str]:

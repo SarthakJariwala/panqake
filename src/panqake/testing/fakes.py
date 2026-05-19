@@ -45,6 +45,8 @@ class FakeGit:
         unpushed_changes: dict[BranchName, bool] | None = None,
         commit_hashes: dict[BranchName, str] | None = None,
         files_changed: dict[tuple[BranchName, BranchName], list[str]] | None = None,
+        ancestor_results: dict[tuple[str, BranchName], bool] | None = None,
+        fork_points: dict[tuple[BranchName, BranchName], str | None] | None = None,
     ):
         self.branches: set[BranchName] = set(
             branches if branches is not None else ["main"]
@@ -68,6 +70,12 @@ class FakeGit:
         self._commit_hashes: dict[BranchName, str] = dict(commit_hashes or {})
         self._files_changed: dict[tuple[BranchName, BranchName], list[str]] = dict(
             files_changed or {}
+        )
+        self._ancestor_results: dict[tuple[str, BranchName], bool] = dict(
+            ancestor_results or {}
+        )
+        self._fork_points: dict[tuple[BranchName, BranchName], str | None] = dict(
+            fork_points or {}
         )
 
         # Track calls for verification
@@ -304,6 +312,12 @@ class FakeGit:
 
     def get_commit_hash(self, branch: BranchName) -> str | None:
         return self._commit_hashes.get(branch)
+
+    def is_ancestor(self, ancestor: str, branch: BranchName) -> bool:
+        return self._ancestor_results.get((ancestor, branch), True)
+
+    def get_fork_point(self, parent: BranchName, branch: BranchName) -> str | None:
+        return self._fork_points.get((parent, branch))
 
     def get_files_changed_in_branch(
         self, branch: BranchName, parent: BranchName

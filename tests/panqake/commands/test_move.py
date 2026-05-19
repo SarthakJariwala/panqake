@@ -207,6 +207,78 @@ class TestMoveBranchCore:
         assert git.rebase_onto_calls == []
         assert config.get_pending_rebase_from("feature") == "sha-feature-old"
 
+    def test_second_move_with_pending_target_to_different_parent_is_rejected(self):
+        """Pending move state blocks new moves, not only no-op retries."""
+        git = FakeGit(branches=["main", "feature", "other"], current_branch="main")
+        config = FakeConfig(
+            stack={
+                "feature": {
+                    "parent": "main",
+                    "pending_rebase_from": "sha-feature-old",
+                }
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitOperationError) as exc_info:
+            move_branch_core(
+                git=git,
+                github=FakeGitHub(),
+                config=config,
+                ui=ui,
+                branch_name="feature",
+                new_parent="other",
+            )
+
+        assert "move --continue" in str(exc_info.value)
+        assert config.get_parent_branch("feature") == "main"
+        assert config.get_pending_rebase_from("feature") == "sha-feature-old"
+        assert git.rebase_onto_calls == []
+
+    def test_pending_state_in_subtree_or_ancestor_blocks_new_move(self):
+        """A move touching pending descendants or ancestors must fail fast."""
+        git = FakeGit(branches=["main", "a", "b", "c", "other"], current_branch="main")
+        ui = FakeUI(strict=False)
+
+        descendant_pending = FakeConfig(
+            stack={
+                "a": {"parent": "main"},
+                "b": {"parent": "a"},
+                "c": {"parent": "b", "pending_rebase_from": "sha-c-old"},
+                "other": {"parent": "main"},
+            }
+        )
+        with pytest.raises(GitOperationError) as descendant_exc:
+            move_branch_core(
+                git=git,
+                github=FakeGitHub(),
+                config=descendant_pending,
+                ui=ui,
+                branch_name="b",
+                new_parent="other",
+            )
+        assert "move --continue" in str(descendant_exc.value)
+        assert descendant_pending.get_parent_branch("b") == "a"
+
+        ancestor_pending = FakeConfig(
+            stack={
+                "a": {"parent": "main", "pending_rebase_from": "sha-a-old"},
+                "b": {"parent": "a"},
+                "other": {"parent": "main"},
+            }
+        )
+        with pytest.raises(GitOperationError) as ancestor_exc:
+            move_branch_core(
+                git=git,
+                github=FakeGitHub(),
+                config=ancestor_pending,
+                ui=ui,
+                branch_name="b",
+                new_parent="other",
+            )
+        assert "move --continue" in str(ancestor_exc.value)
+        assert ancestor_pending.get_parent_branch("b") == "a"
+
     def test_branch_not_tracked_raises(self):
         """Moving an untracked branch is an error."""
         git = FakeGit(branches=["main", "feature"], current_branch="main")
@@ -506,6 +578,85 @@ class TestMoveBranchCore:
         assert "stale" in str(exc_info.value).lower()
 
         # Nothing should have been mutated
+        assert config.get_parent_branch("b") == "a"
+        assert github.update_pr_base_calls == []
+        assert git.rebase_onto_calls == []
+
+    def test_rewritten_parent_uses_fork_point_as_move_upstream(self):
+        """If the current parent tip no longer anchors the child, use fork-point."""
+        git = FakeGit(
+            branches=["main", "a", "b", "other"],
+            current_branch="main",
+            ancestor_results={("a", "b"): False, ("sha-a-old", "b"): True},
+            fork_points={("a", "b"): "sha-a-old"},
+        )
+        config = FakeConfig(stack={"a": {"parent": "main"}, "b": {"parent": "a"}})
+        ui = FakeUI(strict=False)
+
+        move_branch_core(
+            git=git,
+            github=FakeGitHub(),
+            config=config,
+            ui=ui,
+            branch_name="b",
+            new_parent="other",
+        )
+
+        assert ("b", "other", "sha-a-old", False) in git.rebase_onto_calls
+        assert ("b", "other", "a", False) not in git.rebase_onto_calls
+
+    def test_rewritten_parent_without_fork_point_fails_before_mutation(self):
+        """If the safe upstream cannot be found, tell the user to update first."""
+        git = FakeGit(
+            branches=["main", "a", "b", "other"],
+            current_branch="main",
+            ancestor_results={("a", "b"): False},
+            fork_points={("a", "b"): None},
+        )
+        config = FakeConfig(stack={"a": {"parent": "main"}, "b": {"parent": "a"}})
+        github = FakeGitHub(branches_with_pr={"b"})
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitOperationError) as exc_info:
+            move_branch_core(
+                git=git,
+                github=github,
+                config=config,
+                ui=ui,
+                branch_name="b",
+                new_parent="other",
+            )
+
+        assert "pq update" in str(exc_info.value)
+        assert config.get_parent_branch("b") == "a"
+        assert github.update_pr_base_calls == []
+        assert git.rebase_onto_calls == []
+
+    def test_missing_descendant_fails_before_partial_move(self):
+        """Stale descendant metadata must be detected before metadata/rebase mutation."""
+        git = FakeGit(branches=["main", "a", "b", "other"], current_branch="main")
+        config = FakeConfig(
+            stack={
+                "a": {"parent": "main"},
+                "b": {"parent": "a"},
+                "c": {"parent": "b"},
+                "other": {"parent": "main"},
+            }
+        )
+        github = FakeGitHub(branches_with_pr={"b"})
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(BranchNotFoundError) as exc_info:
+            move_branch_core(
+                git=git,
+                github=github,
+                config=config,
+                ui=ui,
+                branch_name="b",
+                new_parent="other",
+            )
+
+        assert "descendant" in str(exc_info.value).lower()
         assert config.get_parent_branch("b") == "a"
         assert github.update_pr_base_calls == []
         assert git.rebase_onto_calls == []

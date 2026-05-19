@@ -180,6 +180,33 @@ class TestMoveBranchCore:
         assert result.rebases == []
         assert git.rebase_onto_calls == []
 
+    def test_no_op_target_with_pending_move_directs_to_continue(self):
+        """Rerunning the same move after a conflict must fail fast, not no-op."""
+        git = FakeGit(branches=["main", "feature"], current_branch="main")
+        config = FakeConfig(
+            stack={
+                "feature": {
+                    "parent": "main",
+                    "pending_rebase_from": "sha-feature-old",
+                }
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitOperationError) as exc_info:
+            move_branch_core(
+                git=git,
+                github=FakeGitHub(),
+                config=config,
+                ui=ui,
+                branch_name="feature",
+                new_parent="main",
+            )
+
+        assert "move --continue" in str(exc_info.value)
+        assert git.rebase_onto_calls == []
+        assert config.get_pending_rebase_from("feature") == "sha-feature-old"
+
     def test_branch_not_tracked_raises(self):
         """Moving an untracked branch is an error."""
         git = FakeGit(branches=["main", "feature"], current_branch="main")

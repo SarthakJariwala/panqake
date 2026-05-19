@@ -218,7 +218,7 @@ class RealGit:
         from panqake.utils.git import run_git_command
 
         self.checkout_branch(branch)
-        cmd = ["rebase", "--autostash"]
+        cmd = ["-c", "rebase.updateRefs=false", "rebase", "--autostash"]
         if upstream is not None:
             cmd.extend(["--onto", new_base, upstream])
         else:
@@ -345,7 +345,7 @@ class RealGit:
     ) -> None:
         from panqake.utils.git import run_git_command_for_branch_context
 
-        cmd = ["rebase", "--autostash"]
+        cmd = ["-c", "rebase.updateRefs=false", "rebase", "--autostash"]
         if upstream is not None:
             cmd.extend(["--onto", new_base, upstream])
         else:

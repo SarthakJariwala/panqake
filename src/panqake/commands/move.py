@@ -55,6 +55,16 @@ def _clear_completed_rebase_state(
         config.clear_pending_rebase_from(branch)
 
 
+def _has_pending_rebase_state(config: ConfigPort, branch: BranchName) -> bool:
+    """Return whether branch or its descendants have saved rebase state."""
+    if config.get_pending_rebase_from(branch):
+        return True
+    return any(
+        config.get_pending_rebase_from(descendant)
+        for descendant in _collect_descendants(config, branch)
+    )
+
+
 def _would_create_cycle(
     config: ConfigPort, branch: BranchName, new_parent: BranchName
 ) -> bool:
@@ -132,6 +142,12 @@ def move_branch_core(
     warnings: list[str] = []
 
     if new_parent == old_parent:
+        if _has_pending_rebase_state(config, branch_name):
+            raise GitOperationError(
+                f"A move for {format_branch(branch_name)} is already in progress. "
+                "Resolve the conflicts, run `git rebase --continue`, then "
+                "run `pq move --continue`."
+            )
         ui.print_info(
             f"Branch {format_branch(branch_name)} is already parented to "
             f"{format_branch(new_parent)}; nothing to do."

@@ -767,7 +767,10 @@ class TestMoveContinueCore:
 
         with pytest.raises(GitOperationError) as exc_info:
             move_continue_core(git=git, config=config, ui=ui)
-        assert "mid-rebase" in str(exc_info.value)
+        msg = str(exc_info.value)
+        assert "mid-rebase" in msg
+        assert "git rebase --continue" in msg
+        assert "git rebase --abort" not in msg
 
     def test_refuses_when_resume_root_still_at_old_sha(self):
         """If the user never ran `git rebase --continue`, refuse."""
@@ -865,6 +868,69 @@ class TestMoveContinueCore:
         # `git rebase --onto c <d's old SHA> d` after the user fixes d.
         assert config.get_pending_rebase_from("b") == "sha-b-old"
         assert config.get_pending_rebase_from("d") == "sha-d-old"
+
+    def test_later_sibling_conflict_keeps_completed_sibling_pending_for_resume(self):
+        """If one child rebases before a later sibling conflicts, keep its
+        saved pre-rebase SHA so resume can skip it instead of rebasing it again.
+        """
+        git = FakeGit(branches=["main", "a", "b", "c", "d"], current_branch="main")
+        git._commit_hashes = {
+            "b": "sha-b-old",
+            "c": "sha-c-old",
+            "d": "sha-d-old",
+        }
+
+        original_rebase = git.rebase_onto
+
+        def fail_on_d(branch, new_base, abort_on_conflict=True, upstream=None):
+            if branch == "d":
+                git.rebase_onto_calls.append((branch, new_base, upstream, False))
+                raise RebaseConflictError(f"Rebase conflict in branch '{branch}'")
+            original_rebase(
+                branch, new_base, abort_on_conflict=abort_on_conflict, upstream=upstream
+            )
+            git._commit_hashes[branch] = {
+                "b": "sha-b-new",
+                "c": "sha-c-new",
+            }.get(branch, git._commit_hashes[branch])
+
+        git.rebase_onto = fail_on_d  # type: ignore[assignment]
+
+        config = FakeConfig(
+            stack={
+                "a": {"parent": "main"},
+                "b": {"parent": "a"},
+                "c": {"parent": "b"},
+                "d": {"parent": "b"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        move_branch_core(
+            git=git,
+            github=FakeGitHub(),
+            config=config,
+            ui=ui,
+            branch_name="b",
+            new_parent="main",
+        )
+
+        assert config.get_pending_rebase_from("b") == "sha-b-old"
+        assert config.get_pending_rebase_from("c") == "sha-c-old"
+        assert config.get_pending_rebase_from("d") == "sha-d-old"
+
+        git.rebase_onto = original_rebase  # type: ignore[assignment]
+        git.rebase_onto_calls.clear()
+        git._commit_hashes["d"] = "sha-d-new"
+
+        result = move_continue_core(git=git, config=config, ui=ui)
+
+        assert result.resumed_branch == "b"
+        assert not any(call[0] == "c" for call in git.rebase_onto_calls)
+        assert not any(call[0] == "d" for call in git.rebase_onto_calls)
+        assert config.get_pending_rebase_from("b") is None
+        assert config.get_pending_rebase_from("c") is None
+        assert config.get_pending_rebase_from("d") is None
 
     def test_resume_root_is_topmost_pending(self):
         """When multiple pending entries exist, resume from the topmost."""

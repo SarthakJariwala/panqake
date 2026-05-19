@@ -47,6 +47,14 @@ def _collect_descendants(config: ConfigPort, branch: BranchName) -> set[BranchNa
     return descendants
 
 
+def _clear_completed_rebase_state(
+    config: ConfigPort, rebases: list[BranchRebaseResult]
+) -> None:
+    """Clear saved rebase SHAs once the whole move/continue has succeeded."""
+    for branch in {result.branch for result in rebases if result.rebased}:
+        config.clear_pending_rebase_from(branch)
+
+
 def _would_create_cycle(
     config: ConfigPort, branch: BranchName, new_parent: BranchName
 ) -> bool:
@@ -142,8 +150,8 @@ def move_branch_core(
     original_branch = git.get_current_branch()
     branch_old_sha = git.get_commit_hash(branch_name) or ""
 
-    # Update stack metadata first so a mid-rebase abort still leaves a consistent
-    # view of the graph for the user to recover via `pq move --continue`.
+    # Update stack metadata first so a conflict leaves the intended graph in
+    # place for recovery after the user finishes `git rebase --continue`.
     config.add_to_stack(branch_name, new_parent, config.get_worktree_path(branch_name))
 
     # Persist the pre-rebase SHA before any rebase that could conflict. If the
@@ -232,8 +240,8 @@ def move_branch_core(
     had_conflict = any(not r.rebased for r in rebases)
 
     if not had_conflict:
-        # Subtree rebased successfully — clear the moved branch's pending state.
-        config.clear_pending_rebase_from(branch_name)
+        # The entire move finished; clear the saved SHAs for every completed branch.
+        _clear_completed_rebase_state(config, rebases)
 
     returned_to: BranchName | None = None
     if not had_conflict and original_branch:
@@ -362,8 +370,8 @@ def move_continue_core(
     """
     if git.is_rebase_in_progress():
         raise GitOperationError(
-            "Git is still mid-rebase. Run `git rebase --continue` or "
-            "`git rebase --abort` first, then re-run `pq move --continue`."
+            "Git is still mid-rebase. Resolve the conflicts, run "
+            "`git rebase --continue`, then re-run `pq move --continue`."
         )
 
     pending = config.get_branches_with_pending_rebase()
@@ -412,7 +420,7 @@ def move_continue_core(
     had_conflict = any(not r.rebased for r in rebases)
 
     if not had_conflict:
-        config.clear_pending_rebase_from(resume_root)
+        _clear_completed_rebase_state(config, rebases)
 
     returned_to: BranchName | None = None
     if not had_conflict and original_branch and git.branch_exists(original_branch):

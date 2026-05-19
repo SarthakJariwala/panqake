@@ -3,8 +3,9 @@
 Centralizes the `git rebase --onto NEW_BASE OLD_SHA BRANCH` walk so the
 recovery path can resume with the same semantics as the success path,
 and so the pre-rebase SHA of each branch is persisted to `stacks.json`
-before its rebase starts (allowing a second resume if a deeper conflict
-hits).
+before its rebase starts. Those saved SHAs are kept until the whole
+move finishes so a later sibling conflict can resume without rebasing
+already-completed branches again.
 """
 
 from panqake.ports import (
@@ -50,7 +51,9 @@ def rebase_subtree(
     onto the new tip of `parent`. Before each child's rebase starts, the
     child's current SHA is written to its `pending_rebase_from` metadata so
     that a conflict deeper in the subtree can be resumed via
-    `pq move --continue`. On success, the field is cleared.
+    `pq move --continue`. Callers clear the fields only after the entire
+    move succeeds; keeping them during the walk lets a resume skip branches
+    that were completed before a later sibling conflict.
 
     Stops on the first conflict (including conflicts raised deeper in the
     subtree); leaves git mid-rebase and the relevant `pending_rebase_from`
@@ -95,5 +98,4 @@ def rebase_subtree(
         results.extend(sub_results)
         if any(not r.rebased for r in sub_results):
             return results
-        config.clear_pending_rebase_from(child)
     return results

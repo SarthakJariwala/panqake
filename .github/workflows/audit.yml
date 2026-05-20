@@ -1,0 +1,21 @@
+name: Python Package Audit
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+# Cancel active CI runs for a PR before starting another run
+concurrency:
+  group: ${{ github.workflow}}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv audit --locked --preview-features audit

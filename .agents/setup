@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PATH="$HOME/.local/bin:$PATH"
+
+run_step() {
+    local description="$1"
+    shift
+
+    printf '\n==> %s\n' "$description"
+    time "$@"
+}
+
+sync_documentation_dependencies() {
+    local marker="docs/node_modules/.amp-dependencies.sha256"
+    local fingerprint
+    fingerprint="$(sha256sum docs/package.json docs/package-lock.json | sha256sum | cut -d ' ' -f1)"
+
+    if [[ -f "$marker" && "$(<"$marker")" == "$fingerprint" ]]; then
+        printf 'Documentation dependencies already match the lockfile.\n'
+        return
+    fi
+
+    npm ci --prefix docs
+    printf '%s\n' "$fingerprint" > "$marker"
+}
+
+if ! command -v uv >/dev/null 2>&1; then
+    run_step "Installing uv" sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+fi
+
+run_step "Installing Python 3.12" uv python install 3.12
+run_step "Syncing Python dependencies" \
+    uv sync --locked --all-extras --dev --python 3.12
+run_step "Installing Ruff" uv tool install 'ruff==0.11.9'
+run_step "Installing pre-commit" uv tool install pre-commit
+run_step "Preparing pre-commit hook environments" pre-commit install-hooks
+run_step "Preparing Pyrefly" uvx pyrefly --version
+run_step "Syncing documentation dependencies" sync_documentation_dependencies
+
+printf '\nOrb setup complete.\n'

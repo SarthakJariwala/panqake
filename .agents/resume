@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Panqake has no services or authentication that need repair after an orb wakes.
+printf 'No resume-time setup required.\n'

@@ -52,6 +52,52 @@ class TestDownCore:
         assert len(ui.select_branch_calls) == 1
         assert "Select a child branch" in ui.select_branch_calls[0][1]
 
+    def test_uses_explicit_child_without_prompting(self):
+        git = FakeGit(
+            branches=["main", "feature-a", "feature-b"],
+            current_branch="main",
+        )
+        config = FakeConfig(
+            stack={
+                "feature-a": {"parent": "main"},
+                "feature-b": {"parent": "main"},
+            }
+        )
+        ui = FakeUI()
+
+        result = down_core(
+            git=git,
+            config=config,
+            ui=ui,
+            child_branch="feature-b",
+        )
+
+        assert result.target_branch == "feature-b"
+        assert git.checkout_calls == ["feature-b"]
+        assert ui.select_branch_calls == []
+
+    def test_rejects_branch_that_is_not_a_child(self):
+        git = FakeGit(
+            branches=["main", "feature-a", "unrelated"],
+            current_branch="main",
+        )
+        config = FakeConfig(stack={"feature-a": {"parent": "main"}})
+        ui = FakeUI()
+
+        with pytest.raises(
+            BranchNotFoundError,
+            match="'unrelated' is not a child.*Available children: feature-a",
+        ):
+            down_core(
+                git=git,
+                config=config,
+                ui=ui,
+                child_branch="unrelated",
+            )
+
+        assert git.checkout_calls == []
+        assert ui.select_branch_calls == []
+
     def test_handles_worktree_branch(self):
         """Test handling when child is in a worktree."""
         git = FakeGit(branches=["main", "feature"], current_branch="main")

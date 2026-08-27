@@ -24,6 +24,7 @@ def down_core(
     git: GitPort,
     config: ConfigPort,
     ui: UIPort,
+    child_branch: str | None = None,
 ) -> DownResult:
     """Navigate to a child branch in the stack.
 
@@ -39,6 +40,7 @@ def down_core(
         git: Git operations interface
         config: Stack configuration interface
         ui: User interaction interface
+        child_branch: Child to select when multiple children exist
 
     Returns:
         DownResult with navigation metadata
@@ -56,7 +58,15 @@ def down_core(
         raise BranchNotFoundError(f"Branch '{current}' has no child branches")
 
     # Determine which child to switch to
-    if len(children) == 1:
+    if child_branch is not None:
+        if child_branch not in children:
+            candidates = ", ".join(children)
+            raise BranchNotFoundError(
+                f"Branch '{child_branch}' is not a child of '{current}'. "
+                f"Available children: {candidates}"
+            )
+        child = child_branch
+    elif len(children) == 1:
         child = children[0]
     else:
         ui.print_info(f"Branch '{current}' has multiple children")
@@ -89,7 +99,7 @@ def down_core(
     )
 
 
-def down(*, json_output: bool = False) -> None:
+def down(child_branch: str | None = None, *, json_output: bool = False) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
     This thin wrapper:
@@ -103,7 +113,12 @@ def down(*, json_output: bool = False) -> None:
     ui = JsonUI() if json_output else RealUI()
 
     def core() -> DownResult:
-        result = down_core(git=git, config=config, ui=ui)
+        result = down_core(
+            git=git,
+            config=config,
+            ui=ui,
+            child_branch=child_branch,
+        )
 
         if not json_output and result.switched:
             ui.print_success(

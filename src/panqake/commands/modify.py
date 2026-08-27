@@ -7,6 +7,7 @@ Core logic is pure - no sys.exit, no direct filesystem/git calls.
 from panqake.ports import (
     CommitError,
     ConfigPort,
+    GitOperationError,
     GitPort,
     JsonUI,
     ModifyResult,
@@ -27,6 +28,8 @@ def modify_commit_core(
     commit_flag: bool = False,
     message: str | None = None,
     no_amend: bool = False,
+    selected_files: list[str] | None = None,
+    stage_all: bool = False,
 ) -> ModifyResult:
     """Modify/amend the current commit or create a new one.
 
@@ -40,6 +43,8 @@ def modify_commit_core(
         commit_flag: Force creation of a new commit
         message: Commit message to use
         no_amend: Don't amend, always create a new commit
+        selected_files: Unstaged file paths to stage (prompts if None)
+        stage_all: Stage every unstaged file without prompting
 
     Returns:
         ModifyResult with commit metadata
@@ -52,6 +57,9 @@ def modify_commit_core(
     current_branch = git.get_current_branch()
     if not current_branch:
         raise NoChangesError("Failed to get current branch")
+
+    if stage_all and selected_files is not None:
+        raise GitOperationError("--all cannot be combined with --file")
 
     staged_files = git.get_staged_files()
     unstaged_files = git.get_unstaged_files()
@@ -73,11 +81,27 @@ def modify_commit_core(
         for file_info in unstaged_files:
             ui.print_muted(f"  {file_info.display}")
 
-        selected_paths = ui.prompt_select_files(
-            unstaged_files,
-            "Select files to stage (optional):",
-            default_all=True,
-        )
+        if stage_all:
+            selected_paths = [file.path for file in unstaged_files]
+        elif selected_files is not None:
+            available_paths = {file.path for file in unstaged_files}
+            unknown_paths = [
+                path for path in selected_files if path not in available_paths
+            ]
+            if unknown_paths:
+                available = ", ".join(sorted(available_paths))
+                unknown = ", ".join(unknown_paths)
+                raise GitOperationError(
+                    f"Cannot stage unknown or unchanged path(s): {unknown}. "
+                    f"Available unstaged paths: {available}"
+                )
+            selected_paths = selected_files
+        else:
+            selected_paths = ui.prompt_select_files(
+                unstaged_files,
+                "Select files to stage (optional):",
+                default_all=True,
+            )
 
         if selected_paths:
             files_to_stage = [f for f in unstaged_files if f.path in selected_paths]
@@ -139,6 +163,8 @@ def modify_commit(
     commit_flag: bool = False,
     message: str | None = None,
     no_amend: bool = False,
+    selected_files: list[str] | None = None,
+    stage_all: bool = False,
     *,
     json_output: bool = False,
 ) -> None:
@@ -162,6 +188,8 @@ def modify_commit(
             commit_flag=commit_flag,
             message=message,
             no_amend=no_amend,
+            selected_files=selected_files,
+            stage_all=stage_all,
         )
 
         if not json_output:

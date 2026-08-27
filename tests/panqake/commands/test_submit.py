@@ -490,6 +490,46 @@ class FlakyPRVisibilityGitHub(FakeGitHub):
 class TestUpdatePullRequestCore:
     """Tests for end-to-end submit + PR state normalization."""
 
+    def test_explicit_pr_inputs_avoid_nested_prompts(self):
+        git = FakeGit(
+            current_branch="feature-x",
+            branches=["main", "feature-x"],
+            branch_commits={"feature-x": True},
+            pushed_branches={"main", "feature-x"},
+        )
+        github = FakeGitHub(potential_reviewers=["carol"])
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI()
+
+        result = update_pull_request_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature-x",
+            create_pr=True,
+            push=True,
+            title="Explicit PR title",
+            body="Explicit PR body",
+            draft=False,
+            reviewers=["alice"],
+            assume_yes=True,
+        )
+
+        assert result.pr_created is True
+        assert ui.confirm_calls == []
+        assert ui.input_calls == []
+        assert ui.input_multiline_calls == []
+        assert ui.select_reviewers_calls == []
+        assert github.create_pr_calls[0] == (
+            "main",
+            "feature-x",
+            "Explicit PR title",
+            "Explicit PR body",
+            ["alice"],
+            False,
+        )
+
     def test_normalizes_flags_when_pr_appears_after_preflight(self):
         """Should mark PR as existing when create step finds one already exists."""
         git = FakeGit(

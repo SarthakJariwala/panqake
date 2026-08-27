@@ -42,11 +42,14 @@ class _TrackJsonUI(JsonUI):
             return filtered[0]
 
         if not filtered:
-            raise NonInteractiveError("parent branch selection")
+            raise NonInteractiveError(
+                "parent branch selection (pass --parent <branch>)"
+            )
 
         candidates = ", ".join(filtered)
         raise NonInteractiveError(
-            f"parent branch selection (multiple candidates: {candidates})"
+            "parent branch selection "
+            f"(pass --parent <branch>; candidates: {candidates})"
         )
 
 
@@ -55,6 +58,7 @@ def track_branch_core(
     config: ConfigPort,
     ui: UIPort,
     branch_name: BranchName | None = None,
+    parent_branch: BranchName | None = None,
 ) -> TrackResult:
     """Track an existing Git branch in the panqake stack.
 
@@ -66,6 +70,7 @@ def track_branch_core(
         config: Stack configuration interface
         ui: User interaction interface
         branch_name: Branch to track (uses current if None)
+        parent_branch: Parent branch to use (prompts if None)
 
     Returns:
         TrackResult with branch and parent metadata
@@ -88,13 +93,22 @@ def track_branch_core(
             f"No potential parent branches found in the history of '{branch_name}'"
         )
 
-    selected_parent = ui.prompt_select_branch(
-        potential_parents,
-        "Select a parent branch:",
-        current_branch=branch_name,
-        exclude_protected=False,
-        enable_search=True,
-    )
+    if parent_branch is not None:
+        if parent_branch not in potential_parents:
+            candidates = ", ".join(potential_parents)
+            raise BranchNotFoundError(
+                f"'{parent_branch}' is not a possible parent of '{branch_name}'. "
+                f"Available parents: {candidates}"
+            )
+        selected_parent = parent_branch
+    else:
+        selected_parent = ui.prompt_select_branch(
+            potential_parents,
+            "Select a parent branch:",
+            current_branch=branch_name,
+            exclude_protected=False,
+            enable_search=True,
+        )
 
     if not selected_parent:
         raise UserCancelledError()
@@ -107,7 +121,12 @@ def track_branch_core(
     )
 
 
-def track(branch_name: BranchName | None = None, *, json_output: bool = False) -> None:
+def track(
+    branch_name: BranchName | None = None,
+    parent_branch: BranchName | None = None,
+    *,
+    json_output: bool = False,
+) -> None:
     """CLI entrypoint that wraps core logic with real implementations.
 
     This thin wrapper:
@@ -126,6 +145,7 @@ def track(branch_name: BranchName | None = None, *, json_output: bool = False) -
             config=config,
             ui=ui,
             branch_name=branch_name,
+            parent_branch=parent_branch,
         )
 
         if not json_output:

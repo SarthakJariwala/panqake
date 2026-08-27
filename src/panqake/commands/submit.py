@@ -116,6 +116,13 @@ def update_pull_request_core(
     ui: UIPort,
     branch_name: BranchName | None = None,
     create_pr: bool | None = None,
+    draft: bool | None = None,
+    push: bool | None = None,
+    title: str | None = None,
+    body: str | None = None,
+    reviewers: list[str] | None = None,
+    use_defaults: bool = False,
+    assume_yes: bool = False,
 ) -> SubmitResult:
     """Submit a branch and return normalized final PR state."""
     result = submit_branch_core(
@@ -137,7 +144,13 @@ def update_pull_request_core(
         ui=ui,
         branch=result.branch_name,
         base=parent,
-        draft=False,
+        draft=draft,
+        push=push,
+        title=title,
+        body=body,
+        reviewers=reviewers,
+        use_defaults=use_defaults,
+        assume_yes=assume_yes,
     )
 
     if pr_result.status == "created":
@@ -162,6 +175,13 @@ def update_pull_request_core(
 def update_pull_request(
     branch_name: BranchName | None = None,
     create_pr: bool | None = None,
+    draft: bool | None = None,
+    push: bool | None = None,
+    title: str | None = None,
+    body: str | None = None,
+    reviewers: list[str] | None = None,
+    use_defaults: bool = False,
+    assume_yes: bool = False,
     *,
     json_output: bool = False,
 ) -> None:
@@ -186,6 +206,13 @@ def update_pull_request(
             ui=ui,
             branch_name=branch_name,
             create_pr=create_pr,
+            draft=draft,
+            push=push,
+            title=title,
+            body=body,
+            reviewers=reviewers,
+            use_defaults=use_defaults,
+            assume_yes=assume_yes,
         )
 
         if not json_output:

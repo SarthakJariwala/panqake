@@ -42,6 +42,49 @@ class TestTrackBranchCore:
         assert result.parent_branch == "feature"
         assert config.stack["other"]["parent"] == "feature"
 
+    def test_tracks_with_explicit_parent_without_prompting(self):
+        git = FakeGit(
+            branches=["main", "develop", "feature"],
+            current_branch="feature",
+            potential_parents={"feature": ["main", "develop"]},
+        )
+        config = FakeConfig()
+        ui = FakeUI()
+
+        result = track_branch_core(
+            git=git,
+            config=config,
+            ui=ui,
+            parent_branch="develop",
+        )
+
+        assert result.parent_branch == "develop"
+        assert config.stack["feature"]["parent"] == "develop"
+        assert ui.select_branch_calls == []
+
+    def test_rejects_explicit_parent_outside_branch_history(self):
+        git = FakeGit(
+            branches=["main", "feature", "unrelated"],
+            current_branch="feature",
+            potential_parents={"feature": ["main"]},
+        )
+        config = FakeConfig()
+        ui = FakeUI()
+
+        with pytest.raises(
+            BranchNotFoundError,
+            match="'unrelated' is not a possible parent.*Available parents: main",
+        ):
+            track_branch_core(
+                git=git,
+                config=config,
+                ui=ui,
+                parent_branch="unrelated",
+            )
+
+        assert "feature" not in config.stack
+        assert ui.select_branch_calls == []
+
     def test_raises_when_no_current_branch(self):
         git = FakeGit(branches=["main"], current_branch=None)
         config = FakeConfig()
@@ -165,4 +208,5 @@ def test_track_json_fails_when_parent_selection_is_ambiguous(monkeypatch, capsys
     assert payload["ok"] is False
     assert payload["command"] == "track"
     assert payload["error"]["type"] == "NonInteractiveError"
-    assert "multiple candidates" in payload["error"]["message"]
+    assert "pass --parent <branch>" in payload["error"]["message"]
+    assert "candidates: main, develop" in payload["error"]["message"]

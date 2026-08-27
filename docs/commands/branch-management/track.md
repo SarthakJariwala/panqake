@@ -5,7 +5,7 @@ The `track` command adds an existing Git branch to your Panqake stack, establish
 ## Usage
 
 ```bash
-pq track [BRANCH_NAME]
+pq track [BRANCH_NAME] [--parent PARENT_BRANCH]
 ```
 
 ## Arguments
@@ -13,6 +13,13 @@ pq track [BRANCH_NAME]
 | Argument | Description |
 |----------|-------------|
 | `BRANCH_NAME` | Name of branch to track (optional) |
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--parent PARENT_BRANCH` | Set the parent explicitly instead of prompting |
+| `--json` | Output machine-readable JSON and disable interactive prompts |
 
 ## Examples
 
@@ -26,6 +33,12 @@ pq track feature-ui
 
 ```bash
 pq track
+```
+
+### Non-interactive Tracking
+
+```bash
+pq track feature-ui --parent main --json
 ```
 
 ::: tip

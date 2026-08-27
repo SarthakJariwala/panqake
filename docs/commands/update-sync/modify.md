@@ -15,6 +15,10 @@ pq modify [OPTIONS]
 | `--commit, -c` | Create a new commit instead of amending |
 | `--message, -m TEXT` | Commit message for the new or amended commit |
 | `--no-amend` | Always create a new commit instead of amending |
+| `--file PATH` | Stage an unstaged path; repeat for multiple paths |
+| `--all` | Stage all unstaged files without prompting |
+| `--staged-only` | Commit only already-staged changes without prompting |
+| `--json` | Output machine-readable JSON and disable remaining prompts |
 
 ## Examples
 
@@ -34,6 +38,22 @@ pq modify -m "Implement JWT authentication"
 
 ```bash
 pq modify --no-amend -m "Add password reset functionality"
+```
+
+### Non-interactive File Selection
+
+```bash
+pq modify \
+  --file src/auth.py \
+  --file tests/test_auth.py \
+  --message "Implement JWT authentication" \
+  --json
+
+# Or stage every unstaged file
+pq modify --all --message "Implement JWT authentication" --json
+
+# Or leave all unstaged files untouched
+pq modify --staged-only --message "Commit staged changes" --json
 ```
 
 ::: tip

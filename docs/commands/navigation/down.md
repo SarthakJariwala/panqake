@@ -11,7 +11,7 @@ If there's only one child branch, `down` command switches to it directly. But, i
 ## Usage
 
 ```bash
-pq down
+pq down [CHILD]
 ```
 
 ## Examples
@@ -46,4 +46,10 @@ $ pq down
 ? Select a child branch to switch to: (Use arrow keys)
  ❯ feature-auth-ui
    feature-auth-tests
+```
+
+Select a child explicitly to avoid the prompt:
+
+```bash
+pq down feature-auth-tests --json
 ```

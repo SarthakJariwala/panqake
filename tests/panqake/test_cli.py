@@ -64,6 +64,41 @@ def test_cli_help(runner):
     # Check for some common commands to make sure help text is generated properly
     assert "new" in output
     assert "list" in output
+    assert "Examples" in output
+    assert "pq <command> --help" in output
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "new",
+        "list",
+        "ls",
+        "update",
+        "delete",
+        "pr",
+        "switch",
+        "co",
+        "track",
+        "untrack",
+        "modify",
+        "submit",
+        "merge",
+        "sync",
+        "rename",
+        "move",
+        "reparent",
+        "up",
+        "down",
+    ],
+)
+def test_command_help_includes_copy_pasteable_examples(runner, command):
+    """Every command should expose examples through layered help."""
+    result = runner.invoke(app, [command, "--help"])
+
+    assert result.exit_code == 0
+    assert "Examples" in result.stdout
+    assert f"pq {command}" in result.stdout
 
 
 def test_main_not_git_repo(mock_git_utils, mock_config, mock_rich):
@@ -116,18 +151,41 @@ def test_main_not_git_repo_json_mode(mock_git_utils, mock_config, mock_rich, cap
 
 
 def test_main_no_args(mock_git_utils, mock_config):
-    """Test main() with no arguments."""
-    # Setup
-    mock_git_utils["is_repo"].return_value = True
+    """Help with no arguments should not require or initialize a repository."""
     with patch("sys.argv", ["panqake"]):
-        # Execute and expect SystemExit(0) because help is shown
         with pytest.raises(SystemExit) as exc_info:
             main()
         assert exc_info.value.code == 0
 
-    # Help should be shown when no args provided
-    mock_config.assert_called_once()
-    mock_git_utils["is_repo"].assert_called_once()
+    mock_config.assert_not_called()
+    mock_git_utils["is_repo"].assert_not_called()
+    mock_git_utils["run_git"].assert_not_called()
+
+
+def test_main_subcommand_help_skips_repository_check(mock_git_utils, mock_config):
+    """Layered help should work outside a Git repository."""
+    with patch("sys.argv", ["panqake", "track", "--help"]):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+
+    mock_config.assert_not_called()
+    mock_git_utils["is_repo"].assert_not_called()
+    mock_git_utils["run_git"].assert_not_called()
+
+
+def test_main_completion_option_skips_repository_check(mock_git_utils, mock_config):
+    """Shell completion discovery should work outside a Git repository."""
+    with (
+        patch("sys.argv", ["panqake", "--show-completion"]),
+        patch("panqake.cli.app") as mock_app,
+    ):
+        main()
+
+    mock_app.assert_called_once_with(["--show-completion"])
+    mock_config.assert_not_called()
+    mock_git_utils["is_repo"].assert_not_called()
+    mock_git_utils["run_git"].assert_not_called()
 
 
 def test_main_known_command(mock_git_utils, mock_config):
@@ -281,7 +339,17 @@ def test_pr_command_with_draft_flag(runner):
         result = runner.invoke(app, ["pr", "--draft"])
 
         assert result.exit_code == 0
-        mock_create_prs.assert_called_once_with(None, draft=True, json_output=False)
+        mock_create_prs.assert_called_once_with(
+            None,
+            draft=True,
+            push=None,
+            title=None,
+            body=None,
+            reviewers=None,
+            use_defaults=False,
+            assume_yes=False,
+            json_output=False,
+        )
 
 
 def test_pr_command_with_branch_and_draft(runner):
@@ -291,7 +359,15 @@ def test_pr_command_with_branch_and_draft(runner):
 
         assert result.exit_code == 0
         mock_create_prs.assert_called_once_with(
-            "feature-branch", draft=True, json_output=False
+            "feature-branch",
+            draft=True,
+            push=None,
+            title=None,
+            body=None,
+            reviewers=None,
+            use_defaults=False,
+            assume_yes=False,
+            json_output=False,
         )
 
 
@@ -301,7 +377,82 @@ def test_pr_command_without_draft_flag(runner):
         result = runner.invoke(app, ["pr"])
 
         assert result.exit_code == 0
-        mock_create_prs.assert_called_once_with(None, draft=False, json_output=False)
+        mock_create_prs.assert_called_once_with(
+            None,
+            draft=None,
+            push=None,
+            title=None,
+            body=None,
+            reviewers=None,
+            use_defaults=False,
+            assume_yes=False,
+            json_output=False,
+        )
+
+
+def test_pr_command_accepts_all_prompt_inputs(runner):
+    """PR creation decisions should all have a non-interactive CLI path."""
+    with patch("panqake.cli.create_pull_requests") as mock_create_prs:
+        result = runner.invoke(
+            app,
+            [
+                "pr",
+                "feature-branch",
+                "--push",
+                "--no-draft",
+                "--title",
+                "Add authentication",
+                "--body",
+                "Implements login support",
+                "--reviewer",
+                "alice",
+                "--reviewer",
+                "bob",
+                "--defaults",
+                "--yes",
+                "--json",
+            ],
+        )
+
+    assert result.exit_code == 0
+    mock_create_prs.assert_called_once_with(
+        "feature-branch",
+        draft=False,
+        push=True,
+        title="Add authentication",
+        body="Implements login support",
+        reviewers=["alice", "bob"],
+        use_defaults=True,
+        assume_yes=True,
+        json_output=True,
+    )
+
+
+def test_pr_command_reads_body_from_stdin_and_skips_reviewers(runner):
+    """A PR body can be piped without triggering reviewer selection."""
+    with patch("panqake.cli.create_pull_requests") as mock_create_prs:
+        result = runner.invoke(
+            app,
+            ["pr", "feature-branch", "--body-file", "-", "--no-reviewers"],
+            input="Body from stdin\n",
+        )
+
+    assert result.exit_code == 0
+    assert mock_create_prs.call_args.kwargs["body"] == "Body from stdin\n"
+    assert mock_create_prs.call_args.kwargs["reviewers"] == []
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["--body", "inline", "--body-file", "body.md"],
+        ["--reviewer", "alice", "--no-reviewers"],
+    ],
+)
+def test_pr_command_rejects_conflicting_non_interactive_inputs(runner, options):
+    result = runner.invoke(app, ["pr", "feature-branch", *options])
+
+    assert result.exit_code == 2
 
 
 def test_delete_command_with_yes_flag(runner):
@@ -329,6 +480,91 @@ def test_update_command_with_yes_flag(runner):
         )
 
 
+def test_track_command_with_parent_flag(runner):
+    """Track accepts an explicit parent for non-interactive use."""
+    with patch("panqake.cli.track") as mock_track:
+        result = runner.invoke(
+            app,
+            ["track", "feature-branch", "--parent", "main", "--json"],
+        )
+
+        assert result.exit_code == 0
+        mock_track.assert_called_once_with(
+            "feature-branch", parent_branch="main", json_output=True
+        )
+
+
+def test_modify_command_accepts_explicit_files(runner):
+    """Modify forwards repeatable file selection without prompting."""
+    with patch("panqake.cli.modify_commit") as mock_modify:
+        result = runner.invoke(
+            app,
+            [
+                "modify",
+                "--file",
+                "src/a.py",
+                "--file",
+                "src/b.py",
+                "--message",
+                "Update files",
+                "--json",
+            ],
+        )
+
+    assert result.exit_code == 0
+    mock_modify.assert_called_once_with(
+        False,
+        "Update files",
+        no_amend=False,
+        selected_files=["src/a.py", "src/b.py"],
+        stage_all=False,
+        json_output=True,
+    )
+
+
+def test_modify_command_accepts_staged_only(runner):
+    """Modify can leave all unstaged paths untouched without prompting."""
+    with patch("panqake.cli.modify_commit") as mock_modify:
+        result = runner.invoke(
+            app,
+            ["modify", "--staged-only", "--message", "Update staged", "--json"],
+        )
+
+    assert result.exit_code == 0
+    mock_modify.assert_called_once_with(
+        False,
+        "Update staged",
+        no_amend=False,
+        selected_files=[],
+        stage_all=False,
+        json_output=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["--all", "--file", "src/a.py"],
+        ["--staged-only", "--file", "src/a.py"],
+        ["--staged-only", "--all"],
+    ],
+)
+def test_modify_command_rejects_conflicting_staging_modes(runner, options):
+    result = runner.invoke(app, ["modify", *options])
+
+    assert result.exit_code == 2
+    assert "cannot be combined" in result.stderr
+
+
+def test_down_command_accepts_explicit_child(runner):
+    """Down forwards a child branch for ambiguous stacks."""
+    with patch("panqake.cli.down_command") as mock_down:
+        result = runner.invoke(app, ["down", "feature-b", "--json"])
+
+    assert result.exit_code == 0
+    mock_down.assert_called_once_with("feature-b", json_output=True)
+
+
 def test_submit_command_with_create_pr_flag(runner):
     """Test submit command with explicit PR creation behavior."""
     with patch("panqake.cli.update_pull_request") as mock_submit:
@@ -336,7 +572,16 @@ def test_submit_command_with_create_pr_flag(runner):
 
         assert result.exit_code == 0
         mock_submit.assert_called_once_with(
-            "feature-branch", create_pr=True, json_output=False
+            "feature-branch",
+            create_pr=True,
+            draft=None,
+            push=None,
+            title=None,
+            body=None,
+            reviewers=None,
+            use_defaults=False,
+            assume_yes=False,
+            json_output=False,
         )
 
 
@@ -347,8 +592,55 @@ def test_submit_command_with_no_create_pr_flag(runner):
 
         assert result.exit_code == 0
         mock_submit.assert_called_once_with(
-            "feature-branch", create_pr=False, json_output=False
+            "feature-branch",
+            create_pr=False,
+            draft=None,
+            push=None,
+            title=None,
+            body=None,
+            reviewers=None,
+            use_defaults=False,
+            assume_yes=False,
+            json_output=False,
         )
+
+
+def test_submit_command_accepts_new_pr_inputs(runner):
+    """Submit exposes metadata for its nested PR creation path."""
+    with patch("panqake.cli.update_pull_request") as mock_submit:
+        result = runner.invoke(
+            app,
+            [
+                "submit",
+                "feature-branch",
+                "--create-pr",
+                "--push",
+                "--draft",
+                "--title",
+                "Add authentication",
+                "--body",
+                "Implements login support",
+                "--reviewer",
+                "alice",
+                "--defaults",
+                "--yes",
+                "--json",
+            ],
+        )
+
+    assert result.exit_code == 0
+    mock_submit.assert_called_once_with(
+        "feature-branch",
+        create_pr=True,
+        draft=True,
+        push=True,
+        title="Add authentication",
+        body="Implements login support",
+        reviewers=["alice"],
+        use_defaults=True,
+        assume_yes=True,
+        json_output=True,
+    )
 
 
 def test_merge_command_with_allow_failed_checks_flag(runner):

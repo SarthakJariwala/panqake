@@ -5,7 +5,7 @@ The `submit` command updates your pull request with the latest changes from your
 ## Usage
 
 ```bash
-pq submit [BRANCH_NAME]
+pq submit [BRANCH_NAME] [OPTIONS]
 ```
 
 ## Arguments
@@ -13,6 +13,22 @@ pq submit [BRANCH_NAME]
 | Argument | Description |
 |----------|-------------|
 | `BRANCH_NAME` | Optional branch to update PR for |
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--create-pr / --no-create-pr` | Create or skip a missing PR without prompting |
+| `--push / --no-push` | Push or skip an unpushed PR base branch without prompting |
+| `--draft / --no-draft` | Create a missing PR as draft or ready for review |
+| `--title TEXT` | Set the title of a missing PR |
+| `--body TEXT` | Set the body of a missing PR |
+| `--body-file PATH` | Read the body from a file; use `-` for stdin |
+| `--reviewer USERNAME` | Add a reviewer; repeat for multiple reviewers |
+| `--no-reviewers` | Create without reviewers or a reviewer prompt |
+| `--defaults` | Use a generated title, empty body, and no reviewers without metadata prompts |
+| `--yes, -y` | Skip the final PR creation confirmation |
+| `--json` | Output machine-readable JSON and disable remaining prompts |
 
 ## Examples
 
@@ -31,6 +47,18 @@ pq submit feature-auth
 ## Creating New PRs
 
 When a branch doesn't have an existing PR, `submit` will prompt you to create one. During the PR creation process, you'll be asked whether to create it as a draft PR, giving you the option to share work-in-progress changes.
+
+For a fully non-interactive submission that creates a missing PR:
+
+```bash
+pq submit feature-auth \
+  --create-pr \
+  --push \
+  --no-draft \
+  --defaults \
+  --yes \
+  --json
+```
 
 ::: info
 Use `submit` as your primary command for sharing changes for review.

@@ -259,6 +259,67 @@ class TestCreatePRForBranchCore:
         assert call[4] == ["alice"]  # reviewers
         assert call[5] is True  # draft
 
+    def test_explicit_inputs_create_without_any_prompts(self):
+        """Every PR prompt can be replaced with a function input."""
+        git = FakeGit(
+            branches=["main", "feature"],
+            branch_commits={"feature": True},
+            commit_subjects={"feature": "feat: test commit"},
+        )
+        github = FakeGitHub(potential_reviewers=["carol"])
+        ui = FakeUI()
+
+        result = create_pr_for_branch_core(
+            git=git,
+            github=github,
+            ui=ui,
+            branch="feature",
+            base="main",
+            push=True,
+            title="Explicit PR title",
+            body="Explicit PR body",
+            draft=False,
+            reviewers=["alice", "bob"],
+            assume_yes=True,
+        )
+
+        assert result.status == "created"
+        assert git.push_calls == [("feature", False), ("main", False)]
+        assert ui.confirm_calls == []
+        assert ui.input_calls == []
+        assert ui.input_multiline_calls == []
+        assert ui.select_reviewers_calls == []
+        assert github.create_pr_calls[0] == (
+            "main",
+            "feature",
+            "Explicit PR title",
+            "Explicit PR body",
+            ["alice", "bob"],
+            False,
+        )
+
+    def test_explicit_no_push_skips_without_prompting(self):
+        git = FakeGit(
+            branches=["main", "feature"],
+            pushed_branches={"main"},
+        )
+        github = FakeGitHub()
+        ui = FakeUI()
+
+        result = create_pr_for_branch_core(
+            git=git,
+            github=github,
+            ui=ui,
+            branch="feature",
+            base="main",
+            push=False,
+        )
+
+        assert result.status == "skipped"
+        assert result.skip_reason == "not_pushed"
+        assert git.push_calls == []
+        assert ui.confirm_calls == []
+
     def test_uses_default_title_from_commit(self):
         git = FakeGit(
             branches=["main", "feature"],
@@ -385,6 +446,45 @@ class TestCreatePullRequestsCore:
         assert result.results[0].status == "created"
         assert result.results[1].branch == "feature"
         assert result.results[1].status == "created"
+
+    def test_defaults_create_entire_stack_without_metadata_prompts(self):
+        git = FakeGit(
+            branches=["main", "base", "feature"],
+            current_branch="feature",
+            pushed_branches={"main", "base", "feature"},
+            branch_commits={"base": True, "feature": True},
+            commit_subjects={"base": "base commit", "feature": "feature commit"},
+        )
+        github = FakeGitHub(potential_reviewers=["alice"])
+        config = FakeConfig(
+            stack={
+                "feature": {"parent": "base"},
+                "base": {"parent": "main"},
+            }
+        )
+        ui = FakeUI()
+
+        result = create_pull_requests_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature",
+            draft=False,
+            push=True,
+            use_defaults=True,
+            assume_yes=True,
+        )
+
+        assert [item.status for item in result.results] == ["created", "created"]
+        assert ui.confirm_calls == []
+        assert ui.input_calls == []
+        assert ui.input_multiline_calls == []
+        assert ui.select_reviewers_calls == []
+        assert github.create_pr_calls == [
+            ("main", "base", "[base] base commit", "", None, False),
+            ("base", "feature", "[feature] feature commit", "", None, False),
+        ]
 
     def test_stops_and_marks_remaining_as_blocked_when_parent_skipped(self):
         git = FakeGit(

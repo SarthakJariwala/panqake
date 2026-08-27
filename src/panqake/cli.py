@@ -4,6 +4,7 @@ A Python implementation of git-stacking workflow management
 """
 
 import sys
+from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -54,7 +55,16 @@ KNOWN_COMMANDS = [
     "down",
     "--help",
     "-h",
+    "--install-completion",
+    "--show-completion",
 ]
+
+INFORMATIONAL_OPTIONS = {
+    "--help",
+    "-h",
+    "--install-completion",
+    "--show-completion",
+}
 
 COMMAND_ALIASES = {
     "ls": "list",
@@ -116,7 +126,54 @@ def _requested_command(argv: list[str]) -> str | None:
 console = Console()
 
 # Reusable --json option for all commands
-JSON_OPTION = typer.Option(False, "--json", help="Output machine-readable JSON")
+JSON_OPTION = typer.Option(
+    False,
+    "--json",
+    help="Output machine-readable JSON and disable interactive prompts",
+)
+
+
+def _examples(*commands: str) -> str:
+    """Format copy-pasteable command examples for Typer help."""
+    return "Examples:\n\n" + "\n\n".join(f"  {command}" for command in commands)
+
+
+def _resolve_pr_body(body: str | None, body_file: str | None) -> str | None:
+    """Resolve inline, file, or stdin PR body input."""
+    if body is not None and body_file is not None:
+        raise typer.BadParameter("--body and --body-file cannot be combined")
+    if body_file is None:
+        return body
+    if body_file == "-":
+        return sys.stdin.read()
+    try:
+        return Path(body_file).read_text(encoding="utf-8")
+    except OSError as error:
+        raise typer.BadParameter(
+            f"Could not read --body-file '{body_file}': {error}"
+        ) from error
+
+
+def _resolve_reviewers(
+    reviewers: list[str] | None,
+    no_reviewers: bool,
+) -> list[str] | None:
+    """Resolve repeated reviewer options and an explicit empty selection."""
+    if reviewers is not None and no_reviewers:
+        raise typer.BadParameter("--reviewer and --no-reviewers cannot be combined")
+    return [] if no_reviewers else reviewers
+
+
+def _resolve_modify_files(
+    files: list[str] | None,
+    stage_all: bool,
+    staged_only: bool,
+) -> list[str] | None:
+    """Resolve mutually exclusive non-interactive staging choices."""
+    selected_modes = sum((files is not None, stage_all, staged_only))
+    if selected_modes > 1:
+        raise typer.BadParameter("--file, --all, and --staged-only cannot be combined")
+    return [] if staged_only else files
 
 
 # Create a custom TyperGroup to handle unknown commands
@@ -129,6 +186,11 @@ class PanqakeGroup(TyperGroup):
 app = typer.Typer(
     name="panqake",
     help="Panqake - CLI for Git stacking",
+    epilog=_examples(
+        "pq <command> --help",
+        "pq list --json",
+        "pq new feature-auth main",
+    ),
     cls=PanqakeGroup,
     rich_markup_mode="rich",
     context_settings={"help_option_names": ["-h", "--help"]},
@@ -136,7 +198,13 @@ app = typer.Typer(
 )
 
 
-@app.command()
+@app.command(
+    epilog=_examples(
+        "pq new feature-auth main",
+        "pq new feature-auth main --json",
+        "pq new feature-auth main --tree --path ../feature-auth",
+    )
+)
 def new(
     branch_name: str | None = typer.Argument(None, help="Name of the new branch"),
     base_branch: str | None = typer.Argument(None, help="Parent branch"),
@@ -151,7 +219,10 @@ def new(
     create_new_branch(branch_name, base_branch, use_worktree, path, json_output=json)
 
 
-@app.command(name="list")
+@app.command(
+    name="list",
+    epilog=_examples("pq list", "pq list feature-auth --files --json"),
+)
 def list_command(
     branch_name: str | None = typer.Argument(
         None, help="Optional branch to start from"
@@ -165,7 +236,10 @@ def list_command(
     list_branches(branch_name, json_output=json, show_files=files)
 
 
-@app.command(name="ls")
+@app.command(
+    name="ls",
+    epilog=_examples("pq ls", "pq ls feature-auth --files --json"),
+)
 def ls_command(
     branch_name: str | None = typer.Argument(
         None, help="Optional branch to start from"
@@ -179,7 +253,12 @@ def ls_command(
     list_branches(branch_name, json_output=json, show_files=files)
 
 
-@app.command()
+@app.command(
+    epilog=_examples(
+        "pq update feature-auth",
+        "pq update feature-auth --no-push --yes --json",
+    )
+)
 def update(
     branch_name: str | None = typer.Argument(
         None, help="Optional branch to start updating from"
@@ -194,7 +273,12 @@ def update(
     update_branches(branch_name, skip_push=not push, assume_yes=yes, json_output=json)
 
 
-@app.command()
+@app.command(
+    epilog=_examples(
+        "pq delete feature-auth",
+        "pq delete feature-auth --yes --json",
+    )
+)
 def delete(
     branch_name: str = typer.Argument(..., help="Name of the branch to delete"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompts"),
@@ -204,19 +288,82 @@ def delete(
     delete_branch(branch_name, assume_yes=yes, json_output=json)
 
 
-@app.command()
+@app.command(
+    epilog=_examples(
+        "pq pr feature-auth",
+        "pq pr feature-auth --push --no-draft --defaults --yes --json",
+        'pq pr feature-auth --title "Add authentication" --body-file - --yes',
+    )
+)
 def pr(
     branch_name: str | None = typer.Argument(
         None, help="Optional branch to start from"
     ),
-    draft: bool = typer.Option(False, "--draft", help="Create PRs as drafts"),
+    draft: bool | None = typer.Option(
+        None,
+        "--draft/--no-draft",
+        help="Create PRs as drafts or ready for review without prompting",
+    ),
+    push: bool | None = typer.Option(
+        None,
+        "--push/--no-push",
+        help="Push or skip unpushed branches without prompting",
+    ),
+    title: str | None = typer.Option(
+        None,
+        "--title",
+        help="Title for the target branch's PR",
+    ),
+    body: str | None = typer.Option(
+        None,
+        "--body",
+        help="Body for the target branch's PR",
+    ),
+    body_file: str | None = typer.Option(
+        None,
+        "--body-file",
+        help="Read the target PR body from a file, or - for stdin",
+    ),
+    reviewer: list[str] | None = typer.Option(
+        None,
+        "--reviewer",
+        help="Reviewer for the target PR; repeat for multiple reviewers",
+    ),
+    no_reviewers: bool = typer.Option(
+        False,
+        "--no-reviewers",
+        help="Create without reviewers and without prompting",
+    ),
+    defaults: bool = typer.Option(
+        False,
+        "--defaults",
+        help="Use generated titles, empty bodies, and no reviewers without prompting",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Create PRs without final confirmation prompts",
+    ),
     json: bool = JSON_OPTION,
 ):
     """Create PRs for the branch stack."""
-    create_pull_requests(branch_name, draft=draft, json_output=json)
+    create_pull_requests(
+        branch_name,
+        draft=draft,
+        push=push,
+        title=title,
+        body=_resolve_pr_body(body, body_file),
+        reviewers=_resolve_reviewers(reviewer, no_reviewers),
+        use_defaults=defaults,
+        assume_yes=yes,
+        json_output=json,
+    )
 
 
-@app.command()
+@app.command(
+    epilog=_examples("pq switch feature-auth", "pq switch feature-auth --json")
+)
 def switch(
     branch_name: str | None = typer.Argument(None, help="Optional branch to switch to"),
     json: bool = JSON_OPTION,
@@ -225,7 +372,10 @@ def switch(
     switch_branch(branch_name, json_output=json)
 
 
-@app.command(name="co")
+@app.command(
+    name="co",
+    epilog=_examples("pq co feature-auth", "pq co feature-auth --json"),
+)
 def co_command(
     branch_name: str | None = typer.Argument(None, help="Optional branch to switch to"),
     json: bool = JSON_OPTION,
@@ -234,18 +384,32 @@ def co_command(
     switch_branch(branch_name, json_output=json)
 
 
-@app.command(name="track")
+@app.command(
+    name="track",
+    epilog=_examples(
+        "pq track feature-auth",
+        "pq track feature-auth --parent main --json",
+    ),
+)
 def track_branch(
     branch_name: str | None = typer.Argument(
         None, help="Optional name of branch to track"
     ),
+    parent: str | None = typer.Option(
+        None,
+        "--parent",
+        help="Parent branch; avoids interactive selection",
+    ),
     json: bool = JSON_OPTION,
 ):
     """Track an existing Git branch in the panqake stack."""
-    track(branch_name, json_output=json)
+    track(branch_name, parent_branch=parent, json_output=json)
 
 
-@app.command(name="untrack")
+@app.command(
+    name="untrack",
+    epilog=_examples("pq untrack feature-auth", "pq untrack feature-auth --json"),
+)
 def untrack_branch(
     branch_name: str | None = typer.Argument(
         None, help="Optional name of branch to untrack"
@@ -256,7 +420,15 @@ def untrack_branch(
     untrack(branch_name, json_output=json)
 
 
-@app.command()
+@app.command(
+    epilog=_examples(
+        'pq modify --message "Implement authentication"',
+        'pq modify --file src/auth.py --message "Implement authentication"',
+        'pq modify --all --message "Implement authentication"',
+        'pq modify --staged-only --message "Implement authentication"',
+        'pq modify --commit --message "Implement authentication" --json',
+    )
+)
 def modify(
     commit: bool = typer.Option(
         False, "-c", "--commit", help="Create a new commit instead of amending"
@@ -268,13 +440,45 @@ def modify(
         help="Commit message for the new or amended commit",
     ),
     amend: bool = typer.Option(True, help="Amend the current commit if possible"),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        help="Unstaged path to stage; repeat for multiple paths",
+    ),
+    all_: bool = typer.Option(
+        False,
+        "--all",
+        help="Stage all unstaged files without prompting",
+    ),
+    staged_only: bool = typer.Option(
+        False,
+        "--staged-only",
+        help="Commit only already-staged changes without prompting",
+    ),
     json: bool = JSON_OPTION,
 ):
     """Modify/amend the current commit or create a new one."""
-    modify_commit(commit, message, no_amend=not amend, json_output=json)
+    modify_commit(
+        commit,
+        message,
+        no_amend=not amend,
+        selected_files=_resolve_modify_files(file, all_, staged_only),
+        stage_all=all_,
+        json_output=json,
+    )
 
 
-@app.command(name="submit")
+@app.command(
+    name="submit",
+    epilog=_examples(
+        "pq submit feature-auth",
+        (
+            "pq submit feature-auth --create-pr --push --no-draft "
+            "--defaults --yes --json"
+        ),
+        'pq submit --create-pr --title "Add auth UI" --body-file - --yes',
+    ),
+)
 def submit(
     branch_name: str | None = typer.Argument(
         None, help="Optional branch to update PR for"
@@ -284,13 +488,67 @@ def submit(
         "--create-pr/--no-create-pr",
         help="Control PR creation when one does not exist",
     ),
+    draft: bool | None = typer.Option(
+        None,
+        "--draft/--no-draft",
+        help="Create a new PR as draft or ready for review without prompting",
+    ),
+    push: bool | None = typer.Option(
+        None,
+        "--push/--no-push",
+        help="Push or skip an unpushed PR base branch without prompting",
+    ),
+    title: str | None = typer.Option(None, "--title", help="Title for a new PR"),
+    body: str | None = typer.Option(None, "--body", help="Body for a new PR"),
+    body_file: str | None = typer.Option(
+        None,
+        "--body-file",
+        help="Read a new PR body from a file, or - for stdin",
+    ),
+    reviewer: list[str] | None = typer.Option(
+        None,
+        "--reviewer",
+        help="Reviewer for a new PR; repeat for multiple reviewers",
+    ),
+    no_reviewers: bool = typer.Option(
+        False,
+        "--no-reviewers",
+        help="Create a new PR without reviewers and without prompting",
+    ),
+    defaults: bool = typer.Option(
+        False,
+        "--defaults",
+        help="Use a generated title, empty body, and no reviewers without prompting",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Create a new PR without a final confirmation prompt",
+    ),
     json: bool = JSON_OPTION,
 ):
     """Update remote branch and PR after changes."""
-    update_pull_request(branch_name, create_pr=create_pr, json_output=json)
+    update_pull_request(
+        branch_name,
+        create_pr=create_pr,
+        draft=draft,
+        push=push,
+        title=title,
+        body=_resolve_pr_body(body, body_file),
+        reviewers=_resolve_reviewers(reviewer, no_reviewers),
+        use_defaults=defaults,
+        assume_yes=yes,
+        json_output=json,
+    )
 
 
-@app.command()
+@app.command(
+    epilog=_examples(
+        "pq merge feature-auth",
+        "pq merge feature-auth --method squash --yes --json",
+    )
+)
 def merge(
     branch_name: str | None = typer.Argument(None, help="Optional branch to merge"),
     delete_branch: bool = typer.Option(
@@ -325,7 +583,12 @@ def merge(
     )
 
 
-@app.command()
+@app.command(
+    epilog=_examples(
+        "pq sync main",
+        "pq sync main --keep-merged --no-push --json",
+    )
+)
 def sync(
     main_branch: str = typer.Argument(
         "main", help="Base branch to sync with (default: main)"
@@ -349,7 +612,12 @@ def sync(
     )
 
 
-@app.command()
+@app.command(
+    epilog=_examples(
+        "pq rename feature-auth auth-service",
+        "pq rename feature-auth auth-service --json",
+    )
+)
 def rename(
     old_name: str | None = typer.Argument(
         None,
@@ -364,7 +632,13 @@ def rename(
     rename_branch(old_name, new_name, json_output=json)
 
 
-@app.command()
+@app.command(
+    epilog=_examples(
+        "pq move feature-auth --to main",
+        "pq move feature-auth --to main --json",
+        "pq move --continue",
+    )
+)
 def move(
     branch_name: str | None = typer.Argument(
         None, help="Branch to move (default: current branch)"
@@ -398,7 +672,14 @@ def move(
         move_branch(branch_name, to, json_output=json)
 
 
-@app.command(name="reparent")
+@app.command(
+    name="reparent",
+    epilog=_examples(
+        "pq reparent feature-auth --to main",
+        "pq reparent feature-auth --to main --json",
+        "pq reparent --continue",
+    ),
+)
 def reparent_command(
     branch_name: str | None = typer.Argument(
         None, help="Branch to move (default: current branch)"
@@ -432,7 +713,7 @@ def reparent_command(
         move_branch(branch_name, to, json_output=json)
 
 
-@app.command()
+@app.command(epilog=_examples("pq up", "pq up --json"))
 def up(json: bool = JSON_OPTION):
     """Navigate to the parent branch in the stack.
 
@@ -442,21 +723,44 @@ def up(json: bool = JSON_OPTION):
     up_command(json_output=json)
 
 
-@app.command()
-def down(json: bool = JSON_OPTION):
+@app.command(
+    epilog=_examples(
+        "pq down",
+        "pq down feature-auth --json",
+    )
+)
+def down(
+    child: str | None = typer.Argument(
+        None,
+        help="Child branch to use when the current branch has multiple children",
+    ),
+    json: bool = JSON_OPTION,
+):
     """Navigate to a child branch in the stack.
 
     Move down from the current branch to a child branch.
     If there are multiple children, prompts for selection.
     If there are no children, informs the user.
     """
-    down_command(json_output=json)
+    down_command(child, json_output=json)
 
 
 def main():
     """Main entry point for the panqake CLI."""
     argv = sys.argv[1:]
     json_output = _json_requested(argv)
+    normalized_app_argv = _normalized_app_argv(argv)
+
+    # Help and shell-completion discovery should work from any directory and
+    # must not initialize repository state as a side effect.
+    if not argv:
+        app(["-h"])
+        return
+    if normalized_app_argv is not None and any(
+        option in normalized_app_argv for option in INFORMATIONAL_OPTIONS
+    ):
+        app(normalized_app_argv)
+        return
 
     # Initialize panqake directory and files
     init_panqake()
@@ -477,14 +781,6 @@ def main():
         else:
             console.print("Error: Not in a git repository", style="bold red")
         sys.exit(1)
-
-    # Check if any arguments were provided
-    if not argv:
-        # No arguments, show help
-        app(["-h"])
-        return
-
-    normalized_app_argv = _normalized_app_argv(argv)
 
     # If this is a panqake command invocation, dispatch to Typer.
     if normalized_app_argv is not None:

@@ -79,7 +79,13 @@ def create_pr_for_branch_core(
     ui: UIPort,
     branch: BranchName,
     base: BranchName,
-    draft: bool = False,
+    draft: bool | None = None,
+    push: bool | None = None,
+    title: str | None = None,
+    body: str | None = None,
+    reviewers: list[str] | None = None,
+    use_defaults: bool = False,
+    assume_yes: bool = False,
 ) -> BranchPRResult:
     """Create a PR for a specific branch.
 
@@ -101,7 +107,12 @@ def create_pr_for_branch_core(
         ui.print_info(
             f"Branch {format_branch(branch)} has not been pushed to remote yet"
         )
-        if ui.prompt_confirm("Would you like to push it now?"):
+        should_push = (
+            push
+            if push is not None
+            else ui.prompt_confirm("Would you like to push it now?")
+        )
+        if should_push:
             git.push_branch(branch)
         else:
             return BranchPRResult(
@@ -115,7 +126,12 @@ def create_pr_for_branch_core(
         ui.print_info(
             f"Base branch {format_branch(base)} has not been pushed to remote yet"
         )
-        if ui.prompt_confirm("Would you like to push it now?"):
+        should_push = (
+            push
+            if push is not None
+            else ui.prompt_confirm("Would you like to push it now?")
+        )
+        if should_push:
             git.push_branch(base)
         else:
             return BranchPRResult(
@@ -142,29 +158,36 @@ def create_pr_for_branch_core(
         f"[{branch}] {commit_subject}" if commit_subject else f"[{branch}] Stacked PR"
     )
 
-    title = ui.prompt_input(
-        "Enter PR title: ",
-        validator=PRTitleValidator(),
-        default=default_title,
-    )
+    resolved_title = title if title is not None or not use_defaults else default_title
+    if resolved_title is None:
+        resolved_title = ui.prompt_input(
+            "Enter PR title: ",
+            validator=PRTitleValidator(),
+            default=default_title,
+        )
 
-    description = ui.prompt_input_multiline(
-        "Enter PR description (optional): ",
-        default="",
-    )
+    resolved_body = body if body is not None or not use_defaults else ""
+    if resolved_body is None:
+        resolved_body = ui.prompt_input_multiline(
+            "Enter PR description (optional): ",
+            default="",
+        )
 
-    if not draft:
-        draft = ui.prompt_confirm("Is this a draft PR?")
+    resolved_draft = draft
+    if resolved_draft is None:
+        resolved_draft = ui.prompt_confirm("Is this a draft PR?")
 
-    potential_reviewers = github.get_potential_reviewers()
-    selected_reviewers = ui.prompt_select_reviewers(potential_reviewers)
+    selected_reviewers = reviewers if reviewers is not None or not use_defaults else []
+    if selected_reviewers is None:
+        potential_reviewers = github.get_potential_reviewers()
+        selected_reviewers = ui.prompt_select_reviewers(potential_reviewers)
 
     ui.print_info(f"Creating PR: {format_branch(base)} ← {format_branch(branch)}")
-    ui.print_info(f"Title: {title}")
+    ui.print_info(f"Title: {resolved_title}")
     if selected_reviewers:
         ui.print_muted(f"Reviewers: {', '.join(selected_reviewers)}")
 
-    if not ui.prompt_confirm("Create this pull request?"):
+    if not assume_yes and not ui.prompt_confirm("Create this pull request?"):
         return BranchPRResult(
             branch=branch,
             base=base,
@@ -175,10 +198,10 @@ def create_pr_for_branch_core(
     pr_url = github.create_pr(
         base=base,
         head=branch,
-        title=title,
-        body=description,
+        title=resolved_title,
+        body=resolved_body,
         reviewers=selected_reviewers if selected_reviewers else None,
-        draft=draft,
+        draft=resolved_draft,
     )
 
     return BranchPRResult(
@@ -186,9 +209,9 @@ def create_pr_for_branch_core(
         base=base,
         status="created",
         pr_url=pr_url,
-        title=title,
+        title=resolved_title,
         reviewers=selected_reviewers if selected_reviewers else None,
-        draft=draft,
+        draft=resolved_draft,
     )
 
 
@@ -198,7 +221,13 @@ def create_pull_requests_core(
     config: ConfigPort,
     ui: UIPort,
     branch_name: BranchName | None = None,
-    draft: bool = False,
+    draft: bool | None = None,
+    push: bool | None = None,
+    title: str | None = None,
+    body: str | None = None,
+    reviewers: list[str] | None = None,
+    use_defaults: bool = False,
+    assume_yes: bool = False,
 ) -> CreatePRStackResult:
     """Create pull requests for branches in the stack.
 
@@ -211,7 +240,13 @@ def create_pull_requests_core(
         config: Stack configuration interface
         ui: User interaction interface
         branch_name: Target branch (uses current branch if None)
-        draft: Whether to create all PRs as drafts
+        draft: Whether to create all PRs as drafts (prompts if None)
+        push: Whether to push unpushed branches (prompts if None)
+        title: Title override for the target branch's PR
+        body: Body override for the target branch's PR
+        reviewers: Reviewer overrides for the target branch's PR
+        use_defaults: Use generated metadata instead of prompting for missing values
+        assume_yes: Create each PR without a final confirmation
 
     Returns:
         CreatePRStackResult with results for each branch processed
@@ -276,6 +311,12 @@ def create_pull_requests_core(
             branch=branch,
             base=base,
             draft=draft,
+            push=push,
+            title=title if branch == branch_name else None,
+            body=body if branch == branch_name else None,
+            reviewers=reviewers if branch == branch_name else None,
+            use_defaults=use_defaults,
+            assume_yes=assume_yes,
         )
 
         results.append(result)
@@ -304,7 +345,13 @@ def create_pull_requests_core(
 
 def create_pull_requests(
     branch_name: BranchName | None = None,
-    draft: bool = False,
+    draft: bool | None = None,
+    push: bool | None = None,
+    title: str | None = None,
+    body: str | None = None,
+    reviewers: list[str] | None = None,
+    use_defaults: bool = False,
+    assume_yes: bool = False,
     *,
     json_output: bool = False,
 ) -> None:
@@ -329,6 +376,12 @@ def create_pull_requests(
             ui=ui,
             branch_name=branch_name,
             draft=draft,
+            push=push,
+            title=title,
+            body=body,
+            reviewers=reviewers,
+            use_defaults=use_defaults,
+            assume_yes=assume_yes,
         )
 
         if not json_output:
@@ -357,7 +410,7 @@ def create_pull_requests(
 
 
 def create_pr_for_branch(
-    branch: BranchName, parent: BranchName, draft: bool = False
+    branch: BranchName, parent: BranchName, draft: bool | None = None
 ) -> bool:
     """Create a PR for a specific branch.
 

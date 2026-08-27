@@ -6,6 +6,7 @@ from panqake.commands.modify import modify_commit_core
 from panqake.ports import (
     CommitError,
     FileInfo,
+    GitOperationError,
     NoChangesError,
     UserCancelledError,
 )
@@ -141,6 +142,113 @@ class TestModifyCommitCore:
         assert "a.py" in staged_paths
         assert "c.py" in staged_paths
         assert "b.py" not in staged_paths
+
+    def test_stages_explicit_files_without_prompting(self):
+        unstaged = [
+            FileInfo("a.py", "Modified: a.py"),
+            FileInfo("b.py", "Modified: b.py"),
+        ]
+        git = FakeGit(
+            current_branch="feature-x",
+            unstaged_files=unstaged,
+            branch_commits={"feature-x": True},
+        )
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI()
+
+        result = modify_commit_core(
+            git=git,
+            config=config,
+            ui=ui,
+            selected_files=["b.py"],
+        )
+
+        assert result.files_staged == ["b.py"]
+        assert [file.path for file in git.staged_file_calls[0]] == ["b.py"]
+        assert ui.select_files_calls == []
+
+    def test_stages_all_files_without_prompting(self):
+        unstaged = [
+            FileInfo("a.py", "Modified: a.py"),
+            FileInfo("b.py", "Modified: b.py"),
+        ]
+        git = FakeGit(
+            current_branch="feature-x",
+            unstaged_files=unstaged,
+            branch_commits={"feature-x": True},
+        )
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI()
+
+        result = modify_commit_core(
+            git=git,
+            config=config,
+            ui=ui,
+            stage_all=True,
+        )
+
+        assert result.files_staged == ["a.py", "b.py"]
+        assert ui.select_files_calls == []
+
+    def test_keeps_unstaged_files_untouched_without_prompting(self):
+        git = FakeGit(
+            current_branch="feature-x",
+            staged_files=[FileInfo("staged.py", "Modified: staged.py")],
+            unstaged_files=[FileInfo("unstaged.py", "Modified: unstaged.py")],
+            branch_commits={"feature-x": True},
+        )
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI()
+
+        result = modify_commit_core(
+            git=git,
+            config=config,
+            ui=ui,
+            selected_files=[],
+        )
+
+        assert result.amended is True
+        assert result.files_staged == []
+        assert git.staged_file_calls == []
+        assert ui.select_files_calls == []
+
+    def test_rejects_unknown_explicit_file(self):
+        git = FakeGit(
+            current_branch="feature-x",
+            unstaged_files=[FileInfo("a.py", "Modified: a.py")],
+        )
+        config = FakeConfig()
+        ui = FakeUI()
+
+        with pytest.raises(
+            GitOperationError,
+            match="unknown.py.*Available unstaged paths: a.py",
+        ):
+            modify_commit_core(
+                git=git,
+                config=config,
+                ui=ui,
+                selected_files=["unknown.py"],
+            )
+
+        assert ui.select_files_calls == []
+
+    def test_all_and_explicit_files_conflict_without_unstaged_files(self):
+        git = FakeGit(
+            current_branch="feature-x",
+            staged_files=[FileInfo("staged.py", "Modified: staged.py")],
+        )
+        config = FakeConfig()
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(GitOperationError, match="--all cannot be combined"):
+            modify_commit_core(
+                git=git,
+                config=config,
+                ui=ui,
+                stage_all=True,
+                selected_files=["staged.py"],
+            )
 
     def test_no_changes_error_when_nothing_to_commit(self):
         """Should raise NoChangesError when no staged or unstaged changes."""

@@ -4,6 +4,7 @@ import json
 from unittest.mock import call, patch
 
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from panqake.cli import app, main
@@ -57,7 +58,7 @@ def test_cli_help(runner):
     assert result.exit_code == 0
 
     # Verify help text contains expected content
-    output = result.stdout
+    output = unstyle(result.stdout)
     assert "Usage" in output
     assert "Commands" in output or "command" in output.lower()
     assert "Options" in output or "option" in output.lower()

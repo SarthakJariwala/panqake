@@ -1,6 +1,6 @@
 [project]
 name = "panqake"
-version = "0.28.2"
+dynamic = ["version"]
 description = "An intuitive CLI for effortless git stacking"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -19,8 +19,11 @@ pq = "panqake.cli:main"
 exclude-newer = "1 day"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/panqake"]

@@ -1,3 +1,5 @@
 """Panqake - CLI for Git stacking."""
 
-__version__ = "0.28.2"
+from importlib.metadata import version
+
+__version__ = version("panqake")

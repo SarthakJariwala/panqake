@@ -415,7 +415,6 @@ wheels = [
 
 [[package]]
 name = "panqake"
-version = "0.28.2"
 source = { editable = "." }
 dependencies = [
     { name = "prompt-toolkit" },

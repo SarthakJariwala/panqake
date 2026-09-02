@@ -4,6 +4,7 @@ import json
 import shutil
 import subprocess
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from panqake.ports.results import PRAttachment
 from panqake.utils.status import status
@@ -93,12 +94,25 @@ def get_potential_reviewers() -> list[str]:
             return []
 
 
+@dataclass(frozen=True)
+class CreatePRAttempt:
+    """Outcome of one `gh pr create` invocation."""
+
+    ok: bool
+    url: str | None
+    stderr: str = ""
+
+
 def _pull_request_url(output: str) -> str | None:
     for line in reversed(output.splitlines()):
         stripped = line.strip()
         if stripped.startswith("https://") and "/pull/" in stripped:
             return stripped
     return None
+
+
+def _printed_pull_request_url(stdout: str, stderr: str) -> str | None:
+    return _pull_request_url(stdout) or _pull_request_url(stderr)
 
 
 def create_pr(
@@ -109,7 +123,7 @@ def create_pr(
     reviewers: list[str] | None = None,
     draft: bool = False,
     attachments: Sequence[PRAttachment] | None = None,
-) -> tuple[bool, str | None]:
+) -> CreatePRAttempt:
     """Create a pull request using GitHub CLI.
 
     Args:
@@ -122,8 +136,10 @@ def create_pr(
         attachments: Optional local files forwarded as `gh pr create --attach`
 
     Returns:
-        Tuple[bool, Optional[str]]: (success, url) where success indicates if
-        PR creation was successful and url is the PR URL if available
+        CreatePRAttempt with ok, url, and gh stderr. A nonzero gh exit is
+        still ok when gh printed a pull request URL. That is the partial
+        `--attach` upload contract from cli/cli#14183. An existing PR for
+        `head` is not treated as success.
     """
     with status("Creating pull request..."):
         cmd = [
@@ -157,16 +173,13 @@ def create_pr(
             stderr=subprocess.PIPE,
             text=True,
         )
-        output = (completed.stdout or "").strip()
-        url = _pull_request_url(output)
+        stderr = completed.stderr or ""
+        url = _printed_pull_request_url(completed.stdout or "", stderr)
         if completed.returncode == 0:
-            return True, url or get_pr_url(head)
+            return CreatePRAttempt(True, url or get_pr_url(head), stderr)
         if url:
-            return True, url
-        fallback = get_pr_url(head)
-        if fallback:
-            return True, fallback
-        return False, None
+            return CreatePRAttempt(True, url, stderr)
+        return CreatePRAttempt(False, None, stderr)
 
 
 def update_pr_base(branch: str, new_base: str) -> bool:

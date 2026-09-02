@@ -23,6 +23,33 @@ from .exceptions import (
 )
 from .results import FileInfo, MergeMethod, PRAttachment
 
+_UNKNOWN_ATTACH_FLAG_MARKERS = (
+    "unknown flag",
+    "unknown command",
+    "flag provided but not defined",
+    "unknown shorthand flag",
+)
+
+
+def _pr_creation_error_message(
+    head: BranchName,
+    stderr: str,
+    *,
+    attachments: list[PRAttachment] | None,
+) -> str:
+    detail = " ".join(stderr.split())
+    message = f"Failed to create PR for branch '{head}'."
+    if detail:
+        message = f"{message} {detail}"
+    lowered = stderr.lower()
+    if (
+        attachments
+        and "--attach" in lowered
+        and any(marker in lowered for marker in _UNKNOWN_ATTACH_FLAG_MARKERS)
+    ):
+        message = f"{message} GitHub CLI 2.99.0 or newer is required for --attach."
+    return message
+
 
 class RealGit:
     """Real implementation of GitPort using actual git commands."""
@@ -403,13 +430,14 @@ class RealGitHub:
     ) -> str | None:
         from panqake.utils.github import create_pr
 
-        success, url = create_pr(base, head, title, body, reviewers, draft, attachments)
-        if not success:
-            hint = ""
-            if attachments:
-                hint = " GitHub CLI 2.99.0 or newer is required for --attach."
-            raise PRCreationError(f"Failed to create PR for branch '{head}'.{hint}")
-        return url
+        attempt = create_pr(base, head, title, body, reviewers, draft, attachments)
+        if not attempt.ok:
+            raise PRCreationError(
+                _pr_creation_error_message(
+                    head, attempt.stderr, attachments=attachments
+                )
+            )
+        return attempt.url
 
     def get_potential_reviewers(self) -> list[str]:
         from panqake.utils.github import get_potential_reviewers

@@ -474,6 +474,22 @@ def test_pr_command_forwards_attach_flags(runner, tmp_path):
     ]
 
 
+def test_pr_command_keeps_relative_attach_spelling(runner, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    shot = tmp_path / "login.png"
+    shot.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    with patch("panqake.cli.create_pull_requests") as mock_create_prs:
+        result = runner.invoke(
+            app, ["pr", "feature-branch", "--attach", "./login.png"]
+        )
+
+    assert result.exit_code == 0
+    assert mock_create_prs.call_args.kwargs["attachments"] == [
+        PRAttachment(path="./login.png", alt_text=None)
+    ]
+
+
 def test_pr_command_rejects_missing_attachment(runner, tmp_path):
     missing = tmp_path / "nope.png"
     result = runner.invoke(app, ["pr", "feature-branch", "--attach", str(missing)])

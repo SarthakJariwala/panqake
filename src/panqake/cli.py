@@ -177,16 +177,17 @@ def _resolve_pr_attachments(raw: list[str] | None) -> list[PRAttachment] | None:
             attachment = PRAttachment.parse(item)
         except ValueError as error:
             raise typer.BadParameter(str(error)) from error
-        path = Path(attachment.path).expanduser()
-        if not path.is_file():
+        lookup = Path(attachment.path).expanduser()
+        if not lookup.is_file():
             raise typer.BadParameter(f"attachment '{attachment.path}' is not a file")
-        resolved = path.resolve()
+        resolved = lookup.resolve()
         if resolved in seen:
             raise typer.BadParameter(
                 f"cannot attach the same file twice: '{attachment.path}'"
             )
         seen.add(resolved)
-        attachments.append(PRAttachment(path=str(path), alt_text=attachment.alt_text))
+        gh_path = str(lookup) if attachment.path.startswith("~") else attachment.path
+        attachments.append(PRAttachment(path=gh_path, alt_text=attachment.alt_text))
     return attachments
 
 

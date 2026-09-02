@@ -118,11 +118,11 @@ def test_create_pr_success(mock_subprocess_run):
     mock_subprocess_run.return_value.stdout = (
         "PR created\nhttps://github.com/user/repo/pull/123"
     )
-    success, url = create_pr(
+    attempt = create_pr(
         base="main", head="feature", title="Test PR", body="PR description"
     )
-    assert success is True
-    assert url == "https://github.com/user/repo/pull/123"
+    assert attempt.ok is True
+    assert attempt.url == "https://github.com/user/repo/pull/123"
     mock_subprocess_run.assert_called_once_with(
         [
             "gh",
@@ -148,16 +148,16 @@ def test_create_pr_failure(mock_subprocess_run):
     """Test failed PR creation."""
     mock_subprocess_run.return_value.returncode = 1
     mock_subprocess_run.return_value.stdout = ""
-    success, url = create_pr(base="main", head="feature", title="Test PR")
-    assert success is False
-    assert url is None
+    attempt = create_pr(base="main", head="feature", title="Test PR")
+    assert attempt.ok is False
+    assert attempt.url is None
 
 
 def test_create_pr_with_attachments(mock_subprocess_run):
     mock_subprocess_run.return_value.stdout = (
         "PR created\nhttps://github.com/user/repo/pull/123"
     )
-    success, url = create_pr(
+    attempt = create_pr(
         base="main",
         head="feature",
         title="Test PR",
@@ -166,8 +166,8 @@ def test_create_pr_with_attachments(mock_subprocess_run):
             PRAttachment(path="./after.png"),
         ],
     )
-    assert success is True
-    assert url == "https://github.com/user/repo/pull/123"
+    assert attempt.ok is True
+    assert attempt.url == "https://github.com/user/repo/pull/123"
     mock_subprocess_run.assert_called_once_with(
         [
             "gh",
@@ -196,14 +196,44 @@ def test_create_pr_with_attachments(mock_subprocess_run):
 def test_create_pr_succeeds_when_attach_partially_fails(mock_subprocess_run):
     mock_subprocess_run.return_value.returncode = 1
     mock_subprocess_run.return_value.stdout = "https://github.com/user/repo/pull/123\n"
-    success, url = create_pr(
+    attempt = create_pr(
         base="main",
         head="feature",
         title="Test PR",
         attachments=[PRAttachment(path="./login.png")],
     )
-    assert success is True
-    assert url == "https://github.com/user/repo/pull/123"
+    assert attempt.ok is True
+    assert attempt.url == "https://github.com/user/repo/pull/123"
+
+
+def test_create_pr_partial_attach_reads_url_from_stderr(mock_subprocess_run):
+    mock_subprocess_run.return_value.returncode = 1
+    mock_subprocess_run.return_value.stdout = ""
+    mock_subprocess_run.return_value.stderr = (
+        "failed to upload after.png\nhttps://github.com/user/repo/pull/123\n"
+    )
+    attempt = create_pr(
+        base="main",
+        head="feature",
+        title="Test PR",
+        attachments=[PRAttachment(path="./login.png")],
+    )
+    assert attempt.ok is True
+    assert attempt.url == "https://github.com/user/repo/pull/123"
+
+
+def test_create_pr_failure_ignores_existing_pr_url(mock_subprocess_run):
+    mock_subprocess_run.return_value.returncode = 1
+    mock_subprocess_run.return_value.stdout = ""
+    mock_subprocess_run.return_value.stderr = "GraphQL: Resource not accessible"
+    with patch(
+        "panqake.utils.github.get_pr_url",
+        return_value="https://github.com/user/repo/pull/9",
+    ):
+        attempt = create_pr(base="main", head="feature", title="Test PR")
+    assert attempt.ok is False
+    assert attempt.url is None
+    assert "Resource not accessible" in attempt.stderr
 
 
 def test_create_pr_with_reviewers(mock_subprocess_run):
@@ -211,15 +241,15 @@ def test_create_pr_with_reviewers(mock_subprocess_run):
     mock_subprocess_run.return_value.stdout = (
         "PR created\nhttps://github.com/user/repo/pull/123"
     )
-    success, url = create_pr(
+    attempt = create_pr(
         base="main",
         head="feature",
         title="Test PR",
         body="PR description",
         reviewers=["reviewer1", "reviewer2"],
     )
-    assert success is True
-    assert url == "https://github.com/user/repo/pull/123"
+    assert attempt.ok is True
+    assert attempt.url == "https://github.com/user/repo/pull/123"
     mock_subprocess_run.assert_called_once_with(
         [
             "gh",
@@ -250,15 +280,15 @@ def test_create_pr_as_draft(mock_subprocess_run):
     mock_subprocess_run.return_value.stdout = (
         "Draft PR created\nhttps://github.com/user/repo/pull/123"
     )
-    success, url = create_pr(
+    attempt = create_pr(
         base="main",
         head="feature",
         title="Test Draft PR",
         body="Draft PR description",
         draft=True,
     )
-    assert success is True
-    assert url == "https://github.com/user/repo/pull/123"
+    assert attempt.ok is True
+    assert attempt.url == "https://github.com/user/repo/pull/123"
     mock_subprocess_run.assert_called_once_with(
         [
             "gh",
@@ -286,7 +316,7 @@ def test_create_pr_draft_with_reviewers(mock_subprocess_run):
     mock_subprocess_run.return_value.stdout = (
         "Draft PR created\nhttps://github.com/user/repo/pull/123"
     )
-    success, url = create_pr(
+    attempt = create_pr(
         base="main",
         head="feature",
         title="Test Draft PR",
@@ -294,8 +324,8 @@ def test_create_pr_draft_with_reviewers(mock_subprocess_run):
         reviewers=["reviewer1"],
         draft=True,
     )
-    assert success is True
-    assert url == "https://github.com/user/repo/pull/123"
+    assert attempt.ok is True
+    assert attempt.url == "https://github.com/user/repo/pull/123"
     mock_subprocess_run.assert_called_once_with(
         [
             "gh",

@@ -3,12 +3,14 @@
 import json
 import shutil
 import subprocess
-from typing import List, Optional, Tuple
+from collections.abc import Sequence
+from dataclasses import dataclass
 
+from panqake.ports.results import PRAttachment
 from panqake.utils.status import status
 
 
-def run_gh_command(command: List[str]) -> Optional[str]:
+def run_gh_command(command: list[str]) -> str | None:
     """Run a GitHub CLI command and return its output."""
     try:
         result = subprocess.run(
@@ -23,7 +25,7 @@ def run_gh_command(command: List[str]) -> Optional[str]:
         return None
 
 
-def get_open_pr_info(branch: str) -> Optional[dict]:
+def get_open_pr_info(branch: str) -> dict | None:
     """Get PR info for a branch, only if the PR is open.
 
     Returns:
@@ -48,7 +50,7 @@ def branch_has_pr(branch: str) -> bool:
     return get_open_pr_info(branch) is not None
 
 
-def get_pr_url(branch: str) -> Optional[str]:
+def get_pr_url(branch: str) -> str | None:
     """Get the URL of an open pull request for a branch."""
     info = get_open_pr_info(branch)
     return info.get("url") if info else None
@@ -59,7 +61,7 @@ def check_github_cli_installed() -> bool:
     return bool(shutil.which("gh"))
 
 
-def get_potential_reviewers() -> List[str]:
+def get_potential_reviewers() -> list[str]:
     """Get list of potential reviewers from the repository.
 
     Returns:
@@ -92,14 +94,36 @@ def get_potential_reviewers() -> List[str]:
             return []
 
 
+@dataclass(frozen=True)
+class CreatePRAttempt:
+    """Outcome of one `gh pr create` invocation."""
+
+    ok: bool
+    url: str | None
+    stderr: str = ""
+
+
+def _pull_request_url(output: str) -> str | None:
+    for line in reversed(output.splitlines()):
+        stripped = line.strip()
+        if stripped.startswith("https://") and "/pull/" in stripped:
+            return stripped
+    return None
+
+
+def _printed_pull_request_url(stdout: str, stderr: str) -> str | None:
+    return _pull_request_url(stdout) or _pull_request_url(stderr)
+
+
 def create_pr(
     base: str,
     head: str,
     title: str,
     body: str = "",
-    reviewers: Optional[List[str]] = None,
+    reviewers: list[str] | None = None,
     draft: bool = False,
-) -> Tuple[bool, Optional[str]]:
+    attachments: Sequence[PRAttachment] | None = None,
+) -> CreatePRAttempt:
     """Create a pull request using GitHub CLI.
 
     Args:
@@ -109,10 +133,13 @@ def create_pr(
         body: PR description
         reviewers: Optional list of reviewer usernames
         draft: Whether to create as a draft PR
+        attachments: Optional local files forwarded as `gh pr create --attach`
 
     Returns:
-        Tuple[bool, Optional[str]]: (success, url) where success indicates if
-        PR creation was successful and url is the PR URL if available
+        CreatePRAttempt with ok, url, and gh stderr. A nonzero gh exit is
+        still ok when gh printed a pull request URL. That is the partial
+        `--attach` upload contract from cli/cli#14183. An existing PR for
+        `head` is not treated as success.
     """
     with status("Creating pull request..."):
         cmd = [
@@ -128,30 +155,31 @@ def create_pr(
             body,
         ]
 
-        # Add draft flag if requested
         if draft:
             cmd.append("--draft")
 
-        # Add reviewers if provided
         if reviewers:
             for reviewer in reviewers:
                 cmd.extend(["--reviewer", reviewer])
 
-        result = run_gh_command(cmd)
+        if attachments:
+            for attachment in attachments:
+                cmd.extend(["--attach", attachment.to_gh_value()])
 
-        if result is None:
-            return False, None
-
-        # Extract URL from the output - gh CLI typically outputs the URL in the last line
-        # Example output: "https://github.com/user/repo/pull/123"
-        lines = result.split("\n")
-        for line in reversed(lines):
-            if line.startswith("https://") and "/pull/" in line:
-                return True, line.strip()
-
-        # If we couldn't parse the URL from output, try to get it directly
-        url = get_pr_url(head)
-        return True, url
+        completed = subprocess.run(
+            ["gh", *cmd],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        stderr = completed.stderr or ""
+        url = _printed_pull_request_url(completed.stdout or "", stderr)
+        if completed.returncode == 0:
+            return CreatePRAttempt(True, url or get_pr_url(head), stderr)
+        if url:
+            return CreatePRAttempt(True, url, stderr)
+        return CreatePRAttempt(False, None, stderr)
 
 
 def update_pr_base(branch: str, new_base: str) -> bool:
@@ -160,7 +188,7 @@ def update_pr_base(branch: str, new_base: str) -> bool:
     return result is not None
 
 
-def get_pr_checks_status(branch: str) -> Tuple[bool, List[str]]:
+def get_pr_checks_status(branch: str) -> tuple[bool, list[str]]:
     """Check if all required status checks have passed for a PR.
 
     Returns:

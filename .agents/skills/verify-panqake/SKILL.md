@@ -34,7 +34,7 @@ Ready when stdout is a JSON object with `run_id`, `home`, `repo`, `evidence`, an
 
 `--github` also sets `github` true, `github_repo`, `origin_url`, and `branch_prefix`. It points `origin` at `https://github.com/SarthakJariwala/panqake-verify-repo.git` (override with `PANQAKE_VERIFY_GITHUB_REPO`), maps `GITHUB_PAT` to `GH_TOKEN` for `gh` and git, and isolates `GH_CONFIG_DIR` under the session home. If the verify repo is empty it pushes `main` once. It does not push `feature-auth` or `feature-ui`.
 
-`--github` requires `gh` on PATH and `GITHUB_PAT` (or `GH_TOKEN` / `GITHUB_TOKEN`) with **Contents: write** and **Pull requests: write** on the verify repo. A metadata-only token can `gh repo view` and still fail `launch --github`. Panqake itself never reads `GITHUB_PAT`; it shells out to `gh`. This helper is what exports `GH_TOKEN`.
+`--github` requires `gh` on PATH and `GITHUB_PAT` (or `GH_TOKEN` / `GITHUB_TOKEN`) with **Contents: write** and **Pull requests: write** on the verify repo. A metadata-only token can `gh repo view` and still fail `launch --github`. Panqake itself never reads `GITHUB_PAT`; it shells out to `gh`. This helper is what exports `GH_TOKEN`. For `--attach`, it also pins GitHub CLI 2.99.0 or newer onto the fixture PATH when an older `gh` is first on the agent PATH.
 
 Do not use `uv run --directory <this-repo>`. That changes cwd into the product checkout and will create real branches. The helper runs `.venv/bin/pq` with cwd set to the fixture.
 
@@ -52,7 +52,10 @@ Run this first, after any failed drive, and on every fresh session:
 
 Require `"ok": true`. Doctor checks that the pq binary exists, the git toplevel is the fixture, `HOME` isolation points at the session home, `~/.panqake/stacks.json` is not the user's file, the stack key is the fixture basename, and `pq list --json` returns `"ok": true`.
 
-On a `--github` session it also checks that `gh` is on PATH, a token is present, `origin` is the verify repo, `gh repo view` succeeds with that token, and gh config is under the session home.
+On a `--github` session it also checks that `gh` is on PATH, the session PATH
+pins GitHub CLI 2.99.0 or newer (`gh-attach`), a token is present, `origin` is
+the verify repo, `gh repo view` succeeds with that token, and gh config is
+under the session home.
 
 Refuse to drive when doctor fails. Do not drive the Panqake checkout. Do not drive a repo whose basename is `workspace`. Do not drive without this helper setting `HOME`. Do not drive GitHub recipes without `--github`.
 
@@ -127,6 +130,7 @@ verify-panqake drive [--run RUN_ID] [--feature FEATURE_ID] -- <pq args>
 verify-panqake git [--run RUN_ID] -- <git args>
 verify-panqake gh [--run RUN_ID] -- <gh args>
 verify-panqake append [--run RUN_ID] PATH TEXT
+verify-panqake png [--run RUN_ID] PATH
 verify-panqake github-prepare [--run RUN_ID]
 verify-panqake stacks [--run RUN_ID]
 verify-panqake cleanup [--run RUN_ID]

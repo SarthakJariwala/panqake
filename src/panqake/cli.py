@@ -28,6 +28,7 @@ from panqake.commands.up import up as up_command
 from panqake.commands.update import update_branches
 from panqake.ports.exceptions import GitOperationError
 from panqake.ports.helpers import _emit_json_error
+from panqake.ports.results import MAX_PR_ATTACHMENTS, PRAttachment
 from panqake.utils.config import init_panqake
 from panqake.utils.git import is_git_repo, run_git_command
 from panqake.utils.questionary_prompt import print_formatted_text
@@ -164,6 +165,32 @@ def _resolve_reviewers(
     return [] if no_reviewers else reviewers
 
 
+def _resolve_pr_attachments(raw: list[str] | None) -> list[PRAttachment] | None:
+    if raw is None:
+        return None
+    if len(raw) > MAX_PR_ATTACHMENTS:
+        raise typer.BadParameter(f"cannot attach more than {MAX_PR_ATTACHMENTS} files")
+    attachments: list[PRAttachment] = []
+    seen: set[Path] = set()
+    for item in raw:
+        try:
+            attachment = PRAttachment.parse(item)
+        except ValueError as error:
+            raise typer.BadParameter(str(error)) from error
+        lookup = Path(attachment.path).expanduser()
+        if not lookup.is_file():
+            raise typer.BadParameter(f"attachment '{attachment.path}' is not a file")
+        resolved = lookup.resolve()
+        if resolved in seen:
+            raise typer.BadParameter(
+                f"cannot attach the same file twice: '{attachment.path}'"
+            )
+        seen.add(resolved)
+        gh_path = str(lookup) if attachment.path.startswith("~") else attachment.path
+        attachments.append(PRAttachment(path=gh_path, alt_text=attachment.alt_text))
+    return attachments
+
+
 def _resolve_modify_files(
     files: list[str] | None,
     stage_all: bool,
@@ -293,6 +320,7 @@ def delete(
         "pq pr feature-auth",
         "pq pr feature-auth --push --no-draft --defaults --yes --json",
         'pq pr feature-auth --title "Add authentication" --body-file - --yes',
+        "pq pr feature-auth --attach ./login.png --yes --defaults",
     )
 )
 def pr(
@@ -334,10 +362,15 @@ def pr(
         "--no-reviewers",
         help="Create without reviewers and without prompting",
     ),
+    attach: list[str] | None = typer.Option(
+        None,
+        "--attach",
+        help="Image or video for the target PR, as path or path#alt; repeat for more files",
+    ),
     defaults: bool = typer.Option(
         False,
         "--defaults",
-        help="Use generated titles, empty bodies, and no reviewers without prompting",
+        help="Use generated titles and no reviewers without prompting; fill an empty body from --attach",
     ),
     yes: bool = typer.Option(
         False,
@@ -357,6 +390,7 @@ def pr(
         reviewers=_resolve_reviewers(reviewer, no_reviewers),
         use_defaults=defaults,
         assume_yes=yes,
+        attachments=_resolve_pr_attachments(attach),
         json_output=json,
     )
 
@@ -477,6 +511,7 @@ def modify(
             "--defaults --yes --json"
         ),
         'pq submit --create-pr --title "Add auth UI" --body-file - --yes',
+        "pq submit --create-pr --attach ./login.png --yes --defaults",
     ),
 )
 def submit(
@@ -515,10 +550,15 @@ def submit(
         "--no-reviewers",
         help="Create a new PR without reviewers and without prompting",
     ),
+    attach: list[str] | None = typer.Option(
+        None,
+        "--attach",
+        help="Image or video for a new PR, as path or path#alt; repeat for more files",
+    ),
     defaults: bool = typer.Option(
         False,
         "--defaults",
-        help="Use a generated title, empty body, and no reviewers without prompting",
+        help="Use a generated title and no reviewers without prompting; fill an empty body from --attach",
     ),
     yes: bool = typer.Option(
         False,
@@ -539,6 +579,7 @@ def submit(
         reviewers=_resolve_reviewers(reviewer, no_reviewers),
         use_defaults=defaults,
         assume_yes=yes,
+        attachments=_resolve_pr_attachments(attach),
         json_output=json,
     )
 

@@ -10,6 +10,7 @@ from panqake.ports import (
     FileInfo,
     GitOperationError,
     MergeMethod,
+    PRAttachment,
     PRBaseUpdateError,
     PRCreationError,
     PRMergeError,
@@ -365,7 +366,15 @@ class FakeGitHub:
 
         # Track calls for verification
         self.create_pr_calls: list[
-            tuple[BranchName, BranchName, str, str, list[str] | None, bool]
+            tuple[
+                BranchName,
+                BranchName,
+                str,
+                str,
+                list[str] | None,
+                bool,
+                list[PRAttachment] | None,
+            ]
         ] = []
         self.created_prs: dict[BranchName, str] = {}
         self.merge_pr_calls: list[tuple[BranchName, MergeMethod]] = []
@@ -396,8 +405,11 @@ class FakeGitHub:
         body: str = "",
         reviewers: list[str] | None = None,
         draft: bool = False,
+        attachments: list[PRAttachment] | None = None,
     ) -> str | None:
-        self.create_pr_calls.append((base, head, title, body, reviewers, draft))
+        self.create_pr_calls.append(
+            (base, head, title, body, reviewers, draft, attachments)
+        )
 
         if self.fail_create_pr:
             raise PRCreationError(f"Failed to create PR for branch '{head}'")

@@ -12,6 +12,7 @@ from panqake.commands.submit import (
 from panqake.ports import (
     BranchNotFoundError,
     GitHubCLINotFoundError,
+    PRAttachment,
     PushError,
     UserCancelledError,
 )
@@ -368,8 +369,25 @@ def test_update_pull_request_json_create_pr_creates_pr(monkeypatch, capsys):
         def get_potential_reviewers(self):
             return []
 
-        def create_pr(self, base, head, title, body="", reviewers=None, draft=False):
-            state["create_pr"] = (base, head, title, body, reviewers, draft)
+        def create_pr(
+            self,
+            base,
+            head,
+            title,
+            body="",
+            reviewers=None,
+            draft=False,
+            attachments=None,
+        ):
+            state["create_pr"] = (
+                base,
+                head,
+                title,
+                body,
+                reviewers,
+                draft,
+                attachments,
+            )
             return "https://github.com/org/repo/pull/99"
 
     class NoopConfig:
@@ -399,6 +417,7 @@ def test_update_pull_request_json_create_pr_creates_pr(monkeypatch, capsys):
         "",
         None,
         False,
+        None,
     )
 
 
@@ -448,7 +467,16 @@ def test_update_pull_request_json_create_pr_skips_when_no_commits(monkeypatch, c
         def get_potential_reviewers(self):
             return []
 
-        def create_pr(self, base, head, title, body="", reviewers=None, draft=False):
+        def create_pr(
+            self,
+            base,
+            head,
+            title,
+            body="",
+            reviewers=None,
+            draft=False,
+            attachments=None,
+        ):
             state["create_pr_calls"] = state["create_pr_calls"] + 1
             return "https://github.com/org/repo/pull/99"
 
@@ -528,7 +556,69 @@ class TestUpdatePullRequestCore:
             "Explicit PR body",
             ["alice"],
             False,
+            None,
         )
+
+    def test_forwards_attachments_when_creating_a_pr(self):
+        git = FakeGit(
+            current_branch="feature-x",
+            branches=["main", "feature-x"],
+            branch_commits={"feature-x": True},
+            pushed_branches={"main", "feature-x"},
+        )
+        github = FakeGitHub()
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI()
+        attachments = [PRAttachment(path="./login.png")]
+
+        result = update_pull_request_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature-x",
+            create_pr=True,
+            push=True,
+            title="Explicit PR title",
+            body="Explicit PR body",
+            draft=False,
+            reviewers=[],
+            assume_yes=True,
+            attachments=attachments,
+        )
+
+        assert result.pr_created is True
+        assert github.create_pr_calls[0][6] == attachments
+        assert github.create_pr_calls[0][3] == "Explicit PR body"
+
+    def test_defaults_seed_body_from_attachments(self):
+        git = FakeGit(
+            current_branch="feature-x",
+            branches=["main", "feature-x"],
+            branch_commits={"feature-x": True},
+            pushed_branches={"main", "feature-x"},
+            commit_subjects={"feature-x": "feat: x"},
+        )
+        github = FakeGitHub()
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI()
+
+        update_pull_request_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature-x",
+            create_pr=True,
+            push=True,
+            draft=False,
+            reviewers=[],
+            use_defaults=True,
+            assume_yes=True,
+            attachments=[PRAttachment(path="./login.png", alt_text="Login error")],
+        )
+
+        assert github.create_pr_calls[0][3] == "![Login error](./login.png)"
 
     def test_normalizes_flags_when_pr_appears_after_preflight(self):
         """Should mark PR as existing when create step finds one already exists."""

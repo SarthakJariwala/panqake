@@ -5,6 +5,7 @@ Failures are handled via exceptions, so these represent successful results.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from panqake.utils.types import BranchName
@@ -51,6 +52,41 @@ class SubmitResult:
 
 BranchPRStatus = Literal["created", "already_exists", "skipped"]
 
+MAX_PR_ATTACHMENTS = 50
+
+
+@dataclass(frozen=True)
+class PRAttachment:
+    """A local image or video to attach when creating a pull request."""
+
+    path: str
+    alt_text: str | None = None
+
+    def to_gh_value(self) -> str:
+        """Return the GitHub CLI `--attach` value, including optional alt text."""
+        if self.alt_text is None:
+            return self.path
+        return f"{self.path}#{self.alt_text}"
+
+    def to_markdown(self) -> str:
+        """Return a local markdown image reference for GitHub CLI to rewrite."""
+        alt = self.alt_text if self.alt_text is not None else Path(self.path).stem
+        return f"![{alt}]({self.path})"
+
+    @classmethod
+    def parse(cls, raw: str) -> "PRAttachment":
+        """Parse a `path[#alt]` value from `--attach`.
+
+        Raises:
+            ValueError: If the path is empty.
+        """
+        stripped = raw.strip()
+        path, separator, alt = stripped.partition("#")
+        if not path:
+            raise ValueError("attachment path is empty")
+        alt_text = alt if separator and alt else None
+        return cls(path=path, alt_text=alt_text)
+
 
 @dataclass(frozen=True)
 class BranchPRResult:
@@ -64,6 +100,7 @@ class BranchPRResult:
     reviewers: list[str] | None = None
     draft: bool | None = None
     skip_reason: str | None = None
+    attachments: list[PRAttachment] | None = None
 
 
 @dataclass(frozen=True)

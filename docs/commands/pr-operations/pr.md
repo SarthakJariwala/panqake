@@ -25,7 +25,8 @@ pq pr [BRANCH_NAME] [OPTIONS]
 | `--body-file PATH` | Read the target PR body from a file; use `-` for stdin |
 | `--reviewer USERNAME` | Add a reviewer; repeat for multiple reviewers |
 | `--no-reviewers` | Create the target PR without reviewers or a reviewer prompt |
-| `--defaults` | Use generated titles, empty bodies, and no reviewers without metadata prompts |
+| `--attach PATH[#ALT]` | Attach an image or video to the target PR; repeat for multiple files |
+| `--defaults` | Use generated titles and no reviewers without metadata prompts. An empty body is filled with attachment markdown when `--attach` is given |
 | `--yes, -y` | Skip final creation confirmations |
 | `--json` | Output machine-readable JSON and disable remaining prompts |
 
@@ -76,8 +77,8 @@ pq pr feature-auth-ui \
 ```
 
 `--defaults` also covers any ancestor PRs Panqake creates while walking the
-stack. You can still use `--title`, `--body`/`--body-file`, and `--reviewer` to
-override the generated metadata for the target branch.
+stack. You can still use `--title`, `--body`/`--body-file`, `--reviewer`, and
+`--attach` to override the generated metadata for the target branch.
 
 Pipe a description through stdin with `--body-file -`:
 
@@ -85,6 +86,23 @@ Pipe a description through stdin with `--body-file -`:
 printf 'Implements the authentication UI.\n' | \
   pq pr feature-auth-ui --body-file - --no-reviewers --yes --json
 ```
+
+Attach screenshots the same way GitHub CLI does. Repeat `--attach` for more
+than one file. Put alt text after `#`:
+
+```bash
+pq pr feature-auth-ui \
+  --attach './login.png#The login error state' \
+  --attach ./after.png \
+  --push --defaults --yes --json
+```
+
+`--defaults` would otherwise send an empty description. With `--attach`,
+Panqake writes `![alt](path)` for each file so GitHub CLI can rewrite those
+references to upload URLs. An explicit `--body` is left unchanged.
+
+`--attach` applies only to a new PR for the target branch. Ancestor PRs in the
+stack do not receive the files. GitHub CLI 2.99.0 or newer is required.
 
 ::: info
 This command uses GitHub CLI (`gh`) under the hood, so you must have it installed and authenticated.

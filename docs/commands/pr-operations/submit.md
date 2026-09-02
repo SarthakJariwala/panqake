@@ -26,7 +26,8 @@ pq submit [BRANCH_NAME] [OPTIONS]
 | `--body-file PATH` | Read the body from a file; use `-` for stdin |
 | `--reviewer USERNAME` | Add a reviewer; repeat for multiple reviewers |
 | `--no-reviewers` | Create without reviewers or a reviewer prompt |
-| `--defaults` | Use a generated title, empty body, and no reviewers without metadata prompts |
+| `--attach PATH[#ALT]` | Attach an image or video when creating a missing PR; repeat for multiple files |
+| `--defaults` | Use a generated title and no reviewers without metadata prompts. An empty body is filled with attachment markdown when `--attach` is given |
 | `--yes, -y` | Skip the final PR creation confirmation |
 | `--json` | Output machine-readable JSON and disable remaining prompts |
 
@@ -59,6 +60,25 @@ pq submit feature-auth \
   --yes \
   --json
 ```
+
+To attach a screenshot when that missing PR is created:
+
+```bash
+pq submit feature-auth \
+  --create-pr \
+  --attach './login.png#The login error state' \
+  --push \
+  --defaults \
+  --yes \
+  --json
+```
+
+`--defaults` would otherwise send an empty description. With `--attach`,
+Panqake writes `![alt](path)` for each file so GitHub CLI can rewrite those
+references to upload URLs. An explicit `--body` is left unchanged.
+
+`--attach` is ignored when the branch already has an open PR, the same as
+`--title` and `--body`. GitHub CLI 2.99.0 or newer is required.
 
 ::: info
 Use `submit` as your primary command for sharing changes for review.

@@ -2,9 +2,11 @@
 
 import pytest
 
-from panqake.ports import JsonUI, PRJsonUI, RealGit, RealUI
-from panqake.ports.exceptions import NonInteractiveError
+from panqake.ports import JsonUI, PRJsonUI, RealGit, RealGitHub, RealUI
+from panqake.ports.exceptions import NonInteractiveError, PRCreationError
 from panqake.ports.protocols import UIPort
+from panqake.ports.results import PRAttachment
+from panqake.utils.github import CreatePRAttempt
 
 
 def test_json_ui_prompt_confirm_raises_non_interactive_error():
@@ -118,3 +120,46 @@ class TestPRJsonUI:
         ui.print_error("err")
         ui.print_info("info")
         ui.print_muted("muted")
+
+
+class TestRealGitHub:
+    def test_create_pr_includes_stderr(self, monkeypatch):
+        monkeypatch.setattr(
+            "panqake.utils.github.create_pr",
+            lambda *args, **kwargs: CreatePRAttempt(
+                False, None, "GraphQL: Resource not accessible\n"
+            ),
+        )
+        with pytest.raises(PRCreationError, match="Resource not accessible"):
+            RealGitHub().create_pr("main", "feature", "Title")
+
+    def test_create_pr_hints_unknown_attach_flag(self, monkeypatch):
+        monkeypatch.setattr(
+            "panqake.utils.github.create_pr",
+            lambda *args, **kwargs: CreatePRAttempt(
+                False, None, "unknown flag: --attach\n"
+            ),
+        )
+        with pytest.raises(PRCreationError, match="2.99.0"):
+            RealGitHub().create_pr(
+                "main",
+                "feature",
+                "Title",
+                attachments=[PRAttachment(path="./login.png")],
+            )
+
+    def test_create_pr_skips_version_hint_for_other_attach_failures(self, monkeypatch):
+        monkeypatch.setattr(
+            "panqake.utils.github.create_pr",
+            lambda *args, **kwargs: CreatePRAttempt(
+                False, None, "failed to upload --attach ./login.png\n"
+            ),
+        )
+        with pytest.raises(PRCreationError) as error:
+            RealGitHub().create_pr(
+                "main",
+                "feature",
+                "Title",
+                attachments=[PRAttachment(path="./login.png")],
+            )
+        assert "2.99.0" not in str(error.value)

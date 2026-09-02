@@ -10,6 +10,7 @@ GitHub integration pushes stacked branches to `origin`, opens or updates pull re
 - `submit-create-pr` pushes and creates one draft PR for the current branch.
 - `pr-create-child` creates a draft PR for the stacked child when the parent already has an open PR.
 - `pr-already-exists` reports `already_exists` when the target already has an open PR.
+- `pr-attach-image` attaches a local image on create and rewrites it into the PR body.
 - `merge-squash` squash-merges a non-draft parent PR and retargets the child.
 - `sync-keep-merged` pulls remote `main` without deleting merged locals or pushing.
 
@@ -33,7 +34,8 @@ Preconditions:
 - **Missing PR.** Merge before any PR exists. Run `verify-panqake drive --feature github-integration -- merge AUTH --method squash --allow-failed-checks --yes`. Exit code is not `0`. `envelope.ok` is `false`. `error.type` is `PRMergeError`.
 - **Skip unpushed.** Create PRs without pushing. Run `verify-panqake drive --feature github-integration -- pr AUTH --draft --defaults --yes --no-reviewers`. Exit code `0`. `envelope.command` is `pr`. The AUTH result has `status` `skipped` and `skip_reason` `not_pushed`.
 - **Submit without PR.** Push AUTH only. Run `verify-panqake drive --feature github-integration -- submit AUTH --no-create-pr`. Exit code `0`. `envelope.command` is `submit`. `result.branch_name` is AUTH. `result.pr_existed` is `false`. `result.pr_created` is `false`. `result.pr_url` is `null`. `verify-panqake git -- ls-remote --heads origin AUTH` prints a ref for AUTH. `verify-panqake gh -- pr view AUTH --json url,state` fails because there is no PR.
-- **Submit create.** Create AUTH's PR. Run `verify-panqake drive --feature github-integration -- submit AUTH --create-pr --push --draft --defaults --yes --no-reviewers`. Exit code `0`. `result.pr_created` is `true`. `result.pr_url` contains `/pull/`. `verify-panqake gh -- pr view AUTH --json isDraft,baseRefName,headRefName,state,url` shows `state` `OPEN`, `isDraft` `true`, `baseRefName` `main`, `headRefName` AUTH.
+- **Missing attachment.** Run `verify-panqake drive --feature github-integration -- pr AUTH --attach ./missing-shot.png --draft --defaults --yes --no-reviewers`. Exit code `2`. Output mentions that the attachment is not a file.
+- **Submit create.** Write the screenshot. Run `verify-panqake png shot.png`. Then create AUTH's PR with that file. Run `verify-panqake drive --feature github-integration -- submit AUTH --create-pr --attach ./shot.png --push --draft --defaults --yes --no-reviewers`. Exit code `0`. `result.pr_created` is `true`. `result.pr_url` contains `/pull/`. `verify-panqake gh -- pr view AUTH --json body,isDraft,baseRefName,headRefName,state,url` shows `state` `OPEN`, `isDraft` `true`, `baseRefName` `main`, `headRefName` AUTH. `body` contains a GitHub upload URL, not only `./shot.png`.
 - **Create child PR.** Open the rest of the stack. Run `verify-panqake drive --feature github-integration -- pr UI --push --draft --defaults --yes --no-reviewers`. Exit code `0`. `result.starting_branch` is UI. The only result is UI with `status` `created` and a `pr_url`. AUTH is not in `results` because it already has an open PR. `verify-panqake gh -- pr view UI --json baseRefName,headRefName,isDraft,state` shows `baseRefName` AUTH, `headRefName` UI, `state` `OPEN`, `isDraft` `true`.
 - **Already exists.** Run `verify-panqake drive --feature github-integration -- pr UI --draft --defaults --yes --no-reviewers`. Exit code `0`. The UI result `status` is `already_exists`.
 - **Mark ready.** GitHub refuses to merge drafts. Run `verify-panqake gh -- pr ready AUTH`. Then `verify-panqake gh -- pr view AUTH --json isDraft,state` shows `isDraft` `false` and `state` `OPEN`.
@@ -51,5 +53,6 @@ Preconditions:
 - `pq merge` defaults to deleting the remote and local branch. That is expected after `merge-squash`.
 - `pq merge` retargets child PR bases before it calls `gh pr merge`. If merge then fails (still a draft), the child may already show `baseRefName` `main` while AUTH is still `OPEN`.
 - `pq pr` walks from the oldest branch without an open PR. If AUTH already has a PR, `pr UI` only processes UI.
+- `--attach` needs GitHub CLI 2.99.0 or newer. `launch --github` pins a capable `gh` onto the fixture PATH. `verify-panqake png PATH` writes a 1x1 PNG into the fixture for attach recipes. The file does not need to be committed.
 - `--json` is not a dry-run. These commands create real PRs and can merge them. `cleanup` must run so prefix branches do not pile up on the shared repo.
 - If `launch --github` cannot see or write to the verify repo, stop and report `verified-unreachable` with the doctor or launch error. Do not fall back to the cloud agent's `gh` login.

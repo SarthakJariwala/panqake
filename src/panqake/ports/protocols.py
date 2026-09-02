@@ -8,7 +8,7 @@ from typing import Protocol, runtime_checkable
 
 from panqake.utils.types import BranchName
 
-from .results import FileInfo, MergeMethod
+from .results import FileInfo, MergeMethod, PRAttachment
 
 
 @runtime_checkable
@@ -376,6 +376,7 @@ class GitHubPort(Protocol):
         body: str = "",
         reviewers: list[str] | None = None,
         draft: bool = False,
+        attachments: list[PRAttachment] | None = None,
     ) -> str | None:
         """Create a pull request.
 
@@ -386,6 +387,7 @@ class GitHubPort(Protocol):
             body: PR description
             reviewers: Optional list of reviewer usernames
             draft: Whether to create as a draft PR
+            attachments: Optional local image or video files for `gh --attach`
 
         Returns:
             PR URL if creation was successful

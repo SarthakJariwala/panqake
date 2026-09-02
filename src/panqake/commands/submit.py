@@ -13,6 +13,7 @@ from panqake.ports import (
     GitHubCLINotFoundError,
     GitHubPort,
     GitPort,
+    PRAttachment,
     PRJsonUI,
     RealConfig,
     RealGit,
@@ -123,6 +124,7 @@ def update_pull_request_core(
     reviewers: list[str] | None = None,
     use_defaults: bool = False,
     assume_yes: bool = False,
+    attachments: list[PRAttachment] | None = None,
 ) -> SubmitResult:
     """Submit a branch and return normalized final PR state."""
     result = submit_branch_core(
@@ -151,6 +153,7 @@ def update_pull_request_core(
         reviewers=reviewers,
         use_defaults=use_defaults,
         assume_yes=assume_yes,
+        attachments=attachments,
     )
 
     if pr_result.status == "created":
@@ -182,6 +185,7 @@ def update_pull_request(
     reviewers: list[str] | None = None,
     use_defaults: bool = False,
     assume_yes: bool = False,
+    attachments: list[PRAttachment] | None = None,
     *,
     json_output: bool = False,
 ) -> None:
@@ -213,6 +217,7 @@ def update_pull_request(
             reviewers=reviewers,
             use_defaults=use_defaults,
             assume_yes=assume_yes,
+            attachments=attachments,
         )
 
         if not json_output:

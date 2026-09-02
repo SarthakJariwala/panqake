@@ -21,7 +21,7 @@ from .exceptions import (
     UserCancelledError,
     WorktreeError,
 )
-from .results import FileInfo, MergeMethod
+from .results import FileInfo, MergeMethod, PRAttachment
 
 
 class RealGit:
@@ -399,12 +399,16 @@ class RealGitHub:
         body: str = "",
         reviewers: list[str] | None = None,
         draft: bool = False,
+        attachments: list[PRAttachment] | None = None,
     ) -> str | None:
         from panqake.utils.github import create_pr
 
-        success, url = create_pr(base, head, title, body, reviewers, draft)
+        success, url = create_pr(base, head, title, body, reviewers, draft, attachments)
         if not success:
-            raise PRCreationError(f"Failed to create PR for branch '{head}'")
+            hint = ""
+            if attachments:
+                hint = " GitHub CLI 2.99.0 or newer is required for --attach."
+            raise PRCreationError(f"Failed to create PR for branch '{head}'.{hint}")
         return url
 
     def get_potential_reviewers(self) -> list[str]:

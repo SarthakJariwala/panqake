@@ -8,6 +8,7 @@ from click import unstyle
 from typer.testing import CliRunner
 
 from panqake.cli import app, main
+from panqake.ports.results import PRAttachment
 
 
 @pytest.fixture
@@ -349,6 +350,7 @@ def test_pr_command_with_draft_flag(runner):
             reviewers=None,
             use_defaults=False,
             assume_yes=False,
+            attachments=None,
             json_output=False,
         )
 
@@ -368,6 +370,7 @@ def test_pr_command_with_branch_and_draft(runner):
             reviewers=None,
             use_defaults=False,
             assume_yes=False,
+            attachments=None,
             json_output=False,
         )
 
@@ -387,6 +390,7 @@ def test_pr_command_without_draft_flag(runner):
             reviewers=None,
             use_defaults=False,
             assume_yes=False,
+            attachments=None,
             json_output=False,
         )
 
@@ -425,6 +429,7 @@ def test_pr_command_accepts_all_prompt_inputs(runner):
         reviewers=["alice", "bob"],
         use_defaults=True,
         assume_yes=True,
+        attachments=None,
         json_output=True,
     )
 
@@ -441,6 +446,81 @@ def test_pr_command_reads_body_from_stdin_and_skips_reviewers(runner):
     assert result.exit_code == 0
     assert mock_create_prs.call_args.kwargs["body"] == "Body from stdin\n"
     assert mock_create_prs.call_args.kwargs["reviewers"] == []
+
+
+def test_pr_command_forwards_attach_flags(runner, tmp_path):
+    shot = tmp_path / "login.png"
+    shot.write_bytes(b"\x89PNG\r\n\x1a\n")
+    after = tmp_path / "after.png"
+    after.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    with patch("panqake.cli.create_pull_requests") as mock_create_prs:
+        result = runner.invoke(
+            app,
+            [
+                "pr",
+                "feature-branch",
+                "--attach",
+                f"{shot}#The login error state",
+                "--attach",
+                str(after),
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert mock_create_prs.call_args.kwargs["attachments"] == [
+        PRAttachment(path=str(shot), alt_text="The login error state"),
+        PRAttachment(path=str(after), alt_text=None),
+    ]
+
+
+def test_pr_command_rejects_missing_attachment(runner, tmp_path):
+    missing = tmp_path / "nope.png"
+    result = runner.invoke(app, ["pr", "feature-branch", "--attach", str(missing)])
+
+    assert result.exit_code == 2
+    assert "not a file" in unstyle(result.output)
+
+
+def test_pr_command_rejects_duplicate_attachments(runner, tmp_path):
+    shot = tmp_path / "login.png"
+    shot.write_bytes(b"\x89PNG\r\n\x1a\n")
+    result = runner.invoke(
+        app,
+        ["pr", "feature-branch", "--attach", str(shot), "--attach", str(shot)],
+    )
+
+    assert result.exit_code == 2
+    assert "same file twice" in unstyle(result.output)
+
+
+def test_pr_command_rejects_too_many_attachments(runner, tmp_path):
+    args = ["pr", "feature-branch"]
+    for index in range(51):
+        path = tmp_path / f"shot-{index}.png"
+        path.write_bytes(b"\x89PNG\r\n\x1a\n")
+        args.extend(["--attach", str(path)])
+
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 2
+    assert "cannot attach more than 50 files" in unstyle(result.output)
+
+
+def test_submit_command_forwards_attach_flags(runner, tmp_path):
+    shot = tmp_path / "login.png"
+    shot.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    with patch("panqake.cli.update_pull_request") as mock_submit:
+        result = runner.invoke(
+            app,
+            ["submit", "feature-branch", "--create-pr", "--attach", str(shot)],
+        )
+
+    assert result.exit_code == 0
+    assert mock_submit.call_args.kwargs["attachments"] == [
+        PRAttachment(path=str(shot), alt_text=None)
+    ]
 
 
 @pytest.mark.parametrize(
@@ -582,6 +662,7 @@ def test_submit_command_with_create_pr_flag(runner):
             reviewers=None,
             use_defaults=False,
             assume_yes=False,
+            attachments=None,
             json_output=False,
         )
 
@@ -602,6 +683,7 @@ def test_submit_command_with_no_create_pr_flag(runner):
             reviewers=None,
             use_defaults=False,
             assume_yes=False,
+            attachments=None,
             json_output=False,
         )
 
@@ -640,6 +722,7 @@ def test_submit_command_accepts_new_pr_inputs(runner):
         reviewers=["alice"],
         use_defaults=True,
         assume_yes=True,
+        attachments=None,
         json_output=True,
     )
 

@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from panqake.ports.results import PRAttachment
 from panqake.utils.github import (
     branch_has_pr,
     check_github_cli_installed,
@@ -136,7 +137,7 @@ def test_create_pr_success(mock_subprocess_run):
             "--body",
             "PR description",
         ],
-        check=True,
+        check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -145,12 +146,64 @@ def test_create_pr_success(mock_subprocess_run):
 
 def test_create_pr_failure(mock_subprocess_run):
     """Test failed PR creation."""
-    mock_subprocess_run.side_effect = subprocess.CalledProcessError(
-        1, "gh", stderr="error"
-    )
+    mock_subprocess_run.return_value.returncode = 1
+    mock_subprocess_run.return_value.stdout = ""
     success, url = create_pr(base="main", head="feature", title="Test PR")
     assert success is False
     assert url is None
+
+
+def test_create_pr_with_attachments(mock_subprocess_run):
+    mock_subprocess_run.return_value.stdout = (
+        "PR created\nhttps://github.com/user/repo/pull/123"
+    )
+    success, url = create_pr(
+        base="main",
+        head="feature",
+        title="Test PR",
+        attachments=[
+            PRAttachment(path="./login.png", alt_text="The login error state"),
+            PRAttachment(path="./after.png"),
+        ],
+    )
+    assert success is True
+    assert url == "https://github.com/user/repo/pull/123"
+    mock_subprocess_run.assert_called_once_with(
+        [
+            "gh",
+            "pr",
+            "create",
+            "--base",
+            "main",
+            "--head",
+            "feature",
+            "--title",
+            "Test PR",
+            "--body",
+            "",
+            "--attach",
+            "./login.png#The login error state",
+            "--attach",
+            "./after.png",
+        ],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+def test_create_pr_succeeds_when_attach_partially_fails(mock_subprocess_run):
+    mock_subprocess_run.return_value.returncode = 1
+    mock_subprocess_run.return_value.stdout = "https://github.com/user/repo/pull/123\n"
+    success, url = create_pr(
+        base="main",
+        head="feature",
+        title="Test PR",
+        attachments=[PRAttachment(path="./login.png")],
+    )
+    assert success is True
+    assert url == "https://github.com/user/repo/pull/123"
 
 
 def test_create_pr_with_reviewers(mock_subprocess_run):
@@ -185,7 +238,7 @@ def test_create_pr_with_reviewers(mock_subprocess_run):
             "--reviewer",
             "reviewer2",
         ],
-        check=True,
+        check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -221,7 +274,7 @@ def test_create_pr_as_draft(mock_subprocess_run):
             "Draft PR description",
             "--draft",
         ],
-        check=True,
+        check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -260,7 +313,7 @@ def test_create_pr_draft_with_reviewers(mock_subprocess_run):
             "--reviewer",
             "reviewer1",
         ],
-        check=True,
+        check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

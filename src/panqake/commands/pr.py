@@ -13,6 +13,7 @@ from panqake.ports import (
     GitHubPort,
     GitPort,
     NoChangesError,
+    PRAttachment,
     PRJsonUI,
     RealConfig,
     RealGit,
@@ -86,6 +87,7 @@ def create_pr_for_branch_core(
     reviewers: list[str] | None = None,
     use_defaults: bool = False,
     assume_yes: bool = False,
+    attachments: list[PRAttachment] | None = None,
 ) -> BranchPRResult:
     """Create a PR for a specific branch.
 
@@ -186,6 +188,10 @@ def create_pr_for_branch_core(
     ui.print_info(f"Title: {resolved_title}")
     if selected_reviewers:
         ui.print_muted(f"Reviewers: {', '.join(selected_reviewers)}")
+    if attachments:
+        ui.print_muted(
+            "Attachments: " + ", ".join(attachment.path for attachment in attachments)
+        )
 
     if not assume_yes and not ui.prompt_confirm("Create this pull request?"):
         return BranchPRResult(
@@ -202,6 +208,7 @@ def create_pr_for_branch_core(
         body=resolved_body,
         reviewers=selected_reviewers if selected_reviewers else None,
         draft=resolved_draft,
+        attachments=attachments,
     )
 
     return BranchPRResult(
@@ -212,6 +219,7 @@ def create_pr_for_branch_core(
         title=resolved_title,
         reviewers=selected_reviewers if selected_reviewers else None,
         draft=resolved_draft,
+        attachments=attachments,
     )
 
 
@@ -228,6 +236,7 @@ def create_pull_requests_core(
     reviewers: list[str] | None = None,
     use_defaults: bool = False,
     assume_yes: bool = False,
+    attachments: list[PRAttachment] | None = None,
 ) -> CreatePRStackResult:
     """Create pull requests for branches in the stack.
 
@@ -247,6 +256,7 @@ def create_pull_requests_core(
         reviewers: Reviewer overrides for the target branch's PR
         use_defaults: Use generated metadata instead of prompting for missing values
         assume_yes: Create each PR without a final confirmation
+        attachments: Image or video files for the target branch's PR
 
     Returns:
         CreatePRStackResult with results for each branch processed
@@ -317,6 +327,7 @@ def create_pull_requests_core(
             reviewers=reviewers if branch == branch_name else None,
             use_defaults=use_defaults,
             assume_yes=assume_yes,
+            attachments=attachments if branch == branch_name else None,
         )
 
         results.append(result)
@@ -352,6 +363,7 @@ def create_pull_requests(
     reviewers: list[str] | None = None,
     use_defaults: bool = False,
     assume_yes: bool = False,
+    attachments: list[PRAttachment] | None = None,
     *,
     json_output: bool = False,
 ) -> None:
@@ -382,6 +394,7 @@ def create_pull_requests(
             reviewers=reviewers,
             use_defaults=use_defaults,
             assume_yes=assume_yes,
+            attachments=attachments,
         )
 
         if not json_output:

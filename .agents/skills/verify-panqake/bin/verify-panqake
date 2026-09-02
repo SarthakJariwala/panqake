@@ -9,11 +9,10 @@ import shutil
 import subprocess
 import sys
 from dataclasses import MISSING, asdict, dataclass, fields
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
-
 
 VERIFY_ROOT = Path(os.environ.get("PANQAKE_VERIFY_ROOT", "/tmp/panqake-verify"))
 EVIDENCE_ROOT = Path(
@@ -22,6 +21,7 @@ EVIDENCE_ROOT = Path(
 CURRENT_FILE = VERIFY_ROOT / "current"
 SEEDED_STACK = (("feature-auth", "main"), ("feature-ui", "feature-auth"))
 DEFAULT_GITHUB_REPO = "SarthakJariwala/panqake-verify-repo"
+MIN_GH_VERSION = (2, 99, 0)
 GIT_ENV_BLOCKLIST = (
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -43,6 +43,7 @@ verify-panqake drive [--run RUN_ID] [--feature FEATURE_ID] -- <pq args>
 verify-panqake git [--run RUN_ID] -- <git args>
 verify-panqake gh [--run RUN_ID] -- <gh args>
 verify-panqake append [--run RUN_ID] PATH TEXT
+verify-panqake png [--run RUN_ID] PATH
 verify-panqake github-prepare [--run RUN_ID]
 verify-panqake stacks [--run RUN_ID]
 verify-panqake cleanup [--run RUN_ID]
@@ -101,7 +102,7 @@ def resolve_pq(root: Path) -> Path:
 
 
 def new_run_id() -> str:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return f"{stamp}-{os.getpid():x}"
 
 
@@ -210,11 +211,70 @@ def resolve_run_id(explicit: str | None) -> str:
     raise SystemExit("No current run. Pass --run or run `verify-panqake launch`")
 
 
+def parse_gh_version(text: str) -> tuple[int, int, int] | None:
+    for token in text.replace(",", " ").split():
+        parts = token.split(".")
+        if len(parts) < 2 or not all(part.isdigit() for part in parts[:2]):
+            continue
+        major = int(parts[0])
+        minor = int(parts[1])
+        patch = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+        return (major, minor, patch)
+    return None
+
+
+def iter_gh_binaries() -> list[Path]:
+    seen: set[Path] = set()
+    found: list[Path] = []
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        if not directory:
+            continue
+        candidate = Path(directory) / "gh"
+        try:
+            if not candidate.is_file() or not os.access(candidate, os.X_OK):
+                continue
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        found.append(candidate)
+    return found
+
+
+def resolve_gh_for_attach() -> Path | None:
+    for candidate in iter_gh_binaries():
+        probed = subprocess.run(
+            [str(candidate), "--version"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        version = parse_gh_version(f"{probed.stdout} {probed.stderr}")
+        if version is not None and version >= MIN_GH_VERSION:
+            return candidate
+    return None
+
+
+def pin_session_gh(session: Session) -> Path:
+    binary = resolve_gh_for_attach()
+    if binary is None:
+        raise SystemExit(
+            "launch --github requires GitHub CLI 2.99.0 or newer for --attach"
+        )
+    bindir = Path(session.home) / "bin"
+    bindir.mkdir(parents=True, exist_ok=True)
+    link = bindir / "gh"
+    if link.exists() or link.is_symlink():
+        link.unlink()
+    link.symlink_to(binary.resolve())
+    return link
+
+
 def git_env(session: Session) -> dict[str, str]:
     env = {
-        key: value
-        for key, value in os.environ.items()
-        if key not in GIT_ENV_BLOCKLIST
+        key: value for key, value in os.environ.items() if key not in GIT_ENV_BLOCKLIST
     }
     home = Path(session.home)
     env["HOME"] = str(home)
@@ -225,6 +285,10 @@ def git_env(session: Session) -> dict[str, str]:
     env["GIT_CONFIG_NOSYSTEM"] = "1"
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GH_PROMPT_DISABLED"] = "1"
+    if session.github:
+        bindir = home / "bin"
+        if bindir.is_dir():
+            env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
     token = github_token()
     if token:
         env["GH_TOKEN"] = token
@@ -440,6 +504,7 @@ def _launch_fixture(session: Session) -> int:
     run_git(session, ["commit", "-m", "initial"])
 
     if session.github:
+        pin_session_gh(session)
         configure_github_remote(session)
         ensure_origin_main(session)
         readme = repo / "README.md"
@@ -452,7 +517,9 @@ def _launch_fixture(session: Session) -> int:
                 raise SystemExit(
                     github_write_error(
                         session.github_repo,
-                        (pushed.stderr or pushed.stdout or "push origin main failed").strip(),
+                        (
+                            pushed.stderr or pushed.stdout or "push origin main failed"
+                        ).strip(),
                     )
                 )
 
@@ -532,7 +599,27 @@ def doctor_checks(session: Session) -> list[dict[str, Any]]:
         add("stack-excludes-workspace", tree_ok, ",".join(data.keys()))
 
     if session.github:
-        add("gh-binary", shutil.which("gh") is not None, shutil.which("gh") or "missing")
+        env = git_env(session)
+        gh_path = shutil.which("gh", path=env.get("PATH"))
+        version_text = ""
+        version = None
+        if gh_path:
+            probed = subprocess.run(
+                [gh_path, "--version"],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            version_text = (probed.stdout or probed.stderr).strip()
+            version = parse_gh_version(version_text)
+        add("gh-binary", gh_path is not None, gh_path or "missing")
+        add(
+            "gh-attach",
+            version is not None and version >= MIN_GH_VERSION,
+            version_text
+            or "GitHub CLI 2.99.0 or newer is required for --attach",
+        )
         source = github_token_source()
         add("github-token", source is not None, source or "missing")
         origin = run_git(session, ["remote", "get-url", "origin"], check=False)
@@ -700,13 +787,61 @@ def cmd_append(args: argparse.Namespace) -> int:
     return 0
 
 
+def fixture_file(session: Session, relative: str) -> Path:
+    path = Path(relative)
+    if path.is_absolute() or ".." in path.parts:
+        raise SystemExit("path must be a relative path inside the fixture repo")
+    target = Path(session.repo) / path
+    if not target.resolve().is_relative_to(Path(session.repo).resolve()):
+        raise SystemExit("path must stay inside the fixture repo")
+    return target
+
+
+def cmd_png(args: argparse.Namespace) -> int:
+    import struct
+    import zlib
+
+    session = load_session(resolve_run_id(args.run))
+    target = fixture_file(session, args.path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + tag
+            + data
+            + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+        )
+
+    ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    idat = zlib.compress(b"\x00\xff\x00\x00")
+    payload = b"".join(
+        [
+            b"\x89PNG\r\n\x1a\n",
+            chunk(b"IHDR", ihdr),
+            chunk(b"IDAT", idat),
+            chunk(b"IEND", b""),
+        ]
+    )
+    target.write_bytes(payload)
+    json.dump(
+        {"ok": True, "path": str(target), "bytes": len(payload)},
+        sys.stdout,
+        indent=2,
+    )
+    sys.stdout.write("\n")
+    return 0
+
+
 def branch_exists(session: Session, name: str) -> bool:
     result = run_git(session, ["rev-parse", "--verify", name], check=False)
     return result.returncode == 0
 
 
 def commit_count_ahead(session: Session, parent: str, branch: str) -> int:
-    result = run_git(session, ["rev-list", "--count", f"{parent}..{branch}"], check=False)
+    result = run_git(
+        session, ["rev-list", "--count", f"{parent}..{branch}"], check=False
+    )
     if result.returncode != 0:
         return 0
     try:
@@ -776,12 +911,8 @@ def cmd_github_prepare(args: argparse.Namespace) -> int:
     prefix = session.branch_prefix
     auth_branch = f"{prefix}-auth"
     ui_branch = f"{prefix}-ui"
-    auth = ensure_unique_branch(
-        session, auth_branch, "main", f"Verify {auth_branch}"
-    )
-    ui = ensure_unique_branch(
-        session, ui_branch, auth_branch, f"Verify {ui_branch}"
-    )
+    auth = ensure_unique_branch(session, auth_branch, "main", f"Verify {auth_branch}")
+    ui = ensure_unique_branch(session, ui_branch, auth_branch, f"Verify {ui_branch}")
     payload = {
         "ok": True,
         "run_id": session.run_id,
@@ -907,7 +1038,10 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
             write_json(evidence / "github-cleanup.json", github_result)
     if session_dir.exists():
         shutil.rmtree(session_dir)
-    if CURRENT_FILE.is_file() and CURRENT_FILE.read_text(encoding="utf-8").strip() == run_id:
+    if (
+        CURRENT_FILE.is_file()
+        and CURRENT_FILE.read_text(encoding="utf-8").strip() == run_id
+    ):
         CURRENT_FILE.unlink()
     ok = github_result is None or bool(github_result.get("ok", True))
     payload = {
@@ -971,6 +1105,13 @@ def build_parser() -> argparse.ArgumentParser:
     append.add_argument("path")
     append.add_argument("text")
     append.set_defaults(func=cmd_append)
+
+    png = sub.add_parser(
+        "png", help="Write a 1x1 PNG into the fixture repo for --attach recipes"
+    )
+    png.add_argument("--run")
+    png.add_argument("path")
+    png.set_defaults(func=cmd_png)
 
     prepare = sub.add_parser(
         "github-prepare",

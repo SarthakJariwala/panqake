@@ -6,14 +6,15 @@ import pytest
 
 from panqake.commands.pr import (
     compute_branch_path,
-    create_pull_requests,
     create_pr_for_branch_core,
+    create_pull_requests,
     create_pull_requests_core,
     find_oldest_branch_without_pr_core,
 )
 from panqake.ports import (
     BranchNotFoundError,
     GitHubCLINotFoundError,
+    PRAttachment,
     UserCancelledError,
 )
 from panqake.testing.fakes import FakeConfig, FakeGit, FakeGitHub, FakeUI
@@ -258,6 +259,7 @@ class TestCreatePRForBranchCore:
         assert call[3] == "PR description here"  # body
         assert call[4] == ["alice"]  # reviewers
         assert call[5] is True  # draft
+        assert call[6] is None
 
     def test_explicit_inputs_create_without_any_prompts(self):
         """Every PR prompt can be replaced with a function input."""
@@ -296,7 +298,37 @@ class TestCreatePRForBranchCore:
             "Explicit PR body",
             ["alice", "bob"],
             False,
+            None,
         )
+
+    def test_forwards_attachments_on_create(self):
+        git = FakeGit(
+            branches=["main", "feature"],
+            pushed_branches={"main", "feature"},
+            branch_commits={"feature": True},
+            commit_subjects={"feature": "feat: test commit"},
+        )
+        github = FakeGitHub()
+        ui = FakeUI()
+        attachments = [PRAttachment(path="./login.png", alt_text="Login error")]
+
+        result = create_pr_for_branch_core(
+            git=git,
+            github=github,
+            ui=ui,
+            branch="feature",
+            base="main",
+            title="Explicit PR title",
+            body="Explicit PR body",
+            draft=False,
+            reviewers=[],
+            assume_yes=True,
+            attachments=attachments,
+        )
+
+        assert result.status == "created"
+        assert result.attachments == attachments
+        assert github.create_pr_calls[0][6] == attachments
 
     def test_explicit_no_push_skips_without_prompting(self):
         git = FakeGit(
@@ -482,9 +514,46 @@ class TestCreatePullRequestsCore:
         assert ui.input_multiline_calls == []
         assert ui.select_reviewers_calls == []
         assert github.create_pr_calls == [
-            ("main", "base", "[base] base commit", "", None, False),
-            ("base", "feature", "[feature] feature commit", "", None, False),
+            ("main", "base", "[base] base commit", "", None, False, None),
+            ("base", "feature", "[feature] feature commit", "", None, False, None),
         ]
+
+    def test_attachments_apply_only_to_the_target_branch(self):
+        git = FakeGit(
+            branches=["main", "base", "feature"],
+            current_branch="feature",
+            pushed_branches={"main", "base", "feature"},
+            branch_commits={"base": True, "feature": True},
+            commit_subjects={"base": "base commit", "feature": "feature commit"},
+        )
+        github = FakeGitHub()
+        config = FakeConfig(
+            stack={
+                "feature": {"parent": "base"},
+                "base": {"parent": "main"},
+            }
+        )
+        ui = FakeUI()
+        attachments = [PRAttachment(path="./login.png")]
+
+        result = create_pull_requests_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature",
+            draft=False,
+            push=True,
+            use_defaults=True,
+            assume_yes=True,
+            attachments=attachments,
+        )
+
+        assert [item.status for item in result.results] == ["created", "created"]
+        assert github.create_pr_calls[0][6] is None
+        assert github.create_pr_calls[1][6] == attachments
+        assert result.results[0].attachments is None
+        assert result.results[1].attachments == attachments
 
     def test_stops_and_marks_remaining_as_blocked_when_parent_skipped(self):
         git = FakeGit(
@@ -605,8 +674,25 @@ def test_create_pull_requests_json_creates_pr_non_interactive(monkeypatch, capsy
         def get_potential_reviewers(self):
             return ["alice"]
 
-        def create_pr(self, base, head, title, body="", reviewers=None, draft=False):
-            state["create_pr"] = (base, head, title, body, reviewers, draft)
+        def create_pr(
+            self,
+            base,
+            head,
+            title,
+            body="",
+            reviewers=None,
+            draft=False,
+            attachments=None,
+        ):
+            state["create_pr"] = (
+                base,
+                head,
+                title,
+                body,
+                reviewers,
+                draft,
+                attachments,
+            )
             return "https://github.com/org/repo/pull/101"
 
     class NoopConfig:
@@ -641,6 +727,7 @@ def test_create_pull_requests_json_creates_pr_non_interactive(monkeypatch, capsy
         "",
         None,
         False,
+        None,
     )
 
 
@@ -681,7 +768,16 @@ def test_create_pull_requests_json_skips_when_no_commits(monkeypatch, capsys):
         def get_potential_reviewers(self):
             return []
 
-        def create_pr(self, base, head, title, body="", reviewers=None, draft=False):
+        def create_pr(
+            self,
+            base,
+            head,
+            title,
+            body="",
+            reviewers=None,
+            draft=False,
+            attachments=None,
+        ):
             state["create_pr_calls"] += 1
             return "https://github.com/org/repo/pull/102"
 

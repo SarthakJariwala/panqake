@@ -8,10 +8,11 @@ import os
 import shutil
 import subprocess
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import MISSING, asdict, dataclass, fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 VERIFY_ROOT = Path(os.environ.get("PANQAKE_VERIFY_ROOT", "/tmp/panqake-verify"))
@@ -20,26 +21,40 @@ EVIDENCE_ROOT = Path(
 )
 CURRENT_FILE = VERIFY_ROOT / "current"
 SEEDED_STACK = (("feature-auth", "main"), ("feature-ui", "feature-auth"))
+DEFAULT_GITHUB_REPO = "SarthakJariwala/panqake-verify-repo"
 GIT_ENV_BLOCKLIST = (
     "GIT_DIR",
     "GIT_WORK_TREE",
     "GIT_COMMON_DIR",
     "GIT_OBJECT_DIRECTORY",
     "GIT_INDEX_FILE",
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_SYSTEM",
+    "GIT_CONFIG_COUNT",
+)
+GITHUB_WRITE_HELP = (
+    "GITHUB_PAT cannot write to {repo}. Grant the token Contents: write and "
+    "Pull requests: write on that repository, then retry launch --github."
 )
 HELP = """\
-verify-panqake launch
+verify-panqake launch [--github]
 verify-panqake doctor [--run RUN_ID]
 verify-panqake drive [--run RUN_ID] [--feature FEATURE_ID] -- <pq args>
 verify-panqake git [--run RUN_ID] -- <git args>
+verify-panqake gh [--run RUN_ID] -- <gh args>
+verify-panqake append [--run RUN_ID] PATH TEXT
+verify-panqake github-prepare [--run RUN_ID]
 verify-panqake stacks [--run RUN_ID]
 verify-panqake cleanup [--run RUN_ID]
 
 Launch creates an isolated HOME and git fixture, then seeds
-feature-auth -> feature-ui. Doctor refuses to drive the Panqake
-checkout or the user's ~/.panqake. Drive always runs the fixture
-venv pq binary with HOME set and appends --json. Cleanup deletes
-the session directory and leaves evidence in place.
+feature-auth -> feature-ui. launch --github also points origin at
+the panqake-verify-repo, maps GITHUB_PAT to GH_TOKEN, and isolates
+gh config under the session HOME. Doctor refuses to drive the
+Panqake checkout or the user's ~/.panqake. Drive always runs the
+fixture venv pq binary with HOME set and appends --json. Cleanup
+deletes the session directory, removes this run's GitHub branches
+and PRs when --github was used, and leaves evidence in place.
 """
 
 
@@ -52,6 +67,10 @@ class Session:
     repo: str
     evidence: str
     repo_id: str
+    github: bool = False
+    github_repo: str = ""
+    origin_url: str = ""
+    branch_prefix: str = ""
 
 
 def project_root() -> Path:
@@ -86,9 +105,62 @@ def new_run_id() -> str:
     return f"{stamp}-{os.getpid():x}"
 
 
-def session_paths(run_id: str, root: Path, pq: Path) -> Session:
+def github_token() -> str | None:
+    for key in ("GITHUB_PAT", "GH_TOKEN", "GITHUB_TOKEN"):
+        value = os.environ.get(key, "").strip()
+        if value:
+            return value
+    return None
+
+
+def github_token_source() -> str | None:
+    for key in ("GITHUB_PAT", "GH_TOKEN", "GITHUB_TOKEN"):
+        if os.environ.get(key, "").strip():
+            return key
+    return None
+
+
+def github_flag_enabled(explicit: bool) -> bool:
+    if explicit:
+        return True
+    return os.environ.get("PANQAKE_VERIFY_GITHUB", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+def resolve_github_target() -> tuple[str, str]:
+    raw = os.environ.get("PANQAKE_VERIFY_GITHUB_REPO", DEFAULT_GITHUB_REPO).strip()
+    if not raw:
+        raw = DEFAULT_GITHUB_REPO
+    if raw.startswith("git@"):
+        _, _, rest = raw.partition(":")
+        repo = rest.removesuffix(".git")
+        return repo, f"https://github.com/{repo}.git"
+    if "://" in raw:
+        parsed = urlparse(raw)
+        repo = parsed.path.strip("/").removesuffix(".git")
+        return repo, f"https://github.com/{repo}.git"
+    repo = raw.removesuffix(".git")
+    return repo, f"https://github.com/{repo}.git"
+
+
+def session_paths(
+    run_id: str,
+    root: Path,
+    pq: Path,
+    *,
+    github: bool = False,
+) -> Session:
     session_root = VERIFY_ROOT / run_id
     repo_id = f"pqv-{run_id}"
+    github_repo = ""
+    origin_url = ""
+    branch_prefix = ""
+    if github:
+        github_repo, origin_url = resolve_github_target()
+        branch_prefix = f"pqv-{run_id}"
     return Session(
         run_id=run_id,
         project_root=str(root),
@@ -97,6 +169,10 @@ def session_paths(run_id: str, root: Path, pq: Path) -> Session:
         repo=str(session_root / repo_id),
         evidence=str(EVIDENCE_ROOT / run_id),
         repo_id=repo_id,
+        github=github,
+        github_repo=github_repo,
+        origin_url=origin_url,
+        branch_prefix=branch_prefix,
     )
 
 
@@ -110,7 +186,17 @@ def load_session(run_id: str) -> Session:
     if not path.is_file():
         raise SystemExit(f"No session for {run_id}. Run `verify-panqake launch` first")
     data = json.loads(path.read_text(encoding="utf-8"))
-    return Session(**{field: data[field] for field in Session.__dataclass_fields__})
+    kwargs: dict[str, Any] = {}
+    for field in fields(Session):
+        if field.name in data:
+            kwargs[field.name] = data[field.name]
+        elif field.default is not MISSING:
+            kwargs[field.name] = field.default
+        elif field.default_factory is not MISSING:  # type: ignore[misc]
+            kwargs[field.name] = field.default_factory()
+        else:
+            raise SystemExit(f"session.json missing {field.name}")
+    return Session(**kwargs)
 
 
 def resolve_run_id(explicit: str | None) -> str:
@@ -130,11 +216,29 @@ def git_env(session: Session) -> dict[str, str]:
         for key, value in os.environ.items()
         if key not in GIT_ENV_BLOCKLIST
     }
-    env["HOME"] = session.home
+    home = Path(session.home)
+    env["HOME"] = str(home)
+    env["XDG_CONFIG_HOME"] = str(home / ".config")
+    env["XDG_STATE_HOME"] = str(home / ".local" / "state")
+    env["GH_CONFIG_DIR"] = str(home / ".config" / "gh")
+    env["GIT_CONFIG_GLOBAL"] = str(home / ".gitconfig")
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GH_PROMPT_DISABLED"] = "1"
+    token = github_token()
+    if token:
+        env["GH_TOKEN"] = token
+        env["GITHUB_TOKEN"] = token
+    elif "GH_TOKEN" in env:
+        del env["GH_TOKEN"]
+    if "GITHUB_TOKEN" in env and not token:
+        del env["GITHUB_TOKEN"]
     return env
 
 
-def run_git(session: Session, args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
+def run_git(
+    session: Session, args: list[str], check: bool = True
+) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         ["git", "-C", session.repo, *args],
         cwd=session.repo,
@@ -162,6 +266,18 @@ def run_pq(session: Session, args: list[str]) -> subprocess.CompletedProcess[str
     )
 
 
+def run_gh(session: Session, args: list[str]) -> subprocess.CompletedProcess[str]:
+    Path(session.home, ".config", "gh").mkdir(parents=True, exist_ok=True)
+    return subprocess.run(
+        ["gh", *args],
+        cwd=session.repo,
+        env=git_env(session),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
 def parse_envelope(stdout: str) -> Any | None:
     text = stdout.strip()
     if not text:
@@ -172,23 +288,121 @@ def parse_envelope(stdout: str) -> Any | None:
         return None
 
 
-def cmd_launch(_args: argparse.Namespace) -> int:
+def mark_current(run_id: str) -> None:
+    CURRENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CURRENT_FILE.write_text(run_id + "\n")
+
+
+def emit_session(session: Session) -> None:
+    json.dump(asdict(session), sys.stdout, indent=2)
+    sys.stdout.write("\n")
+
+
+def configure_github_remote(session: Session) -> None:
+    Path(session.home, ".config", "gh").mkdir(parents=True, exist_ok=True)
+    run_git(session, ["config", "credential.helper", ""])
+    run_git(
+        session,
+        ["config", "--add", "credential.helper", "!gh auth git-credential"],
+    )
+    run_git(session, ["remote", "remove", "origin"], check=False)
+    run_git(session, ["remote", "add", "origin", session.origin_url])
+
+
+def origin_has_main(session: Session) -> bool:
+    listed = run_git(session, ["ls-remote", "--heads", "origin", "main"], check=False)
+    if listed.returncode != 0:
+        raise SystemExit(
+            github_write_error(
+                session.github_repo,
+                listed.stderr.strip()
+                or listed.stdout.strip()
+                or "git ls-remote origin failed",
+            )
+        )
+    return bool(listed.stdout.strip())
+
+
+def looks_like_github_auth_error(detail: str) -> bool:
+    lowered = detail.lower()
+    return any(
+        needle in lowered
+        for needle in (
+            "403",
+            "denied",
+            "not accessible",
+            "permission",
+            "authentication failed",
+        )
+    )
+
+
+def github_write_error(repo: str, detail: str) -> str:
+    if looks_like_github_auth_error(detail):
+        return f"{GITHUB_WRITE_HELP.format(repo=repo)}\ngit: {detail}"
+    return detail or f"GitHub access to {repo} failed"
+
+
+def abort_incomplete_launch(session_dir: Path, message: str) -> None:
+    if session_dir.exists() and not (session_dir / "session.json").is_file():
+        shutil.rmtree(session_dir, ignore_errors=True)
+    raise SystemExit(message)
+
+
+def ensure_origin_main(session: Session) -> None:
+    fetched = run_git(session, ["fetch", "origin"], check=False)
+    fetch_detail = (fetched.stderr or fetched.stdout).strip()
+    if fetched.returncode != 0 and looks_like_github_auth_error(fetch_detail):
+        raise SystemExit(github_write_error(session.github_repo, fetch_detail))
+    if origin_has_main(session):
+        run_git(session, ["fetch", "origin", "main"], check=False)
+        run_git(session, ["checkout", "-B", "main", "origin/main"])
+        return
+    pushed = run_git(session, ["push", "-u", "origin", "main"], check=False)
+    if pushed.returncode == 0:
+        return
+    detail = (pushed.stderr or pushed.stdout or "push origin main failed").strip()
+    retry = run_git(session, ["fetch", "origin", "main"], check=False)
+    if retry.returncode == 0 and origin_has_main(session):
+        run_git(session, ["checkout", "-B", "main", "origin/main"])
+        return
+    raise SystemExit(github_write_error(session.github_repo, detail))
+
+
+def require_github_tools() -> None:
+    if shutil.which("gh") is None:
+        raise SystemExit("launch --github requires the gh CLI on PATH")
+    if github_token() is None:
+        raise SystemExit(
+            "launch --github requires GITHUB_PAT, GH_TOKEN, or GITHUB_TOKEN"
+        )
+
+
+def cmd_launch(args: argparse.Namespace) -> int:
     requested = os.environ.get("PANQAKE_VERIFY_RUN")
     root = project_root()
     pq = resolve_pq(root)
     run_id = requested or new_run_id()
+    want_github = github_flag_enabled(bool(args.github))
     session_dir = VERIFY_ROOT / run_id
     if (session_dir / "session.json").is_file():
         session = load_session(run_id)
-        CURRENT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        CURRENT_FILE.write_text(session.run_id + "\n")
-        json.dump(asdict(session), sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        if session.github != want_github:
+            kind = "with --github" if want_github else "without --github"
+            raise SystemExit(
+                f"Session {run_id} already exists with github={session.github}. "
+                f"Cleanup first or pick a new PANQAKE_VERIFY_RUN before launching {kind}."
+            )
+        mark_current(session.run_id)
+        emit_session(session)
         return 0
     if session_dir.exists():
         shutil.rmtree(session_dir)
 
-    session = session_paths(run_id, root, pq)
+    if want_github:
+        require_github_tools()
+
+    session = session_paths(run_id, root, pq, github=want_github)
     home = Path(session.home)
     repo = Path(session.repo)
     evidence = Path(session.evidence)
@@ -196,6 +410,15 @@ def cmd_launch(_args: argparse.Namespace) -> int:
     evidence.mkdir(parents=True)
     repo.mkdir(parents=True)
 
+    try:
+        return _launch_fixture(session)
+    except SystemExit as exc:
+        abort_incomplete_launch(session_dir, str(exc))
+        raise
+
+
+def _launch_fixture(session: Session) -> int:
+    repo = Path(session.repo)
     init = subprocess.run(
         ["git", "init", "-b", "main"],
         cwd=repo,
@@ -216,16 +439,33 @@ def cmd_launch(_args: argparse.Namespace) -> int:
     run_git(session, ["add", "README.md"])
     run_git(session, ["commit", "-m", "initial"])
 
+    if session.github:
+        configure_github_remote(session)
+        ensure_origin_main(session)
+        readme = repo / "README.md"
+        if not readme.is_file():
+            readme.write_text("seed\n", encoding="utf-8")
+            run_git(session, ["add", "README.md"])
+            run_git(session, ["commit", "-m", "initial"])
+            pushed = run_git(session, ["push", "-u", "origin", "main"], check=False)
+            if pushed.returncode != 0:
+                raise SystemExit(
+                    github_write_error(
+                        session.github_repo,
+                        (pushed.stderr or pushed.stdout or "push origin main failed").strip(),
+                    )
+                )
+
     for branch, parent in SEEDED_STACK:
         created = run_pq(session, ["new", branch, parent])
         if created.returncode != 0:
-            raise SystemExit(created.stdout or created.stderr or f"pq new {branch} failed")
+            raise SystemExit(
+                created.stdout or created.stderr or f"pq new {branch} failed"
+            )
 
-    write_json(VERIFY_ROOT / run_id / "session.json", asdict(session))
-    CURRENT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    CURRENT_FILE.write_text(run_id + "\n")
-    json.dump(asdict(session), sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    write_json(VERIFY_ROOT / session.run_id / "session.json", asdict(session))
+    mark_current(session.run_id)
+    emit_session(session)
     return 0
 
 
@@ -291,6 +531,33 @@ def doctor_checks(session: Session) -> list[dict[str, Any]]:
         tree_ok = "workspace" not in data
         add("stack-excludes-workspace", tree_ok, ",".join(data.keys()))
 
+    if session.github:
+        add("gh-binary", shutil.which("gh") is not None, shutil.which("gh") or "missing")
+        source = github_token_source()
+        add("github-token", source is not None, source or "missing")
+        origin = run_git(session, ["remote", "get-url", "origin"], check=False)
+        origin_url = origin.stdout.strip()
+        add(
+            "origin-is-verify-repo",
+            origin.returncode == 0
+            and session.github_repo in origin_url.removesuffix(".git"),
+            origin_url or origin.stderr.strip(),
+        )
+        viewed = run_gh(
+            session, ["repo", "view", session.github_repo, "--json", "name"]
+        )
+        add(
+            "gh-repo-view",
+            viewed.returncode == 0,
+            viewed.stdout.strip() or viewed.stderr.strip(),
+        )
+        config_dir = Path(session.home) / ".config" / "gh"
+        add(
+            "isolated-gh-config",
+            str(git_env(session).get("GH_CONFIG_DIR", "")).startswith(str(home)),
+            str(config_dir),
+        )
+
     return checks
 
 
@@ -298,7 +565,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     session = load_session(resolve_run_id(args.run))
     checks = doctor_checks(session)
     ok = all(check["ok"] for check in checks)
-    json.dump({"ok": ok, "run_id": session.run_id, "checks": checks}, sys.stdout, indent=2)
+    json.dump(
+        {"ok": ok, "run_id": session.run_id, "checks": checks},
+        sys.stdout,
+        indent=2,
+    )
     sys.stdout.write("\n")
     return 0 if ok else 1
 
@@ -307,7 +578,7 @@ def next_evidence_index(evidence: Path) -> int:
     existing = list(evidence.glob("*.json"))
     numbers = []
     for path in existing:
-        if path.name == "latest.json":
+        if path.name in {"latest.json", "github-prepare.json"}:
             continue
         prefix = path.name.split("-", 1)[0]
         if prefix.isdigit():
@@ -325,7 +596,11 @@ def cmd_drive(args: argparse.Namespace) -> int:
     session = load_session(resolve_run_id(args.run))
     checks = doctor_checks(session)
     if not all(check["ok"] for check in checks):
-        json.dump({"ok": False, "reason": "doctor failed", "checks": checks}, sys.stderr, indent=2)
+        json.dump(
+            {"ok": False, "reason": "doctor failed", "checks": checks},
+            sys.stderr,
+            indent=2,
+        )
         sys.stderr.write("\n")
         return 1
 
@@ -334,7 +609,11 @@ def cmd_drive(args: argparse.Namespace) -> int:
     branch = run_git(session, ["branch", "--show-current"], check=False).stdout.strip()
     head = run_git(session, ["rev-parse", "HEAD"], check=False).stdout.strip()
     stacks_path = Path(session.home) / ".panqake" / "stacks.json"
-    stacks = json.loads(stacks_path.read_text(encoding="utf-8")) if stacks_path.is_file() else {}
+    stacks = (
+        json.loads(stacks_path.read_text(encoding="utf-8"))
+        if stacks_path.is_file()
+        else {}
+    )
     evidence_dir = Path(session.evidence)
     index = next_evidence_index(evidence_dir)
     command = pq_args[0].lstrip("-") if pq_args else "pq"
@@ -381,6 +660,233 @@ def cmd_git(args: argparse.Namespace) -> int:
     return result.returncode
 
 
+def cmd_gh(args: argparse.Namespace) -> int:
+    gh_args = list(args.gh_args)
+    if gh_args[:1] == ["--"]:
+        gh_args = gh_args[1:]
+    if not gh_args:
+        raise SystemExit("gh requires arguments after `--`")
+    session = load_session(resolve_run_id(args.run))
+    result = run_gh(session, gh_args)
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+        if not result.stdout.endswith("\n"):
+            sys.stdout.write("\n")
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    return result.returncode
+
+
+def cmd_append(args: argparse.Namespace) -> int:
+    session = load_session(resolve_run_id(args.run))
+    relative = Path(args.path)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise SystemExit("append path must be a relative path inside the fixture repo")
+    target = Path(session.repo) / relative
+    if not target.resolve().is_relative_to(Path(session.repo).resolve()):
+        raise SystemExit("append path must stay inside the fixture repo")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    text = args.text
+    if not text.endswith("\n"):
+        text += "\n"
+    with target.open("a", encoding="utf-8") as handle:
+        handle.write(text)
+    json.dump(
+        {"ok": True, "path": str(target), "appended": text},
+        sys.stdout,
+        indent=2,
+    )
+    sys.stdout.write("\n")
+    return 0
+
+
+def branch_exists(session: Session, name: str) -> bool:
+    result = run_git(session, ["rev-parse", "--verify", name], check=False)
+    return result.returncode == 0
+
+
+def commit_count_ahead(session: Session, parent: str, branch: str) -> int:
+    result = run_git(session, ["rev-list", "--count", f"{parent}..{branch}"], check=False)
+    if result.returncode != 0:
+        return 0
+    try:
+        return int(result.stdout.strip() or "0")
+    except ValueError:
+        return 0
+
+
+def ensure_unique_branch(
+    session: Session, branch: str, parent: str, message: str
+) -> dict[str, Any]:
+    if not branch_exists(session, branch):
+        created = run_pq(session, ["new", branch, parent])
+        envelope = parse_envelope(created.stdout)
+        if created.returncode != 0:
+            raise SystemExit(
+                created.stdout or created.stderr or f"pq new {branch} failed"
+            )
+    else:
+        switched = run_pq(session, ["switch", branch])
+        envelope = parse_envelope(switched.stdout)
+        if switched.returncode != 0:
+            raise SystemExit(
+                switched.stdout or switched.stderr or f"pq switch {branch} failed"
+            )
+    if commit_count_ahead(session, parent, branch) == 0:
+        readme = Path(session.repo) / "README.md"
+        if not readme.is_file():
+            readme.write_text("seed\n", encoding="utf-8")
+        with readme.open("a", encoding="utf-8") as handle:
+            handle.write(f"{branch} {session.run_id}\n")
+        modified = run_pq(
+            session,
+            ["modify", "--all", "--message", message, "--commit"],
+        )
+        envelope = parse_envelope(modified.stdout)
+        if modified.returncode != 0:
+            raise SystemExit(
+                modified.stdout or modified.stderr or f"pq modify {branch} failed"
+            )
+    return {
+        "branch": branch,
+        "parent": parent,
+        "commits_ahead": commit_count_ahead(session, parent, branch),
+        "envelope": envelope,
+    }
+
+
+def cmd_github_prepare(args: argparse.Namespace) -> int:
+    session = load_session(resolve_run_id(args.run))
+    if not session.github:
+        raise SystemExit("github-prepare requires `verify-panqake launch --github`")
+    checks = doctor_checks(session)
+    if not all(check["ok"] for check in checks):
+        json.dump(
+            {"ok": False, "reason": "doctor failed", "checks": checks},
+            sys.stderr,
+            indent=2,
+        )
+        sys.stderr.write("\n")
+        return 1
+
+    run_git(session, ["fetch", "origin"], check=False)
+    run_git(session, ["checkout", "main"], check=False)
+    run_git(session, ["pull", "--ff-only", "origin", "main"], check=False)
+
+    prefix = session.branch_prefix
+    auth_branch = f"{prefix}-auth"
+    ui_branch = f"{prefix}-ui"
+    auth = ensure_unique_branch(
+        session, auth_branch, "main", f"Verify {auth_branch}"
+    )
+    ui = ensure_unique_branch(
+        session, ui_branch, auth_branch, f"Verify {ui_branch}"
+    )
+    payload = {
+        "ok": True,
+        "run_id": session.run_id,
+        "prefix": prefix,
+        "auth_branch": auth_branch,
+        "ui_branch": ui_branch,
+        "github_repo": session.github_repo,
+        "auth": auth,
+        "ui": ui,
+    }
+    write_json(Path(session.evidence) / "github-prepare.json", payload)
+    json.dump(payload, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
+
+
+def github_cleanup_remote(session: Session) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "ok": True,
+        "closed_prs": [],
+        "deleted_branches": [],
+        "errors": [],
+    }
+    if not session.github or not session.branch_prefix:
+        return result
+    prefix = session.branch_prefix
+    listed = run_gh(
+        session,
+        [
+            "pr",
+            "list",
+            "--repo",
+            session.github_repo,
+            "--state",
+            "open",
+            "--json",
+            "number,headRefName,url",
+            "--limit",
+            "100",
+        ],
+    )
+    if listed.returncode != 0:
+        result["ok"] = False
+        result["errors"].append(listed.stderr.strip() or listed.stdout.strip())
+    else:
+        try:
+            prs = json.loads(listed.stdout or "[]")
+        except json.JSONDecodeError:
+            prs = []
+            result["ok"] = False
+            result["errors"].append("failed to parse gh pr list JSON")
+        for pr in prs:
+            head = str(pr.get("headRefName") or "")
+            if not head.startswith(prefix):
+                continue
+            number = pr.get("number")
+            closed = run_gh(
+                session,
+                [
+                    "pr",
+                    "close",
+                    str(number),
+                    "--repo",
+                    session.github_repo,
+                    "--delete-branch",
+                ],
+            )
+            entry = {
+                "number": number,
+                "head": head,
+                "url": pr.get("url"),
+                "exit_code": closed.returncode,
+            }
+            result["closed_prs"].append(entry)
+            if closed.returncode != 0:
+                result["ok"] = False
+                result["errors"].append(closed.stderr.strip() or closed.stdout.strip())
+
+    refs = run_git(session, ["ls-remote", "--heads", "origin"], check=False)
+    if refs.returncode != 0:
+        result["ok"] = False
+        result["errors"].append(refs.stderr.strip() or "git ls-remote origin failed")
+        return result
+    for line in refs.stdout.splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        ref = parts[1]
+        if not ref.startswith("refs/heads/"):
+            continue
+        name = ref.removeprefix("refs/heads/")
+        if name == "main" or not name.startswith(prefix):
+            continue
+        deleted = run_git(session, ["push", "origin", "--delete", name], check=False)
+        result["deleted_branches"].append(
+            {"branch": name, "exit_code": deleted.returncode}
+        )
+        if deleted.returncode != 0:
+            result["ok"] = False
+            result["errors"].append(
+                deleted.stderr.strip() or f"failed to delete origin/{name}"
+            )
+    return result
+
+
 def cmd_stacks(args: argparse.Namespace) -> int:
     session = load_session(resolve_run_id(args.run))
     path = Path(session.home) / ".panqake" / "stacks.json"
@@ -392,22 +898,28 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
     run_id = resolve_run_id(args.run)
     session_dir = VERIFY_ROOT / run_id
     evidence = EVIDENCE_ROOT / run_id
+    github_result: dict[str, Any] | None = None
+    session_path = session_dir / "session.json"
+    if session_path.is_file():
+        session = load_session(run_id)
+        if session.github:
+            github_result = github_cleanup_remote(session)
+            write_json(evidence / "github-cleanup.json", github_result)
     if session_dir.exists():
         shutil.rmtree(session_dir)
     if CURRENT_FILE.is_file() and CURRENT_FILE.read_text(encoding="utf-8").strip() == run_id:
         CURRENT_FILE.unlink()
-    json.dump(
-        {
-            "ok": True,
-            "removed": str(session_dir),
-            "evidence": str(evidence),
-            "evidence_exists": evidence.is_dir(),
-        },
-        sys.stdout,
-        indent=2,
-    )
+    ok = github_result is None or bool(github_result.get("ok", True))
+    payload = {
+        "ok": ok,
+        "removed": str(session_dir),
+        "evidence": str(evidence),
+        "evidence_exists": evidence.is_dir(),
+        "github_cleanup": github_result,
+    }
+    json.dump(payload, sys.stdout, indent=2)
     sys.stdout.write("\n")
-    return 0
+    return 0 if ok else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -419,7 +931,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    launch = sub.add_parser("launch", help="Create an isolated fixture and seed the stack")
+    launch = sub.add_parser(
+        "launch", help="Create an isolated fixture and seed the stack"
+    )
+    launch.add_argument(
+        "--github",
+        action="store_true",
+        help=(
+            "Attach origin to panqake-verify-repo and auth gh with GITHUB_PAT. "
+            "Also honored when PANQAKE_VERIFY_GITHUB=1."
+        ),
+    )
     launch.set_defaults(func=cmd_launch)
 
     doctor = sub.add_parser("doctor", help="Check that this session is safe to drive")
@@ -436,6 +958,26 @@ def build_parser() -> argparse.ArgumentParser:
     git.add_argument("--run")
     git.add_argument("git_args", nargs=argparse.REMAINDER)
     git.set_defaults(func=cmd_git)
+
+    gh = sub.add_parser(
+        "gh", help="Run gh in the fixture with isolated HOME and GITHUB_PAT"
+    )
+    gh.add_argument("--run")
+    gh.add_argument("gh_args", nargs=argparse.REMAINDER)
+    gh.set_defaults(func=cmd_gh)
+
+    append = sub.add_parser("append", help="Append text to a file in the fixture repo")
+    append.add_argument("--run")
+    append.add_argument("path")
+    append.add_argument("text")
+    append.set_defaults(func=cmd_append)
+
+    prepare = sub.add_parser(
+        "github-prepare",
+        help="Create unique stacked branches with commits for GitHub recipes",
+    )
+    prepare.add_argument("--run")
+    prepare.set_defaults(func=cmd_github_prepare)
 
     stacks = sub.add_parser("stacks", help="Print the session stacks.json")
     stacks.add_argument("--run")

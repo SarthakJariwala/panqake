@@ -25,9 +25,10 @@ Preconditions:
 - Launch a fresh session if `feature-ui` already has commits beyond `initial`.
 
 - **Empty worktree.** Run `verify-panqake drive --feature modify-commit -- modify --all --message "noop" --commit`. Exit code `1`. `error.type` is `NoChangesError`.
-- **Create a commit.** Append a line to `README.md` in the fixture repo path from `launch` JSON (`repo`). Then run `verify-panqake drive --feature modify-commit -- modify --all --message "Add auth note" --commit`. Exit code `0`. `envelope.command` is `modify`. `result.branch_name` is `feature-ui`. `result.amended` is `false`. `result.files_staged` contains `README.md`. `result.message` is `Add auth note`.
+- **Create a commit.** Append a line. Run `verify-panqake append README.md "Add auth note"`. Then run `verify-panqake drive --feature modify-commit -- modify --all --message "Add auth note" --commit`. Exit code `0`. `envelope.command` is `modify`. `result.branch_name` is `feature-ui`. `result.amended` is `false`. `result.files_staged` contains `README.md`. `result.message` is `Add auth note`.
 - **Git log proof.** Run `verify-panqake git -- log -1 --pretty=%s`. The subject is `Add auth note`. Run `verify-panqake git -- branch --show-current` and require `feature-ui`.
-- **File flag.** Append another line to `README.md`. Run `verify-panqake drive --feature modify-commit -- modify --file README.md --message "Tweak readme" --commit`. Exit code `0`. `result.files_staged` is `["README.md"]`.
+- **Missing message.** Append another line. Run `verify-panqake append README.md "Needs a message"`. Then run `verify-panqake drive --feature modify-commit -- modify --all --commit`. Exit code `2`. `error.type` is `NonInteractiveError`. `--all` stages before the message prompt, so README.md is left staged.
+- **File flag.** Append another line. Run `verify-panqake append README.md "Tweak readme"`. Then run `verify-panqake drive --feature modify-commit -- modify --file README.md --message "Tweak readme" --commit`. Exit code `0`. `result.files_staged` is `["README.md"]`. The previous staged line is included in this commit.
 - **List files.** Run `verify-panqake drive --feature modify-commit -- list --files`. `feature-ui.files_changed` includes `README.md` in git's `--name-status` form, such as `M\tREADME.md`.
 - **Proof.** Keep the modify envelope and the `git log -1` output together. An envelope without the log is not enough.
 
@@ -35,5 +36,6 @@ Preconditions:
 
 - `--json` modify still writes a git commit. There is no dry-run.
 - `--all`, `--file`, and `--staged-only` cannot be combined. Typer exits before a JSON envelope if they are.
-- On a branch whose only commit is the branch point, omit `--commit` and Panqake may amend. This recipe always passes `--commit` so the log subject is a new commit.
+- On a branch whose only commit is the branch point, Panqake creates a new commit rather than amending. This recipe still passes `--commit` so later commits keep a new log subject instead of amending.
+- `--json` modify without `--message` raises `NonInteractiveError` when a new commit needs a message. `--all` stages first, so that error leaves files staged. Amend can succeed without `--message`.
 - Edit files inside the fixture `repo` path. Editing the Panqake checkout does not feed this command.

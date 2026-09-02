@@ -34,7 +34,7 @@ Ready when stdout is a JSON object with `run_id`, `home`, `repo`, `evidence`, an
 
 `--github` also sets `github` true, `github_repo`, `origin_url`, and `branch_prefix`. It points `origin` at `https://github.com/SarthakJariwala/panqake-verify-repo.git` (override with `PANQAKE_VERIFY_GITHUB_REPO`), maps `GITHUB_PAT` to `GH_TOKEN` for `gh` and git, and isolates `GH_CONFIG_DIR` under the session home. If the verify repo is empty it pushes `main` once. It does not push `feature-auth` or `feature-ui`.
 
-`--github` requires `gh` on PATH and `GITHUB_PAT` (or `GH_TOKEN` / `GITHUB_TOKEN`). Panqake itself never reads `GITHUB_PAT`; it shells out to `gh`. This helper is what exports `GH_TOKEN`.
+`--github` requires `gh` on PATH and `GITHUB_PAT` (or `GH_TOKEN` / `GITHUB_TOKEN`) with **Contents: write** and **Pull requests: write** on the verify repo. A metadata-only token can `gh repo view` and still fail `launch --github`. Panqake itself never reads `GITHUB_PAT`; it shells out to `gh`. This helper is what exports `GH_TOKEN`.
 
 Do not use `uv run --directory <this-repo>`. That changes cwd into the product checkout and will create real branches. The helper runs `.venv/bin/pq` with cwd set to the fixture.
 
@@ -56,7 +56,7 @@ On a `--github` session it also checks that `gh` is on PATH, a token is present,
 
 Refuse to drive when doctor fails. Do not drive the Panqake checkout. Do not drive a repo whose basename is `workspace`. Do not drive without this helper setting `HOME`. Do not drive GitHub recipes without `--github`.
 
-If `launch --github` or GitHub doctor fails because `GITHUB_PAT` is unset, `gh` is missing, or the verify repo is unreachable, the GitHub feature is `verified-unreachable`. Record the attempted command and that prerequisite. Do not mark it verified from a local-only fixture.
+If `launch --github` or GitHub doctor fails because `GITHUB_PAT` is unset, the token lacks Contents: write / Pull requests: write, `gh` is missing, or the verify repo is unreachable, the GitHub feature is `verified-unreachable`. Record the attempted command and that prerequisite. Do not mark it verified from a local-only fixture.
 
 ## Drive
 

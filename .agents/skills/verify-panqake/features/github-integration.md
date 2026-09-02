@@ -24,7 +24,7 @@ GitHub integration pushes stacked branches to `origin`, opens or updates pull re
 
 Preconditions:
 
-- `GITHUB_PAT` is set (or `GH_TOKEN` / `GITHUB_TOKEN`). `gh` is on PATH.
+- `GITHUB_PAT` is set (or `GH_TOKEN` / `GITHUB_TOKEN`) with Contents: write and Pull requests: write on `SarthakJariwala/panqake-verify-repo`. `gh` is on PATH.
 - `verify-panqake launch --github` succeeded. Launch JSON has `"github": true` and a `branch_prefix`.
 - `verify-panqake doctor` reports `"ok": true`.
 - `verify-panqake github-prepare` succeeded. Read `auth_branch` as `AUTH` and `ui_branch` as `UI` from that JSON. Substitute those names into every command below.
@@ -42,11 +42,11 @@ Preconditions:
 
 ## Gotchas
 
-- `GITHUB_PAT` is required for `--github`. Isolated `HOME` hides the user's `gh auth login`. This helper exports `GH_TOKEN` from `GITHUB_PAT`; Panqake does not read `GITHUB_PAT` itself.
+- `GITHUB_PAT` is required for `--github`. Isolated `HOME` hides the user's `gh auth login`. This helper exports `GH_TOKEN` from `GITHUB_PAT`; Panqake does not read `GITHUB_PAT` itself. The token must include Contents: write and Pull requests: write. A metadata-only PAT fails `launch --github` with `GITHUB_PAT cannot write to …`. That is `verified-unreachable`, not a product bug.
 - The PAT only has access to `SarthakJariwala/panqake-verify-repo`. Do not point `origin` at any other GitHub repo.
 - Under `--json`, `pr` without `--push` does not push. `submit` without `--create-pr` does not create a PR. `merge` without `--allow-failed-checks` raises `NonInteractiveError` when checks are pending or failed. `sync` without `--keep-merged` or `--delete-merged` raises `NonInteractiveError` if merged locals exist.
 - Seeded `feature-auth` / `feature-ui` are local-only. Pushing them collides with other runs. Always use `github-prepare` names.
 - `pq merge` defaults to deleting the remote and local branch. That is expected after `merge-squash`.
 - `pq pr` walks the stack bottom-up. Creating PRs for `UI` also considers `AUTH`.
 - `--json` is not a dry-run. These commands create real PRs and can merge them. `cleanup` must run so prefix branches do not pile up on the shared repo.
-- If `launch --github` cannot see the verify repo, stop and report `verified-unreachable` with the doctor check that failed. Do not fall back to the cloud agent's `gh` login.
+- If `launch --github` cannot see or write to the verify repo, stop and report `verified-unreachable` with the doctor or launch error. Do not fall back to the cloud agent's `gh` login.

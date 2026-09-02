@@ -28,6 +28,13 @@ GIT_ENV_BLOCKLIST = (
     "GIT_COMMON_DIR",
     "GIT_OBJECT_DIRECTORY",
     "GIT_INDEX_FILE",
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_SYSTEM",
+    "GIT_CONFIG_COUNT",
+)
+GITHUB_WRITE_HELP = (
+    "GITHUB_PAT cannot write to {repo}. Grant the token Contents: write and "
+    "Pull requests: write on that repository, then retry launch --github."
 )
 HELP = """\
 verify-panqake launch [--github]
@@ -214,6 +221,8 @@ def git_env(session: Session) -> dict[str, str]:
     env["XDG_CONFIG_HOME"] = str(home / ".config")
     env["XDG_STATE_HOME"] = str(home / ".local" / "state")
     env["GH_CONFIG_DIR"] = str(home / ".config" / "gh")
+    env["GIT_CONFIG_GLOBAL"] = str(home / ".gitconfig")
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GH_PROMPT_DISABLED"] = "1"
     token = github_token()
@@ -302,11 +311,49 @@ def configure_github_remote(session: Session) -> None:
 
 def origin_has_main(session: Session) -> bool:
     listed = run_git(session, ["ls-remote", "--heads", "origin", "main"], check=False)
-    return listed.returncode == 0 and bool(listed.stdout.strip())
+    if listed.returncode != 0:
+        raise SystemExit(
+            github_write_error(
+                session.github_repo,
+                listed.stderr.strip()
+                or listed.stdout.strip()
+                or "git ls-remote origin failed",
+            )
+        )
+    return bool(listed.stdout.strip())
+
+
+def looks_like_github_auth_error(detail: str) -> bool:
+    lowered = detail.lower()
+    return any(
+        needle in lowered
+        for needle in (
+            "403",
+            "denied",
+            "not accessible",
+            "permission",
+            "authentication failed",
+        )
+    )
+
+
+def github_write_error(repo: str, detail: str) -> str:
+    if looks_like_github_auth_error(detail):
+        return f"{GITHUB_WRITE_HELP.format(repo=repo)}\ngit: {detail}"
+    return detail or f"GitHub access to {repo} failed"
+
+
+def abort_incomplete_launch(session_dir: Path, message: str) -> None:
+    if session_dir.exists() and not (session_dir / "session.json").is_file():
+        shutil.rmtree(session_dir, ignore_errors=True)
+    raise SystemExit(message)
 
 
 def ensure_origin_main(session: Session) -> None:
-    run_git(session, ["fetch", "origin"], check=False)
+    fetched = run_git(session, ["fetch", "origin"], check=False)
+    fetch_detail = (fetched.stderr or fetched.stdout).strip()
+    if fetched.returncode != 0 and looks_like_github_auth_error(fetch_detail):
+        raise SystemExit(github_write_error(session.github_repo, fetch_detail))
     if origin_has_main(session):
         run_git(session, ["fetch", "origin", "main"], check=False)
         run_git(session, ["checkout", "-B", "main", "origin/main"])
@@ -314,11 +361,12 @@ def ensure_origin_main(session: Session) -> None:
     pushed = run_git(session, ["push", "-u", "origin", "main"], check=False)
     if pushed.returncode == 0:
         return
-    run_git(session, ["fetch", "origin", "main"], check=False)
-    if not origin_has_main(session):
-        detail = (pushed.stderr or pushed.stdout or "push origin main failed").strip()
-        raise SystemExit(detail)
-    run_git(session, ["checkout", "-B", "main", "origin/main"])
+    detail = (pushed.stderr or pushed.stdout or "push origin main failed").strip()
+    retry = run_git(session, ["fetch", "origin", "main"], check=False)
+    if retry.returncode == 0 and origin_has_main(session):
+        run_git(session, ["checkout", "-B", "main", "origin/main"])
+        return
+    raise SystemExit(github_write_error(session.github_repo, detail))
 
 
 def require_github_tools() -> None:
@@ -362,6 +410,15 @@ def cmd_launch(args: argparse.Namespace) -> int:
     evidence.mkdir(parents=True)
     repo.mkdir(parents=True)
 
+    try:
+        return _launch_fixture(session)
+    except SystemExit as exc:
+        abort_incomplete_launch(session_dir, str(exc))
+        raise
+
+
+def _launch_fixture(session: Session) -> int:
+    repo = Path(session.repo)
     init = subprocess.run(
         ["git", "init", "-b", "main"],
         cwd=repo,
@@ -393,7 +450,10 @@ def cmd_launch(args: argparse.Namespace) -> int:
             pushed = run_git(session, ["push", "-u", "origin", "main"], check=False)
             if pushed.returncode != 0:
                 raise SystemExit(
-                    (pushed.stderr or pushed.stdout or "push origin main failed").strip()
+                    github_write_error(
+                        session.github_repo,
+                        (pushed.stderr or pushed.stdout or "push origin main failed").strip(),
+                    )
                 )
 
     for branch, parent in SEEDED_STACK:
@@ -403,8 +463,8 @@ def cmd_launch(args: argparse.Namespace) -> int:
                 created.stdout or created.stderr or f"pq new {branch} failed"
             )
 
-    write_json(VERIFY_ROOT / run_id / "session.json", asdict(session))
-    mark_current(run_id)
+    write_json(VERIFY_ROOT / session.run_id / "session.json", asdict(session))
+    mark_current(session.run_id)
     emit_session(session)
     return 0
 

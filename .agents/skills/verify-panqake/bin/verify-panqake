@@ -1,0 +1,457 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+VERIFY_ROOT = Path(os.environ.get("PANQAKE_VERIFY_ROOT", "/tmp/panqake-verify"))
+EVIDENCE_ROOT = Path(
+    os.environ.get("PANQAKE_VERIFY_EVIDENCE", "/tmp/panqake-verify-evidence")
+)
+CURRENT_FILE = VERIFY_ROOT / "current"
+SEEDED_STACK = (("feature-auth", "main"), ("feature-ui", "feature-auth"))
+GIT_ENV_BLOCKLIST = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_INDEX_FILE",
+)
+HELP = """\
+verify-panqake launch
+verify-panqake doctor [--run RUN_ID]
+verify-panqake drive [--run RUN_ID] [--feature FEATURE_ID] -- <pq args>
+verify-panqake git [--run RUN_ID] -- <git args>
+verify-panqake stacks [--run RUN_ID]
+verify-panqake cleanup [--run RUN_ID]
+
+Launch creates an isolated HOME and git fixture, then seeds
+feature-auth -> feature-ui. Doctor refuses to drive the Panqake
+checkout or the user's ~/.panqake. Drive always runs the fixture
+venv pq binary with HOME set and appends --json. Cleanup deletes
+the session directory and leaves evidence in place.
+"""
+
+
+@dataclass(frozen=True)
+class Session:
+    run_id: str
+    project_root: str
+    pq: str
+    home: str
+    repo: str
+    evidence: str
+    repo_id: str
+
+
+def project_root() -> Path:
+    here = Path(__file__).resolve()
+    for candidate in [here.parent, *here.parents]:
+        pyproject = candidate / "pyproject.toml"
+        if not pyproject.is_file():
+            continue
+        if 'name = "panqake"' in pyproject.read_text(encoding="utf-8"):
+            return candidate
+    raise SystemExit("Could not find the panqake pyproject.toml from this helper")
+
+
+def resolve_pq(root: Path) -> Path:
+    pq = root / ".venv" / "bin" / "pq"
+    if pq.is_file() and os.access(pq, os.X_OK):
+        return pq
+    sync = subprocess.run(
+        ["uv", "sync", "--locked", "--all-extras", "--dev", "--python", "3.12"],
+        cwd=root,
+        check=False,
+    )
+    if sync.returncode != 0 or not pq.is_file():
+        raise SystemExit(
+            f"pq is missing at {pq}. Run `uv sync --python 3.12` in {root}"
+        )
+    return pq
+
+
+def new_run_id() -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"{stamp}-{os.getpid():x}"
+
+
+def session_paths(run_id: str, root: Path, pq: Path) -> Session:
+    session_root = VERIFY_ROOT / run_id
+    repo_id = f"pqv-{run_id}"
+    return Session(
+        run_id=run_id,
+        project_root=str(root),
+        pq=str(pq),
+        home=str(session_root / "home"),
+        repo=str(session_root / repo_id),
+        evidence=str(EVIDENCE_ROOT / run_id),
+        repo_id=repo_id,
+    )
+
+
+def write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+
+
+def load_session(run_id: str) -> Session:
+    path = VERIFY_ROOT / run_id / "session.json"
+    if not path.is_file():
+        raise SystemExit(f"No session for {run_id}. Run `verify-panqake launch` first")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return Session(**{field: data[field] for field in Session.__dataclass_fields__})
+
+
+def resolve_run_id(explicit: str | None) -> str:
+    if explicit:
+        return explicit
+    env_id = os.environ.get("PANQAKE_VERIFY_RUN")
+    if env_id:
+        return env_id
+    if CURRENT_FILE.is_file():
+        return CURRENT_FILE.read_text(encoding="utf-8").strip()
+    raise SystemExit("No current run. Pass --run or run `verify-panqake launch`")
+
+
+def git_env(session: Session) -> dict[str, str]:
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in GIT_ENV_BLOCKLIST
+    }
+    env["HOME"] = session.home
+    return env
+
+
+def run_git(session: Session, args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        ["git", "-C", session.repo, *args],
+        cwd=session.repo,
+        env=git_env(session),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if check and result.returncode != 0:
+        raise SystemExit(result.stderr.strip() or f"git {' '.join(args)} failed")
+    return result
+
+
+def run_pq(session: Session, args: list[str]) -> subprocess.CompletedProcess[str]:
+    argv = list(args)
+    if "--json" not in argv:
+        argv.append("--json")
+    return subprocess.run(
+        [session.pq, *argv],
+        cwd=session.repo,
+        env=git_env(session),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def parse_envelope(stdout: str) -> Any | None:
+    text = stdout.strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+def cmd_launch(_args: argparse.Namespace) -> int:
+    requested = os.environ.get("PANQAKE_VERIFY_RUN")
+    root = project_root()
+    pq = resolve_pq(root)
+    run_id = requested or new_run_id()
+    session_dir = VERIFY_ROOT / run_id
+    if (session_dir / "session.json").is_file():
+        session = load_session(run_id)
+        CURRENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        CURRENT_FILE.write_text(session.run_id + "\n")
+        json.dump(asdict(session), sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+    if session_dir.exists():
+        shutil.rmtree(session_dir)
+
+    session = session_paths(run_id, root, pq)
+    home = Path(session.home)
+    repo = Path(session.repo)
+    evidence = Path(session.evidence)
+    home.mkdir(parents=True)
+    evidence.mkdir(parents=True)
+    repo.mkdir(parents=True)
+
+    init = subprocess.run(
+        ["git", "init", "-b", "main"],
+        cwd=repo,
+        env=git_env(session),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if init.returncode != 0:
+        raise SystemExit(init.stderr.strip() or "git init failed")
+    for key, value in (
+        ("user.email", "panqake-verify@example.test"),
+        ("user.name", "Panqake Verify"),
+        ("commit.gpgsign", "false"),
+    ):
+        run_git(session, ["config", key, value])
+    (repo / "README.md").write_text("seed\n", encoding="utf-8")
+    run_git(session, ["add", "README.md"])
+    run_git(session, ["commit", "-m", "initial"])
+
+    for branch, parent in SEEDED_STACK:
+        created = run_pq(session, ["new", branch, parent])
+        if created.returncode != 0:
+            raise SystemExit(created.stdout or created.stderr or f"pq new {branch} failed")
+
+    write_json(VERIFY_ROOT / run_id / "session.json", asdict(session))
+    CURRENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CURRENT_FILE.write_text(run_id + "\n")
+    json.dump(asdict(session), sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
+
+
+def doctor_checks(session: Session) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+
+    def add(name: str, ok: bool, detail: str) -> None:
+        checks.append({"name": name, "ok": ok, "detail": detail})
+
+    pq = Path(session.pq)
+    add("pq-binary", pq.is_file() and os.access(pq, os.X_OK), str(pq))
+
+    repo = Path(session.repo)
+    add("repo-exists", repo.is_dir(), str(repo))
+
+    project = Path(session.project_root).resolve()
+    add(
+        "not-product-checkout",
+        repo.resolve() != project,
+        f"repo={repo.resolve()} project={project}",
+    )
+
+    home = Path(session.home).resolve()
+    user_home = Path.home().resolve()
+    add(
+        "isolated-home",
+        home != user_home and str(home).startswith(str(VERIFY_ROOT.resolve())),
+        f"session_home={home} user_home={user_home}",
+    )
+
+    stacks = home / ".panqake" / "stacks.json"
+    add("stacks-under-session-home", stacks.is_file(), str(stacks))
+
+    listed = run_pq(session, ["list"])
+    envelope = parse_envelope(listed.stdout)
+    ok_list = (
+        listed.returncode == 0
+        and isinstance(envelope, dict)
+        and envelope.get("ok") is True
+        and envelope.get("command") == "list"
+    )
+    add("list-json", ok_list, listed.stdout.strip() or listed.stderr.strip())
+
+    head = run_git(session, ["rev-parse", "--show-toplevel"], check=False)
+    toplevel = head.stdout.strip()
+    add(
+        "git-toplevel-is-fixture",
+        head.returncode == 0 and Path(toplevel).resolve() == repo.resolve(),
+        toplevel or head.stderr.strip(),
+    )
+
+    repo_id = run_git(session, ["rev-parse", "--show-toplevel"], check=False)
+    basename = Path(repo_id.stdout.strip()).name if repo_id.returncode == 0 else ""
+    add("unique-repo-id", basename == session.repo_id, basename)
+
+    if stacks.is_file():
+        data = json.loads(stacks.read_text(encoding="utf-8"))
+        add(
+            "stack-keyed-by-fixture",
+            session.repo_id in data,
+            ",".join(data.keys()) or "(empty stacks.json)",
+        )
+        tree_ok = "workspace" not in data
+        add("stack-excludes-workspace", tree_ok, ",".join(data.keys()))
+
+    return checks
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    session = load_session(resolve_run_id(args.run))
+    checks = doctor_checks(session)
+    ok = all(check["ok"] for check in checks)
+    json.dump({"ok": ok, "run_id": session.run_id, "checks": checks}, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0 if ok else 1
+
+
+def next_evidence_index(evidence: Path) -> int:
+    existing = list(evidence.glob("*.json"))
+    numbers = []
+    for path in existing:
+        if path.name == "latest.json":
+            continue
+        prefix = path.name.split("-", 1)[0]
+        if prefix.isdigit():
+            numbers.append(int(prefix))
+    return (max(numbers) + 1) if numbers else 1
+
+
+def cmd_drive(args: argparse.Namespace) -> int:
+    pq_args = list(args.pq_args)
+    if pq_args[:1] == ["--"]:
+        pq_args = pq_args[1:]
+    if not pq_args:
+        raise SystemExit("Drive requires pq arguments after `--`")
+
+    session = load_session(resolve_run_id(args.run))
+    checks = doctor_checks(session)
+    if not all(check["ok"] for check in checks):
+        json.dump({"ok": False, "reason": "doctor failed", "checks": checks}, sys.stderr, indent=2)
+        sys.stderr.write("\n")
+        return 1
+
+    result = run_pq(session, pq_args)
+    envelope = parse_envelope(result.stdout)
+    branch = run_git(session, ["branch", "--show-current"], check=False).stdout.strip()
+    head = run_git(session, ["rev-parse", "HEAD"], check=False).stdout.strip()
+    stacks_path = Path(session.home) / ".panqake" / "stacks.json"
+    stacks = json.loads(stacks_path.read_text(encoding="utf-8")) if stacks_path.is_file() else {}
+    evidence_dir = Path(session.evidence)
+    index = next_evidence_index(evidence_dir)
+    command = pq_args[0].lstrip("-") if pq_args else "pq"
+    record = {
+        "feature": args.feature,
+        "run_id": session.run_id,
+        "argv": pq_args,
+        "cwd": session.repo,
+        "home": session.home,
+        "exit_code": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "envelope": envelope,
+        "git_branch": branch,
+        "git_head": head,
+        "stacks": stacks,
+    }
+    path = evidence_dir / f"{index:03d}-{command}.json"
+    write_json(path, record)
+    write_json(evidence_dir / "latest.json", record)
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+        if not result.stdout.endswith("\n"):
+            sys.stdout.write("\n")
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    return result.returncode
+
+
+def cmd_git(args: argparse.Namespace) -> int:
+    git_args = list(args.git_args)
+    if git_args[:1] == ["--"]:
+        git_args = git_args[1:]
+    if not git_args:
+        raise SystemExit("git requires arguments after `--`")
+    session = load_session(resolve_run_id(args.run))
+    result = run_git(session, git_args, check=False)
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+        if not result.stdout.endswith("\n"):
+            sys.stdout.write("\n")
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    return result.returncode
+
+
+def cmd_stacks(args: argparse.Namespace) -> int:
+    session = load_session(resolve_run_id(args.run))
+    path = Path(session.home) / ".panqake" / "stacks.json"
+    sys.stdout.write(path.read_text(encoding="utf-8"))
+    return 0
+
+
+def cmd_cleanup(args: argparse.Namespace) -> int:
+    run_id = resolve_run_id(args.run)
+    session_dir = VERIFY_ROOT / run_id
+    evidence = EVIDENCE_ROOT / run_id
+    if session_dir.exists():
+        shutil.rmtree(session_dir)
+    if CURRENT_FILE.is_file() and CURRENT_FILE.read_text(encoding="utf-8").strip() == run_id:
+        CURRENT_FILE.unlink()
+    json.dump(
+        {
+            "ok": True,
+            "removed": str(session_dir),
+            "evidence": str(evidence),
+            "evidence_exists": evidence.is_dir(),
+        },
+        sys.stdout,
+        indent=2,
+    )
+    sys.stdout.write("\n")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="verify-panqake",
+        description="Drive Panqake on an isolated git fixture.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=HELP,
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    launch = sub.add_parser("launch", help="Create an isolated fixture and seed the stack")
+    launch.set_defaults(func=cmd_launch)
+
+    doctor = sub.add_parser("doctor", help="Check that this session is safe to drive")
+    doctor.add_argument("--run")
+    doctor.set_defaults(func=cmd_doctor)
+
+    drive = sub.add_parser("drive", help="Run pq --json in the fixture")
+    drive.add_argument("--run")
+    drive.add_argument("--feature")
+    drive.add_argument("pq_args", nargs=argparse.REMAINDER)
+    drive.set_defaults(func=cmd_drive)
+
+    git = sub.add_parser("git", help="Run git in the fixture")
+    git.add_argument("--run")
+    git.add_argument("git_args", nargs=argparse.REMAINDER)
+    git.set_defaults(func=cmd_git)
+
+    stacks = sub.add_parser("stacks", help="Print the session stacks.json")
+    stacks.add_argument("--run")
+    stacks.set_defaults(func=cmd_stacks)
+
+    cleanup = sub.add_parser("cleanup", help="Delete the session; keep evidence")
+    cleanup.add_argument("--run")
+    cleanup.set_defaults(func=cmd_cleanup)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -343,6 +343,33 @@ class TestMergeBranchCore:
         assert ui.confirm_calls == []
         assert "feature" in github.merged_prs
 
+    def test_failed_merge_does_not_retarget_child_pr_bases(self):
+        git = FakeGit(branches=["main", "feature", "child"], current_branch="main")
+        github = FakeGitHub(branches_with_pr={"feature", "child"})
+        github.fail_merge_pr = True
+        config = FakeConfig(
+            stack={
+                "feature": {"parent": "main"},
+                "child": {"parent": "feature"},
+            }
+        )
+        ui = FakeUI(strict=False)
+
+        with pytest.raises(PRMergeError, match="Failed to merge"):
+            merge_branch_core(
+                git=git,
+                github=github,
+                config=config,
+                ui=ui,
+                branch_name="feature",
+                delete_branch=True,
+                update_children=True,
+            )
+
+        assert github.merge_pr_calls == [("feature", "squash")]
+        assert github.update_pr_base_calls == []
+        assert git.deleted_remote_branches == []
+
     def test_updates_child_pr_bases(self):
         git = FakeGit(branches=["main", "feature", "child"], current_branch="main")
         github = FakeGitHub(branches_with_pr={"feature", "child"})

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `pq merge` retargets child PR bases only after `gh pr merge` succeeds, so a failed draft merge no longer moves children onto `main`
+
 ## v0.28.0 - 2026-05-19
 
 ### Added

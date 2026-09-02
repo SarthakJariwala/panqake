@@ -370,7 +370,7 @@ def pr(
     defaults: bool = typer.Option(
         False,
         "--defaults",
-        help="Use generated titles, empty bodies, and no reviewers without prompting",
+        help="Use generated titles and no reviewers without prompting; fill an empty body from --attach",
     ),
     yes: bool = typer.Option(
         False,
@@ -558,7 +558,7 @@ def submit(
     defaults: bool = typer.Option(
         False,
         "--defaults",
-        help="Use a generated title, empty body, and no reviewers without prompting",
+        help="Use a generated title and no reviewers without prompting; fill an empty body from --attach",
     ),
     yes: bool = typer.Option(
         False,

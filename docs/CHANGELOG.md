@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `pq pr` and `pq submit` accept `--attach PATH[#ALT]` when creating a new PR. GitHub CLI 2.99.0 or newer is required. Files apply only to the target branch. An empty description (`--defaults`, a blank `--body`, or a skipped prompt) is filled with `![alt](path)` so GitHub CLI can rewrite the upload URL into the PR body.
+
 ### Fixed
 
 - `pq merge` retargets child PR bases only after `gh pr merge` succeeds, so a failed draft merge no longer moves children onto `main`

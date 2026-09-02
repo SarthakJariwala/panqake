@@ -589,6 +589,36 @@ class TestUpdatePullRequestCore:
 
         assert result.pr_created is True
         assert github.create_pr_calls[0][6] == attachments
+        assert github.create_pr_calls[0][3] == "Explicit PR body"
+
+    def test_defaults_seed_body_from_attachments(self):
+        git = FakeGit(
+            current_branch="feature-x",
+            branches=["main", "feature-x"],
+            branch_commits={"feature-x": True},
+            pushed_branches={"main", "feature-x"},
+            commit_subjects={"feature-x": "feat: x"},
+        )
+        github = FakeGitHub()
+        config = FakeConfig(stack={"feature-x": {"parent": "main"}})
+        ui = FakeUI()
+
+        update_pull_request_core(
+            git=git,
+            github=github,
+            config=config,
+            ui=ui,
+            branch_name="feature-x",
+            create_pr=True,
+            push=True,
+            draft=False,
+            reviewers=[],
+            use_defaults=True,
+            assume_yes=True,
+            attachments=[PRAttachment(path="./login.png", alt_text="Login error")],
+        )
+
+        assert github.create_pr_calls[0][3] == "![Login error](./login.png)"
 
     def test_normalizes_flags_when_pr_appears_after_preflight(self):
         """Should mark PR as existing when create step finds one already exists."""

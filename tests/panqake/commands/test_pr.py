@@ -329,6 +329,91 @@ class TestCreatePRForBranchCore:
         assert result.status == "created"
         assert result.attachments == attachments
         assert github.create_pr_calls[0][6] == attachments
+        assert github.create_pr_calls[0][3] == "Explicit PR body"
+
+    def test_defaults_seed_body_from_attachments(self):
+        git = FakeGit(
+            branches=["main", "feature"],
+            pushed_branches={"main", "feature"},
+            branch_commits={"feature": True},
+            commit_subjects={"feature": "feat: test commit"},
+        )
+        github = FakeGitHub()
+        ui = FakeUI()
+        attachments = [
+            PRAttachment(path="./login.png", alt_text="Login error"),
+            PRAttachment(path="./after.png"),
+        ]
+
+        result = create_pr_for_branch_core(
+            git=git,
+            github=github,
+            ui=ui,
+            branch="feature",
+            base="main",
+            draft=False,
+            reviewers=[],
+            use_defaults=True,
+            assume_yes=True,
+            attachments=attachments,
+        )
+
+        assert result.status == "created"
+        assert github.create_pr_calls[0][3] == (
+            "![Login error](./login.png)\n\n![after](./after.png)"
+        )
+
+    def test_explicit_body_is_kept_when_attaching(self):
+        git = FakeGit(
+            branches=["main", "feature"],
+            pushed_branches={"main", "feature"},
+            branch_commits={"feature": True},
+            commit_subjects={"feature": "feat: test commit"},
+        )
+        github = FakeGitHub()
+        ui = FakeUI()
+
+        create_pr_for_branch_core(
+            git=git,
+            github=github,
+            ui=ui,
+            branch="feature",
+            base="main",
+            title="Explicit PR title",
+            body="See the screenshot.",
+            draft=False,
+            reviewers=[],
+            assume_yes=True,
+            attachments=[PRAttachment(path="./login.png")],
+        )
+
+        assert github.create_pr_calls[0][3] == "See the screenshot."
+
+    def test_blank_explicit_body_is_seeded_from_attachments(self):
+        git = FakeGit(
+            branches=["main", "feature"],
+            pushed_branches={"main", "feature"},
+            branch_commits={"feature": True},
+            commit_subjects={"feature": "feat: test commit"},
+        )
+        github = FakeGitHub()
+        ui = FakeUI()
+
+        create_pr_for_branch_core(
+            git=git,
+            github=github,
+            ui=ui,
+            branch="feature",
+            base="main",
+            title="Explicit PR title",
+            body="   ",
+            draft=False,
+            reviewers=[],
+            assume_yes=True,
+            attachments=[PRAttachment(path="./login.png")],
+        )
+
+        assert github.create_pr_calls[0][3] == "![login](./login.png)"
 
     def test_explicit_no_push_skips_without_prompting(self):
         git = FakeGit(
@@ -552,6 +637,8 @@ class TestCreatePullRequestsCore:
         assert [item.status for item in result.results] == ["created", "created"]
         assert github.create_pr_calls[0][6] is None
         assert github.create_pr_calls[1][6] == attachments
+        assert github.create_pr_calls[0][3] == ""
+        assert github.create_pr_calls[1][3] == "![login](./login.png)"
         assert result.results[0].attachments is None
         assert result.results[1].attachments == attachments
 

@@ -26,7 +26,7 @@ pq pr [BRANCH_NAME] [OPTIONS]
 | `--reviewer USERNAME` | Add a reviewer; repeat for multiple reviewers |
 | `--no-reviewers` | Create the target PR without reviewers or a reviewer prompt |
 | `--attach PATH[#ALT]` | Attach an image or video to the target PR; repeat for multiple files |
-| `--defaults` | Use generated titles, empty bodies, and no reviewers without metadata prompts |
+| `--defaults` | Use generated titles and no reviewers without metadata prompts. An empty body is filled with attachment markdown when `--attach` is given |
 | `--yes, -y` | Skip final creation confirmations |
 | `--json` | Output machine-readable JSON and disable remaining prompts |
 
@@ -96,6 +96,10 @@ pq pr feature-auth-ui \
   --attach ./after.png \
   --push --defaults --yes --json
 ```
+
+`--defaults` would otherwise send an empty description. With `--attach`,
+Panqake writes `![alt](path)` for each file so GitHub CLI can rewrite those
+references to upload URLs. An explicit `--body` is left unchanged.
 
 `--attach` applies only to a new PR for the target branch. Ancestor PRs in the
 stack do not receive the files. GitHub CLI 2.99.0 or newer is required.

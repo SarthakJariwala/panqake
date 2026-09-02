@@ -5,6 +5,7 @@ Failures are handled via exceptions, so these represent successful results.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from panqake.utils.types import BranchName
@@ -66,6 +67,11 @@ class PRAttachment:
         if self.alt_text is None:
             return self.path
         return f"{self.path}#{self.alt_text}"
+
+    def to_markdown(self) -> str:
+        """Return a local markdown image reference for GitHub CLI to rewrite."""
+        alt = self.alt_text if self.alt_text is not None else Path(self.path).stem
+        return f"![{alt}]({self.path})"
 
     @classmethod
     def parse(cls, raw: str) -> "PRAttachment":

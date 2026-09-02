@@ -94,7 +94,6 @@ def get_potential_reviewers() -> list[str]:
 
 
 def _pull_request_url(output: str) -> str | None:
-    """Return the last GitHub pull request URL in command output, if any."""
     for line in reversed(output.splitlines()):
         stripped = line.strip()
         if stripped.startswith("https://") and "/pull/" in stripped:

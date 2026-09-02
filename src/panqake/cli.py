@@ -166,7 +166,6 @@ def _resolve_reviewers(
 
 
 def _resolve_pr_attachments(raw: list[str] | None) -> list[PRAttachment] | None:
-    """Parse and validate repeatable `--attach path[#alt]` values."""
     if raw is None:
         return None
     if len(raw) > MAX_PR_ATTACHMENTS:

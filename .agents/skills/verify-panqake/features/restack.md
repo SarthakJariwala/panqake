@@ -1,10 +1,10 @@
 # Restack locally
 
-Restack changes parent/child links or replays descendants onto an updated parent without talking to GitHub.
+Restack changes parent/child links or replays descendants onto an updated parent. These recipes stay local: pass `--no-push` on `update` so nothing talks to a remote.
 
 ## Sub-features
 
-- `update-no-push` rebases descendants onto the current branch and skips remotes.
+- `update-no-push` rebases descendants of the named start branch onto each child's parent and skips remotes.
 - `rename` renames a tracked branch and keeps its children.
 - `delete-yes` deletes a branch, removes it from the stack, and relinks children.
 - `track-untrack` adds or removes stack metadata for an existing git branch.
@@ -37,7 +37,8 @@ Preconditions:
 ## Gotchas
 
 - `update` without `--no-push` tries to push. On this fixture that is the wrong path.
+- `--json` `update` without `--yes` raises `NonInteractiveError`. Pass `--yes` and `--no-push`.
 - `--json` does not skip the delete confirmation. Pass `--yes`.
 - `move` requires the branch to be tracked. `BranchNotFoundError` with "Run `pq track`" means you untracked it first.
 - `untrack` leaves the git branch. `delete` removes it.
-- `pr`, `submit`, `merge`, and `sync` are not this feature. A green local restack is not GitHub proof.
+- `pr`, `submit`, `merge`, and `sync` are [GitHub integration](./github-integration.md). A green local restack is not GitHub proof.

@@ -278,6 +278,12 @@ def merge_branch_core(
 
                 raise UserCancelledError()
 
+        ui.print_info(
+            f"Merging PR: {format_branch(parent_branch)} ← {format_branch(branch_name)}"
+        )
+        github.merge_pr(branch_name, merge_method)
+        ui.print_success("PR merged successfully")
+
         if update_children:
             pr_base_updates = update_pr_base_for_direct_children(
                 branch_name, parent_branch, config, github
@@ -287,12 +293,6 @@ def merge_branch_core(
                     warnings.append(
                         f"Failed to update PR base for '{result.branch}': {result.error}"
                     )
-
-        ui.print_info(
-            f"Merging PR: {format_branch(parent_branch)} ← {format_branch(branch_name)}"
-        )
-        github.merge_pr(branch_name, merge_method)
-        ui.print_success("PR merged successfully")
 
         if delete_branch:
             try:

@@ -10,6 +10,7 @@ GitHub integration pushes stacked branches to `origin`, opens or updates pull re
 - `submit-create-pr` pushes and creates one draft PR for the current branch.
 - `pr-create-child` creates a draft PR for the stacked child when the parent already has an open PR.
 - `pr-already-exists` reports `already_exists` when the target already has an open PR.
+- `merge-draft-keeps-child-base` leaves the child PR base on the parent when merge fails because the parent is still a draft.
 - `merge-squash` squash-merges a non-draft parent PR and retargets the child.
 - `sync-keep-merged` pulls remote `main` without deleting merged locals or pushing.
 
@@ -36,6 +37,7 @@ Preconditions:
 - **Submit create.** Create AUTH's PR. Run `verify-panqake drive --feature github-integration -- submit AUTH --create-pr --push --draft --defaults --yes --no-reviewers`. Exit code `0`. `result.pr_created` is `true`. `result.pr_url` contains `/pull/`. `verify-panqake gh -- pr view AUTH --json isDraft,baseRefName,headRefName,state,url` shows `state` `OPEN`, `isDraft` `true`, `baseRefName` `main`, `headRefName` AUTH.
 - **Create child PR.** Open the rest of the stack. Run `verify-panqake drive --feature github-integration -- pr UI --push --draft --defaults --yes --no-reviewers`. Exit code `0`. `result.starting_branch` is UI. The only result is UI with `status` `created` and a `pr_url`. AUTH is not in `results` because it already has an open PR. `verify-panqake gh -- pr view UI --json baseRefName,headRefName,isDraft,state` shows `baseRefName` AUTH, `headRefName` UI, `state` `OPEN`, `isDraft` `true`.
 - **Already exists.** Run `verify-panqake drive --feature github-integration -- pr UI --draft --defaults --yes --no-reviewers`. Exit code `0`. The UI result `status` is `already_exists`.
+- **Draft merge.** Merge AUTH while it is still a draft. Run `verify-panqake drive --feature github-integration -- merge AUTH --method squash --allow-failed-checks --yes`. Exit code is not `0`. `error.type` is `PRMergeError`. `verify-panqake gh -- pr view AUTH --json isDraft,state` shows `isDraft` `true` and `state` `OPEN`. `verify-panqake gh -- pr view UI --json baseRefName,state` shows `state` `OPEN` and `baseRefName` AUTH.
 - **Mark ready.** GitHub refuses to merge drafts. Run `verify-panqake gh -- pr ready AUTH`. Then `verify-panqake gh -- pr view AUTH --json isDraft,state` shows `isDraft` `false` and `state` `OPEN`.
 - **Merge parent.** Land AUTH. Run `verify-panqake drive --feature github-integration -- merge AUTH --method squash --allow-failed-checks --yes`. Exit code `0`. `envelope.command` is `merge`. `result.merge_method` is `squash`. `result.remote_branch_deleted` is `true`. `result.local_branch_deleted` is `true`. `verify-panqake gh -- pr view AUTH --json state` shows `MERGED`. `verify-panqake gh -- pr view UI --json baseRefName,state` shows `state` `OPEN` and `baseRefName` `main`.
 - **Sync.** Pull the merged `main`. Run `verify-panqake drive --feature github-integration -- sync main --keep-merged --no-push`. Exit code `0`. `envelope.command` is `sync`. `result.skip_push` is `true`. `result.main_branch` is `main`.
@@ -47,9 +49,9 @@ Preconditions:
 - The PAT only has access to `SarthakJariwala/panqake-verify-repo`. Do not point `origin` at any other GitHub repo.
 - Under `--json`, `pr` without `--push` does not push. `submit` without `--create-pr` does not create a PR. `merge` without `--allow-failed-checks` raises `NonInteractiveError` when checks are pending or failed. `sync` without `--keep-merged` or `--delete-merged` raises `NonInteractiveError` if merged locals exist.
 - Seeded `feature-auth` / `feature-ui` are local-only. Pushing them collides with other runs. Always use `github-prepare` names.
-- GitHub will not merge a draft PR. `pq merge` then raises `PRMergeError`. Mark AUTH ready with `verify-panqake gh -- pr ready AUTH` (or create it with `--no-draft`) before merge.
+- GitHub will not merge a draft PR. `pq merge` then raises `PRMergeError`. The child PR base stays on AUTH. Mark AUTH ready with `verify-panqake gh -- pr ready AUTH` (or create it with `--no-draft`) before a successful merge.
 - `pq merge` defaults to deleting the remote and local branch. That is expected after `merge-squash`.
-- `pq merge` retargets child PR bases before it calls `gh pr merge`. If merge then fails (still a draft), the child may already show `baseRefName` `main` while AUTH is still `OPEN`.
+- `pq merge` retargets child PR bases only after `gh pr merge` succeeds, and before it deletes the parent remote branch.
 - `pq pr` walks from the oldest branch without an open PR. If AUTH already has a PR, `pr UI` only processes UI.
 - `--json` is not a dry-run. These commands create real PRs and can merge them. `cleanup` must run so prefix branches do not pile up on the shared repo.
 - If `launch --github` cannot see or write to the verify repo, stop and report `verified-unreachable` with the doctor or launch error. Do not fall back to the cloud agent's `gh` login.

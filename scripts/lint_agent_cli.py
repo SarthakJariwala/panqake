@@ -86,6 +86,9 @@ CONTRACTS: dict[PromptSite, CliContract] = {
     PromptSite(
         "pr.py", "create_pr_for_branch_core", "prompt_input_multiline", 1
     ): CliContract(("pr", "submit"), ("--body", "--body-file", "--defaults")),
+    PromptSite(
+        "pr.py", "create_pr_for_branch_core", "prompt_pr_attachments", 1
+    ): CliContract(("pr", "submit"), ("--attach", "--defaults")),
     PromptSite("pr.py", "create_pr_for_branch_core", "prompt_confirm", 3): (
         CliContract(("pr", "submit"), ("--draft", "--no-draft"))
     ),

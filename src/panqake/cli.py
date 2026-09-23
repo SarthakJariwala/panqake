@@ -28,9 +28,10 @@ from panqake.commands.up import up as up_command
 from panqake.commands.update import update_branches
 from panqake.ports.exceptions import GitOperationError
 from panqake.ports.helpers import _emit_json_error
-from panqake.ports.results import MAX_PR_ATTACHMENTS, PRAttachment
+from panqake.ports.results import PRAttachment
 from panqake.utils.config import init_panqake
 from panqake.utils.git import is_git_repo, run_git_command
+from panqake.utils.pr_attachments import resolve_pr_attachments
 from panqake.utils.questionary_prompt import print_formatted_text
 
 # Define known commands for passthrough handling
@@ -168,27 +169,10 @@ def _resolve_reviewers(
 def _resolve_pr_attachments(raw: list[str] | None) -> list[PRAttachment] | None:
     if raw is None:
         return None
-    if len(raw) > MAX_PR_ATTACHMENTS:
-        raise typer.BadParameter(f"cannot attach more than {MAX_PR_ATTACHMENTS} files")
-    attachments: list[PRAttachment] = []
-    seen: set[Path] = set()
-    for item in raw:
-        try:
-            attachment = PRAttachment.parse(item)
-        except ValueError as error:
-            raise typer.BadParameter(str(error)) from error
-        lookup = Path(attachment.path).expanduser()
-        if not lookup.is_file():
-            raise typer.BadParameter(f"attachment '{attachment.path}' is not a file")
-        resolved = lookup.resolve()
-        if resolved in seen:
-            raise typer.BadParameter(
-                f"cannot attach the same file twice: '{attachment.path}'"
-            )
-        seen.add(resolved)
-        gh_path = str(lookup) if attachment.path.startswith("~") else attachment.path
-        attachments.append(PRAttachment(path=gh_path, alt_text=attachment.alt_text))
-    return attachments
+    try:
+        return resolve_pr_attachments(raw)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
 
 
 def _resolve_modify_files(

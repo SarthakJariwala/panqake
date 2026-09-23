@@ -553,6 +553,8 @@ class FakeUI:
     confirm_responses: list[bool] = field(default_factory=list)
     select_reviewers_responses: list[list[str]] = field(default_factory=list)
     input_multiline_responses: list[str] = field(default_factory=list)
+    attachment_responses: list[list[PRAttachment]] = field(default_factory=list)
+    attachment_calls: int = 0
     select_branch_responses: list[str | None] = field(default_factory=list)
     strict: bool = True
 
@@ -713,6 +715,10 @@ class FakeUI:
                 "FakeUI: No response queued for prompt_select_reviewers()"
             )
         return []
+
+    def prompt_pr_attachments(self) -> list[PRAttachment]:
+        self.attachment_calls += 1
+        return self.attachment_responses.pop(0) if self.attachment_responses else []
 
     def prompt_input_multiline(
         self,

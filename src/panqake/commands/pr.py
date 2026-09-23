@@ -174,6 +174,15 @@ def create_pr_for_branch_core(
             "Enter PR description (optional): ",
             default="",
         )
+    if attachments is None and not use_defaults:
+        attachments = ui.prompt_pr_attachments() or None
+        if attachments:
+            attachment_body = "\n\n".join(
+                attachment.to_markdown() for attachment in attachments
+            )
+            resolved_body = "\n\n".join(
+                part for part in (resolved_body, attachment_body) if part.strip()
+            )
     if attachments and not resolved_body.strip():
         resolved_body = "\n\n".join(
             attachment.to_markdown() for attachment in attachments

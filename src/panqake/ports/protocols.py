@@ -636,6 +636,10 @@ class UIPort(Protocol):
         """
         ...
 
+    def prompt_pr_attachments(self) -> list[PRAttachment]:
+        """Collect and validate optional local files for a new PR."""
+        ...
+
     def prompt_input_multiline(
         self,
         message: str,

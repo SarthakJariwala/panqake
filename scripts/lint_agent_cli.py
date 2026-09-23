@@ -71,6 +71,9 @@ CONTRACTS: dict[PromptSite, CliContract] = {
     PromptSite("new.py", "create_new_branch_core", "prompt_input", 2): (
         CliContract(("new",), ("BASE_BRANCH",))
     ),
+    PromptSite("new.py", "create_new_branch_core", "prompt_input", 3): (
+        CliContract(("new",), ("--worktree-script",))
+    ),
     PromptSite("new.py", "create_new_branch_core", "prompt_path", 1): CliContract(
         ("new",), ("--path",)
     ),

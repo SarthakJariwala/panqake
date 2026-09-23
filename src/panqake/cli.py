@@ -230,6 +230,7 @@ app = typer.Typer(
         "pq new feature-auth main",
         "pq new feature-auth main --json",
         "pq new feature-auth main --tree --path ../feature-auth",
+        "pq new feature-auth main --path ../feature-auth --worktree-script ./worktree.sh",
     )
 )
 def new(
@@ -239,11 +240,18 @@ def new(
     path: str | None = typer.Option(
         None, "--path", "-p", help="Custom path for the worktree (implies --tree)"
     ),
+    worktree_script: str | None = typer.Option(
+        None,
+        "--worktree-script",
+        help="Executable replacing git worktree add; receives BRANCH PATH BASE (implies --tree)",
+    ),
     json: bool = JSON_OPTION,
 ):
     """Create a new branch in the stack."""
-    use_worktree = tree or path is not None
-    create_new_branch(branch_name, base_branch, use_worktree, path, json_output=json)
+    use_worktree = tree or path is not None or worktree_script is not None
+    create_new_branch(
+        branch_name, base_branch, use_worktree, path, worktree_script, json_output=json
+    )
 
 
 @app.command(

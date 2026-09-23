@@ -147,7 +147,12 @@ class FakeGit:
         self.created_branches.append((branch_name, base_branch))
 
     def add_worktree(
-        self, branch_name: BranchName, path: str, base_branch: BranchName
+        self,
+        branch_name: BranchName,
+        path: str,
+        base_branch: BranchName,
+        *,
+        script: str | None = None,
     ) -> None:
         if self.fail_add_worktree:
             raise WorktreeError(f"Failed to create worktree at '{path}'")

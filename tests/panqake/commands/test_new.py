@@ -4,12 +4,16 @@ These tests verify BEHAVIOR, not implementation details.
 No patches required - just inject fakes.
 """
 
+import subprocess
+
 import pytest
 
 from panqake.commands.new import create_new_branch_core
 from panqake.ports import (
     BranchExistsError,
     BranchNotFoundError,
+    RealFilesystem,
+    RealGit,
     UserCancelledError,
     WorktreeError,
 )
@@ -143,7 +147,7 @@ class TestCreateNewBranchCore:
         """Branch created in worktree with metadata recorded."""
         git = FakeGit(branches=["main"])
         config = FakeConfig()
-        ui = FakeUI()
+        ui = FakeUI(input_responses=[""])
         fs = FakeFilesystem()
 
         result = create_new_branch_core(
@@ -167,7 +171,7 @@ class TestCreateNewBranchCore:
         """Prompts for worktree path when use_worktree=True but path not given."""
         git = FakeGit(branches=["main"])
         config = FakeConfig()
-        ui = FakeUI(path_responses=["/custom/path"])
+        ui = FakeUI(path_responses=["/custom/path"], input_responses=[""])
         fs = FakeFilesystem()
 
         result = create_new_branch_core(
@@ -346,3 +350,101 @@ class TestFakeUIStrictMode:
         result = ui.prompt_input("What is your name?", default="anonymous")
 
         assert result == "anonymous"
+
+
+@pytest.fixture
+def script_repo(tmp_path, monkeypatch):
+    repo = tmp_path / "source"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    subprocess.run(["git", "init", "-b", "main"], check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--no-gpg-sign",
+            "--allow-empty",
+            "-m",
+            "initial",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    (repo / "local.env").write_text("local-only fixture")
+    return repo
+
+
+@pytest.mark.parametrize("interactive", [False, True])
+def test_worktree_script_creates_worktree_and_copies_local_file(
+    script_repo, interactive
+):
+    script = script_repo / "create tree.sh"
+    script.write_text(
+        '#!/bin/sh\nset -eu\ngit worktree add -b "$1" "$2" "$3"\n'
+        'cp local.env "$2/local.env"\n'
+    )
+    script.chmod(0o700)
+    destination = script_repo.parent / "custom tree"
+    ui = FakeUI(
+        input_responses=["./create tree.sh"] if interactive else [], strict=True
+    )
+    config = FakeConfig()
+
+    result = create_new_branch_core(
+        RealGit(),
+        config,
+        ui,
+        RealFilesystem(),
+        "feature/custom",
+        "main",
+        use_worktree=True,
+        worktree_path=str(destination),
+        worktree_script=None if interactive else "./create tree.sh",
+    )
+
+    assert result.worktree_path == str(destination)
+    assert (destination / "local.env").read_text() == "local-only fixture"
+    assert config.stack["feature/custom"] == {
+        "parent": "main",
+        "worktree": str(destination),
+    }
+    assert RealGit().get_current_branch() == "main"
+    assert len(ui.input_calls) == int(interactive)
+
+
+@pytest.mark.parametrize(
+    "body,executable,error",
+    [
+        ("exit 17", True, "status 17"),
+        ("exit 0", True, "did not create"),
+        ('git worktree add -b wrong "$2" "$3"', True, "did not create"),
+        ("exit 0", False, "Cannot run"),
+    ],
+)
+def test_worktree_script_failure_does_not_record_stack(
+    script_repo, body, executable, error
+):
+    script = script_repo / "create.sh"
+    script.write_text(f"#!/bin/sh\n{body}\n")
+    script.chmod(0o700 if executable else 0o600)
+    config = FakeConfig()
+
+    with pytest.raises(WorktreeError, match=error):
+        create_new_branch_core(
+            RealGit(),
+            config,
+            FakeUI(strict=True),
+            RealFilesystem(),
+            "feature",
+            "main",
+            use_worktree=True,
+            worktree_path=str(script_repo.parent / "target"),
+            worktree_script=str(script),
+        )
+
+    assert config.stack == {}
+    assert not RealGit().branch_exists("feature")

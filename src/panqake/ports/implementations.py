@@ -3,6 +3,7 @@
 These classes wrap actual git commands, GitHub CLI, config, and filesystem operations.
 """
 
+import subprocess
 from pathlib import Path
 
 from panqake.utils.types import BranchName
@@ -83,10 +84,48 @@ class RealGit:
             raise GitOperationError(f"Failed to create branch '{branch_name}'")
 
     def add_worktree(
-        self, branch_name: BranchName, path: str, base_branch: BranchName
+        self,
+        branch_name: BranchName,
+        path: str,
+        base_branch: BranchName,
+        *,
+        script: str | None = None,
     ) -> None:
         abs_path = str(Path(path).resolve())
         from panqake.utils.git import run_git_command
+
+        if script:
+            try:
+                subprocess.run(
+                    [script, branch_name, abs_path, base_branch],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                )
+            except subprocess.CalledProcessError as exc:
+                raise WorktreeError(
+                    f"Worktree script '{script}' exited with status {exc.returncode}. "
+                    "Inspect any partially created worktree before retrying."
+                ) from exc
+            except OSError as exc:
+                raise WorktreeError(
+                    f"Cannot run worktree script '{script}': {exc}"
+                ) from exc
+
+            worktrees = run_git_command(
+                ["worktree", "list", "--porcelain", "-z"], silent_fail=True
+            )
+            if worktrees is None or not any(
+                f"worktree {abs_path}" in record.split("\0")
+                and f"branch refs/heads/{branch_name}" in record.split("\0")
+                for record in worktrees.split("\0\0")
+            ):
+                raise WorktreeError(
+                    f"Worktree script did not create branch '{branch_name}' at '{abs_path}'. "
+                    "Inspect any partially created worktree before retrying."
+                )
+            return
 
         result = run_git_command(
             ["worktree", "add", "-b", branch_name, abs_path, base_branch],

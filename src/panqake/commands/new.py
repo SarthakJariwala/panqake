@@ -36,6 +36,7 @@ def create_new_branch_core(
     base_branch: BranchName | None = None,
     use_worktree: bool = False,
     worktree_path: str | None = None,
+    worktree_script: str | None = None,
 ) -> NewBranchResult:
     """Create a new branch in the stack.
 
@@ -51,6 +52,7 @@ def create_new_branch_core(
         base_branch: Parent branch to base off (prompts if None)
         use_worktree: Whether to create in a worktree
         worktree_path: Explicit worktree path (prompts if None and use_worktree=True)
+        worktree_script: Executable path; None prompts, empty string uses Git
 
     Returns:
         NewBranchResult with branch metadata
@@ -114,9 +116,19 @@ def create_new_branch_core(
         if fs.path_exists(resolved_worktree_path):
             raise WorktreeError(f"Directory '{resolved_worktree_path}' already exists")
 
+        if worktree_script is None:
+            worktree_script = ui.prompt_input(
+                "Worktree creation script (leave blank to use git): ", default=""
+            )
+
     # Execute the branch creation
     if use_worktree and resolved_worktree_path:
-        git.add_worktree(branch_name, resolved_worktree_path, base_branch)
+        git.add_worktree(
+            branch_name,
+            resolved_worktree_path,
+            base_branch,
+            script=fs.resolve_path(worktree_script) if worktree_script else None,
+        )
         config.add_to_stack(branch_name, base_branch, resolved_worktree_path)
 
         return NewBranchResult(
@@ -139,6 +151,7 @@ def create_new_branch(
     base_branch: BranchName | None = None,
     use_worktree: bool = False,
     worktree_path: str | None = None,
+    worktree_script: str | None = None,
     *,
     json_output: bool = False,
 ) -> None:
@@ -165,6 +178,7 @@ def create_new_branch(
             base_branch=base_branch,
             use_worktree=use_worktree,
             worktree_path=worktree_path,
+            worktree_script=(worktree_script or "") if json_output else worktree_script,
         )
 
         if not json_output:

@@ -47,9 +47,14 @@ class GitPort(Protocol):
         ...
 
     def add_worktree(
-        self, branch_name: BranchName, path: str, base_branch: BranchName
+        self,
+        branch_name: BranchName,
+        path: str,
+        base_branch: BranchName,
+        *,
+        script: str | None = None,
     ) -> None:
-        """Create a new worktree with a new branch.
+        """Create a new worktree, optionally via an executable taking BRANCH PATH BASE.
 
         Raises:
             WorktreeError: If worktree creation fails

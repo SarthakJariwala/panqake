@@ -11,6 +11,12 @@ def _load_lint():
     return runpy.run_path(str(LINT_SCRIPT))
 
 
+def test_all_prompts_have_cli_contracts():
+    lint = _load_lint()
+
+    assert lint["main"]() == 0
+
+
 def test_prompt_inventory_detects_ui_receiver_with_any_name(tmp_path):
     source = tmp_path / "command.py"
     source.write_text(

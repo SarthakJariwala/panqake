@@ -663,6 +663,30 @@ class RealUI:
         except KeyboardInterrupt:
             raise UserCancelledError()
 
+    def prompt_pr_attachments(self) -> list[PRAttachment]:
+        from panqake.utils.pr_attachments import (
+            parse_interactive_attachment,
+            resolve_pr_attachments,
+        )
+
+        raw: list[str] = []
+        attachments: list[PRAttachment] = []
+        self.print_info(
+            "Optional attachments: drop or paste one image/video path at a time, "
+            "or enter Markdown such as ![Screenshot](./screenshot.png). "
+            "Press Enter on an empty line to finish."
+        )
+        while True:
+            value = self.prompt_input("Attachment (Enter to finish): ")
+            if not value.strip():
+                return attachments
+            try:
+                candidate = [*raw, parse_interactive_attachment(value)]
+                attachments = resolve_pr_attachments(candidate)
+                raw = candidate
+            except ValueError as error:
+                self.print_error(str(error))
+
     def prompt_input_multiline(
         self,
         message: str,
@@ -823,6 +847,9 @@ class JsonUI:
     ) -> list[str]:
         raise NonInteractiveError("reviewer selection")
 
+    def prompt_pr_attachments(self) -> list[PRAttachment]:
+        raise NonInteractiveError("attachment selection")
+
     def prompt_input_multiline(
         self,
         message: str,
@@ -867,6 +894,9 @@ class PRJsonUI(JsonUI):
         validator: object | None = None,
     ) -> str:
         return default
+
+    def prompt_pr_attachments(self) -> list[PRAttachment]:
+        return []
 
     def prompt_input_multiline(
         self,

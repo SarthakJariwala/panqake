@@ -402,6 +402,39 @@ class TestReturnToBranchCore:
 class TestSyncCore:
     """Tests for sync_core."""
 
+    @pytest.mark.parametrize(
+        ("branches", "explicit_branch", "expected"),
+        [
+            (["main"], None, "main"),
+            (["master"], None, "master"),
+            (["main", "master"], None, "main"),
+            (["main", "master"], "master", "master"),
+            (["main", "develop"], "develop", "develop"),
+        ],
+    )
+    def test_base_branch_selection(self, branches, explicit_branch, expected):
+        git = FakeGit(branches=[*branches, "feature"], current_branch="feature")
+        config = FakeConfig(stack={"feature": {"parent": expected}})
+        ui = FakeUI(strict=False)
+
+        result = sync_core(
+            git, config, ui, explicit_branch, skip_push=True, delete_merged=False
+        )
+
+        assert result.main_branch == expected
+        assert git.pull_calls == [expected]
+        assert result.updated_branches == ["feature"]
+        assert result.returned_to == "feature"
+
+    def test_missing_default_branch_fails_before_fetch(self):
+        git = FakeGit(branches=["develop"], current_branch="develop")
+
+        with pytest.raises(BranchNotFoundError, match="pq sync develop"):
+            sync_core(git, FakeConfig(), FakeUI(strict=False))
+
+        assert git.fetch_calls == 0
+        assert git.current_branch == "develop"
+
     def test_successful_sync_no_children(self):
         git = FakeGit(branches=["main"], current_branch="main")
         git._commit_hashes["main"] = "abc123"

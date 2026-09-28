@@ -623,8 +623,8 @@ def merge(
     )
 )
 def sync(
-    main_branch: str = typer.Argument(
-        "main", help="Base branch to sync with (default: main)"
+    main_branch: str | None = typer.Argument(
+        None, help="Base branch to sync with (default: local main, then master)"
     ),
     push: bool = typer.Option(
         True, help="Push changes to remote after syncing branches"

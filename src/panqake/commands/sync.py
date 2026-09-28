@@ -317,7 +317,7 @@ def sync_core(
     git: GitPort,
     config: ConfigPort,
     ui: UIPort,
-    main_branch: BranchName = "main",
+    main_branch: BranchName | None = None,
     skip_push: bool = False,
     delete_merged: bool | None = None,
 ) -> SyncResult:
@@ -329,7 +329,7 @@ def sync_core(
         git: Git operations interface
         config: Stack configuration interface
         ui: User interaction interface
-        main_branch: Base branch to sync with (default: main)
+        main_branch: Base branch to sync with (default: local main, then master)
         skip_push: If True, don't push changes to remote after updating
         delete_merged: Whether to delete merged branches automatically.
             None means prompt per branch.
@@ -346,6 +346,17 @@ def sync_core(
     original_branch = git.get_current_branch()
     if not original_branch:
         raise BranchNotFoundError("Could not determine current branch")
+
+    if main_branch is None:
+        if git.branch_exists("main"):
+            main_branch = "main"
+        elif git.branch_exists("master"):
+            main_branch = "master"
+        else:
+            raise BranchNotFoundError(
+                "Could not find a local 'main' or 'master' branch. "
+                "Specify the base branch explicitly, for example: pq sync develop"
+            )
 
     deleted_branches: list[BranchName] = []
     updated_branches: list[BranchName] = []
@@ -408,7 +419,7 @@ def sync_core(
 
 
 def sync_with_remote(
-    main_branch: str = "main",
+    main_branch: str | None = None,
     skip_push: bool = False,
     delete_merged: bool | None = None,
     *,

@@ -803,7 +803,7 @@ def test_sync_command_with_delete_merged_flag(runner):
 
         assert result.exit_code == 0
         mock_sync.assert_called_once_with(
-            "main",
+            None,
             skip_push=False,
             delete_merged=True,
             json_output=False,

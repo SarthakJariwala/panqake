@@ -12,7 +12,12 @@ pq sync [MAIN_BRANCH]
 
 | Argument | Description |
 |----------|-------------|
-| `MAIN_BRANCH` | Base branch to sync with (default: main) |
+| `MAIN_BRANCH` | Base branch to sync with (default: local `main`, then `master`) |
+
+When no branch is specified, `sync` uses `main` if it exists locally, otherwise
+`master`. If both exist, `main` takes precedence. If neither exists, specify the
+base branch explicitly, for example `pq sync develop`. An explicit branch always
+overrides automatic selection, so `pq sync master` works even when `main` exists.
 
 ## Examples
 
